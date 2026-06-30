@@ -1,0 +1,28 @@
+info:
+  name: Run Monitor
+  type: http
+  seq: 8
+  tags:
+    - monitors
+    - run
+
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/monitors/{{monitorId}}/run"
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        if (res.status === 202 && res.body && res.body.runId) {
+          bru.setVar("runId", res.body.runId);
+        }
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "202"
+
+docs: |-
+  Requests manual execution for current `monitorId`.
+
+  On success, stores returned `runId` into Bruno variable `runId`.

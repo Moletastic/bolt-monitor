@@ -1,0 +1,21 @@
+go 1.26.0
+
+use (
+	./services/api-health
+	./services/check-runtime
+	./services/escalation-runtime
+	./services/monitor-api
+	./shared/api/response
+	./shared/aws
+	./shared/checkexecution
+	./shared/dynamodb
+	./shared/dynamodbrecord
+	./shared/dynamodbschema
+	./shared/errors
+	./shared/escalation
+	./shared/monitorconfig
+	./shared/notifications
+	./shared/probelocationcatalog
+	./shared/resultstatus
+	./shared/rules
+)

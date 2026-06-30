@@ -1,0 +1,23 @@
+# Implement Service Archive UI
+
+## Problem Statement
+
+The backend supports archiving services via `PATCH /api/v1/services/{serviceId}` with `lifecycleState: "archived"`, but there is no UI to trigger this action. Users cannot archive a service through the dashboard.
+
+## Proposed Solution
+
+Add an archive action to the service detail page. Options:
+1. Three-dot menu on service card with "Archive" option
+2. Archive button in service detail page
+3. Archive option in the service edit form
+
+## Tasks
+
+- [ ] 1. Add archive button/menu to service detail UI
+- [ ] 2. Wire up archive action to `updateServiceAction` with `lifecycleState: "archived"`
+- [ ] 3. Test: Verify service transitions to archived and is read-only after
+- [ ] 4. Test: Verify archived services cannot be edited/monitor status changed
+
+## Spec References
+
+- Service lifecycle spec: `specs/service-lifecycle-auto-transition/spec.md`

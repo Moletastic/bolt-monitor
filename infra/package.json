@@ -1,0 +1,24 @@
+{
+  "name": "@bolt-monitor/infra",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "sst dev --mode=mono",
+    "deploy": "sst deploy",
+    "diff": "sst diff",
+    "remove": "sst remove",
+    "install:providers": "sst install",
+    "check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "sst": "4.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "prettier": "^3.5.0",
+    "typescript": "5.7.2"
+  }
+}

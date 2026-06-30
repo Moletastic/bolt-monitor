@@ -1,0 +1,5 @@
+version: 1
+name: bolt-monitor
+collections:
+  - name: bolt-monitor-api
+    path: collections/bolt-monitor-api

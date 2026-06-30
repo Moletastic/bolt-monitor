@@ -1,0 +1,1046 @@
+openapi: 3.1.0
+info:
+  title: Bolt Monitor API
+  version: 1.0.0
+  description: |
+    OpenAPI contract for the Bolt Monitor Lambda-backed HTTP API.
+
+    This spec documents the current API surface implemented in SST and Go Lambda
+    handlers. It is intended for local exploration and reference, not deployment.
+servers:
+  - url: http://127.0.0.1:3000
+    description: Example local API host. Replace with your current `sst dev` API URL.
+  - url: https://example.execute-api.us-east-1.amazonaws.com
+    description: Example deployed API host. Replace with your deployed API URL.
+tags:
+  - name: Health
+  - name: Probe Locations
+  - name: Monitors
+  - name: Incidents
+  - name: Admin
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Check service health
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                healthy:
+                  value:
+                    ok: true
+  /api/v1/probe-locations:
+    get:
+      tags: [Probe Locations]
+      summary: List selectable probe locations
+      operationId: listProbeLocations
+      responses:
+        '200':
+          description: Enabled probe locations ordered for operator-facing display
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProbeLocationListResponse'
+              examples:
+                defaultCatalog:
+                  value:
+                    probeLocations:
+                      - locationId: iad
+                        displayName: US East
+                        enabled: true
+  /api/v1/monitors:
+    get:
+      tags: [Monitors]
+      summary: List monitors
+      operationId: listMonitors
+      responses:
+        '200':
+          description: Monitor collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorListResponse'
+              examples:
+                monitorList:
+                  value:
+                    monitors:
+                      - monitorId: MON_01JV4K7VW8DF9W3FDT3Q2V6Z5G
+                        tenantId: DEFAULT
+                        name: Homepage
+                        type: http
+                        intervalSeconds: 60
+                        probeLocations:
+                          - iad
+                        enabled: true
+                        http:
+                          target: https://example.com
+                          method: GET
+                          headers:
+                            User-Agent: bolt-monitor
+                          timeoutMs: 5000
+                          expectedStatusCodes:
+                            - 200
+                          expectedBodyContains: ok
+                        status:
+                          currentStatus: UP
+                          lastCheckedAt: '2026-05-17T22:00:00Z'
+                          lastDurationMs: 1000
+                          lastProbeLocationId: IAD
+                          lastOutcome: success
+    post:
+      tags: [Monitors]
+      summary: Create monitor
+      operationId: createMonitor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMonitorRequest'
+            examples:
+              httpMonitor:
+                value:
+                  name: Homepage
+                  type: http
+                  intervalSeconds: 60
+                  probeLocations:
+                    - iad
+                  enabled: true
+                  http:
+                    target: https://example.com
+                    method: GET
+                    headers:
+                      User-Agent: bolt-monitor
+                    timeoutMs: 5000
+                    expectedStatusCodes:
+                      - 200
+                    expectedBodyContains: ok
+      responses:
+        '201':
+          description: Monitor created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Monitor'
+              examples:
+                createdMonitor:
+                  value:
+                    monitorId: MON_01JV4K7VW8DF9W3FDT3Q2V6Z5G
+                    tenantId: DEFAULT
+                    name: Homepage
+                    type: http
+                    intervalSeconds: 60
+                    probeLocations:
+                      - iad
+                    enabled: true
+                    http:
+                      target: https://example.com
+                      method: GET
+                      headers:
+                        User-Agent: bolt-monitor
+                      timeoutMs: 5000
+                      expectedStatusCodes:
+                        - 200
+                      expectedBodyContains: ok
+        '400':
+          description: Invalid JSON body or invalid monitor configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidBody:
+                  value:
+                    error: invalid json body
+                invalidProbeLocation:
+                  value:
+                    error: probeLocations contains unknown or disabled location "dub"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/monitors/{id}:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    get:
+      tags: [Monitors]
+      summary: Get monitor by ID
+      operationId: getMonitor
+      responses:
+        '200':
+          description: Monitor found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Monitor'
+              examples:
+                monitor:
+                  value:
+                    monitorId: MON_1
+                    tenantId: DEFAULT
+                    name: Homepage
+                    type: http
+                    intervalSeconds: 60
+                    probeLocations:
+                      - iad
+                    enabled: true
+                    http:
+                      target: https://example.com
+                      method: GET
+                      timeoutMs: 5000
+                    status:
+                      currentStatus: UP
+                      lastCheckedAt: '2026-05-17T22:00:00Z'
+                      lastDurationMs: 1000
+                      lastProbeLocationId: IAD
+                      lastOutcome: success
+        '404':
+          description: Monitor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notFound:
+                  value:
+                    error: monitor not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags: [Monitors]
+      summary: Update monitor
+      operationId: updateMonitor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMonitorRequest'
+            examples:
+              updateNameAndInterval:
+                value:
+                  name: Homepage EU
+                  intervalSeconds: 120
+                  probeLocations:
+                    - iad
+      responses:
+        '200':
+          description: Monitor updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Monitor'
+        '400':
+          description: Invalid JSON body or invalid monitor configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidBody:
+                  value:
+                    error: invalid json body
+        '404':
+          description: Monitor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notFound:
+                  value:
+                    error: monitor not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/monitors/{id}/enable:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    post:
+      tags: [Monitors]
+      summary: Enable monitor
+      operationId: enableMonitor
+      responses:
+        '200':
+          description: Monitor enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Monitor'
+        '404':
+          description: Monitor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/monitors/{id}/disable:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    post:
+      tags: [Monitors]
+      summary: Disable monitor
+      operationId: disableMonitor
+      responses:
+        '200':
+          description: Monitor disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Monitor'
+        '404':
+          description: Monitor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/monitors/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    get:
+      tags: [Monitors]
+      summary: Get latest monitor status
+      operationId: getMonitorStatus
+      responses:
+        '200':
+          description: Latest monitor status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorStatus'
+              examples:
+                status:
+                  value:
+                    currentStatus: UP
+                    lastCheckedAt: '2026-05-17T22:00:00Z'
+                    lastDurationMs: 1000
+                    lastProbeLocationId: IAD
+                    lastOutcome: success
+        '404':
+          description: Monitor status not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notFound:
+                  value:
+                    error: monitor status not found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/monitors/{id}/runs:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    get:
+      tags: [Monitors]
+      summary: List recent monitor runs
+      operationId: getMonitorRuns
+      responses:
+        '200':
+          description: Recent monitor runs, currently capped by the service at twenty records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorRunsResponse'
+              examples:
+                runs:
+                  value:
+                    runs:
+                      - runId: RUN_1
+                        type: http
+                        probeLocationId: IAD
+                        trigger: manual
+                        startedAt: '2026-05-17T22:00:00Z'
+                        finishedAt: '2026-05-17T22:00:01Z'
+                        durationMs: 1000
+                        outcome: success
+                        statusCode: 200
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/monitors/{id}/run:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    post:
+      tags: [Monitors]
+      summary: Request manual monitor run
+      operationId: runMonitor
+      responses:
+        '202':
+          description: Manual run request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualRunResponse'
+              examples:
+                accepted:
+                  value:
+                    runId: RUN_01JV4M2Q4SFGWWN9B1V5N4Q9G8
+                    monitorId: MON_1
+                    trigger: manual
+                    acceptedAt: '2026-05-18T12:00:00Z'
+        '404':
+          description: Monitor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Monitor exists but is not runnable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                disabled:
+                  value:
+                    error: monitor is disabled
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/monitors/{id}/incidents:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    get:
+      tags: [Incidents]
+      summary: List incidents for one monitor
+      operationId: listMonitorIncidents
+      responses:
+        '200':
+          description: Incident collection scoped to one monitor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentListResponse'
+        '404':
+          description: Monitor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/monitors/{id}/audit:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    get:
+      tags: [Monitors]
+      summary: List monitor audit history
+      operationId: listMonitorAuditEvents
+      responses:
+        '200':
+          description: Audit events associated with one monitor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorAuditEventsResponse'
+        '404':
+          description: Monitor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/incidents:
+    get:
+      tags: [Incidents]
+      summary: List incidents
+      operationId: listIncidents
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Optional incident view filter. `open` includes acknowledged incidents. `closed` returns resolved incidents.
+          schema:
+            type: string
+            enum: [open, closed, all]
+      responses:
+        '200':
+          description: Incident collection for operator overview use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/incidents/{incidentId}:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    get:
+      tags: [Incidents]
+      summary: Get incident by ID
+      operationId: getIncident
+      responses:
+        '200':
+          description: Incident detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '404':
+          description: Incident not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/incidents/{incidentId}/ack:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    post:
+      tags: [Incidents]
+      summary: Acknowledge incident
+      operationId: acknowledgeIncident
+      responses:
+        '200':
+          description: Incident acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '404':
+          description: Incident not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Incident is not actionable for acknowledgement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/incidents/{incidentId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    post:
+      tags: [Incidents]
+      summary: Resolve incident
+      operationId: resolveIncident
+      responses:
+        '200':
+          description: Incident resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '404':
+          description: Incident not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Incident is not actionable for resolution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/admin/scheduler-config:
+    get:
+      tags: [Admin]
+      summary: Get scheduler configuration
+      operationId: getSchedulerConfig
+      responses:
+        '200':
+          description: Current recurring execution control state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerConfig'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags: [Admin]
+      summary: Update scheduler configuration
+      operationId: updateSchedulerConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSchedulerConfigRequest'
+            examples:
+              resumeRecurring:
+                value:
+                  recurringEnabled: true
+                  stopControlMode: global-pause
+      responses:
+        '200':
+          description: Updated recurring execution control state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerConfig'
+        '400':
+          description: Invalid JSON body or unsafe scheduler configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unsafeConfig:
+                  value:
+                    error: recurring execution requires reliable stop control
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+components:
+  parameters:
+    MonitorId:
+      name: id
+      in: path
+      required: true
+      description: Monitor identifier. The service normalizes IDs to uppercase internally.
+      schema:
+        type: string
+      example: MON_1
+    IncidentId:
+      name: incidentId
+      in: path
+      required: true
+      description: Incident identifier.
+      schema:
+        type: string
+      example: INC_1
+  responses:
+    InternalServerError:
+      description: Unexpected server-side error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internalError:
+              value:
+                error: internal server error
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+      example:
+        ok: true
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+      example:
+        error: monitor not found
+    HTTPConfiguration:
+      type: object
+      additionalProperties: false
+      required: [target, method, timeoutMs]
+      properties:
+        target:
+          type: string
+          format: uri
+        method:
+          type: string
+          enum: [GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS]
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        timeoutMs:
+          type: integer
+          minimum: 1
+        expectedStatusCodes:
+          type: array
+          items:
+            type: integer
+            minimum: 100
+            maximum: 599
+        expectedBodyContains:
+          type:
+            - string
+            - 'null'
+      example:
+        target: https://example.com
+        method: GET
+        headers:
+          User-Agent: bolt-monitor
+        timeoutMs: 5000
+        expectedStatusCodes:
+          - 200
+        expectedBodyContains: ok
+    CreateMonitorRequest:
+      type: object
+      additionalProperties: false
+      required: [name, type, intervalSeconds, probeLocations, enabled, http]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [http]
+        intervalSeconds:
+          type: integer
+          minimum: 1
+        probeLocations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        enabled:
+          type: boolean
+        http:
+          $ref: '#/components/schemas/HTTPConfiguration'
+      example:
+        name: Homepage
+        type: http
+        intervalSeconds: 60
+        probeLocations:
+          - iad
+        enabled: true
+        http:
+          target: https://example.com
+          method: GET
+          timeoutMs: 5000
+    UpdateMonitorRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        intervalSeconds:
+          type: integer
+          minimum: 1
+        probeLocations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        http:
+          $ref: '#/components/schemas/HTTPConfiguration'
+      example:
+        name: Homepage EU
+        intervalSeconds: 120
+        probeLocations:
+          - iad
+    MonitorStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - currentStatus
+        - lastCheckedAt
+        - lastDurationMs
+        - lastProbeLocationId
+        - lastOutcome
+      properties:
+        currentStatus:
+          type: string
+          enum: [UP, DOWN]
+        lastCheckedAt:
+          type: string
+          format: date-time
+        lastDurationMs:
+          type: integer
+        lastProbeLocationId:
+          type: string
+        lastError:
+          type: string
+        lastOutcome:
+          type: string
+      example:
+        currentStatus: UP
+        lastCheckedAt: '2026-05-17T22:00:00Z'
+        lastDurationMs: 1000
+        lastProbeLocationId: IAD
+        lastOutcome: success
+    Monitor:
+      type: object
+      additionalProperties: false
+      required:
+        - monitorId
+        - tenantId
+        - name
+        - type
+        - intervalSeconds
+        - probeLocations
+        - enabled
+      properties:
+        monitorId:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [http]
+        intervalSeconds:
+          type: integer
+        probeLocations:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        http:
+          anyOf:
+            - $ref: '#/components/schemas/HTTPConfiguration'
+            - type: 'null'
+        status:
+          anyOf:
+            - $ref: '#/components/schemas/MonitorStatus'
+            - type: 'null'
+      example:
+        monitorId: MON_01JV4K7VW8DF9W3FDT3Q2V6Z5G
+        tenantId: DEFAULT
+        name: Homepage
+        type: http
+        intervalSeconds: 60
+        probeLocations:
+          - iad
+        enabled: true
+        http:
+          target: https://example.com
+          method: GET
+          timeoutMs: 5000
+        status:
+          currentStatus: UP
+          lastCheckedAt: '2026-05-17T22:00:00Z'
+          lastDurationMs: 1000
+          lastProbeLocationId: IAD
+          lastOutcome: success
+    MonitorListResponse:
+      type: object
+      additionalProperties: false
+      required: [monitors]
+      properties:
+        monitors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Monitor'
+      example:
+        monitors: []
+    ProbeLocation:
+      type: object
+      additionalProperties: false
+      required: [locationId, displayName, enabled]
+      properties:
+        locationId:
+          type: string
+        displayName:
+          type: string
+        enabled:
+          type: boolean
+      example:
+        locationId: iad
+        displayName: US East
+        enabled: true
+    ProbeLocationListResponse:
+      type: object
+      additionalProperties: false
+      required: [probeLocations]
+      properties:
+        probeLocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProbeLocation'
+      example:
+        probeLocations:
+          - locationId: iad
+            displayName: US East
+            enabled: true
+    CheckRun:
+      type: object
+      additionalProperties: false
+      required:
+        - runId
+        - type
+        - probeLocationId
+        - trigger
+        - startedAt
+        - finishedAt
+        - durationMs
+        - outcome
+      properties:
+        runId:
+          type: string
+        type:
+          type: string
+        probeLocationId:
+          type: string
+        trigger:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+        outcome:
+          type: string
+        statusCode:
+          type: integer
+        error:
+          type: string
+      example:
+        runId: RUN_1
+        type: http
+        probeLocationId: IAD
+        trigger: manual
+        startedAt: '2026-05-17T22:00:00Z'
+        finishedAt: '2026-05-17T22:00:01Z'
+        durationMs: 1000
+        outcome: success
+        statusCode: 200
+    MonitorRunsResponse:
+      type: object
+      additionalProperties: false
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckRun'
+      example:
+        runs: []
+    ManualRunResponse:
+      type: object
+      additionalProperties: false
+      required: [runId, monitorId, trigger, acceptedAt]
+      properties:
+        runId:
+          type: string
+        monitorId:
+          type: string
+        trigger:
+          type: string
+          enum: [manual]
+        acceptedAt:
+          type: string
+          format: date-time
+      example:
+        runId: RUN_01JV4M2Q4SFGWWN9B1V5N4Q9G8
+        monitorId: MON_1
+        trigger: manual
+        acceptedAt: '2026-05-18T12:00:00Z'
+    Incident:
+      type: object
+      additionalProperties: false
+      required: [incidentId, monitorId, summary, status, openedAt, updatedAt]
+      properties:
+        incidentId:
+          type: string
+        monitorId:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+          enum: [open, acknowledged, resolved]
+        openedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        origin:
+          type: string
+      example:
+        incidentId: INC_1
+        monitorId: MON_1
+        summary: Homepage down
+        status: open
+        openedAt: '2026-05-17T22:00:00Z'
+        updatedAt: '2026-05-17T22:00:00Z'
+        origin: system
+    IncidentListResponse:
+      type: object
+      additionalProperties: false
+      required: [incidents]
+      properties:
+        incidents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Incident'
+      example:
+        incidents: []
+    SchedulerConfig:
+      type: object
+      additionalProperties: false
+      required: [recurringEnabled, updatedAt]
+      properties:
+        recurringEnabled:
+          type: boolean
+        stopControlMode:
+          type: string
+          enum: [monitor-disable, global-pause]
+        updatedAt:
+          type: string
+          format: date-time
+      example:
+        recurringEnabled: true
+        stopControlMode: global-pause
+        updatedAt: '2026-05-18T12:00:00Z'
+    UpdateSchedulerConfigRequest:
+      type: object
+      additionalProperties: false
+      required: [recurringEnabled]
+      properties:
+        recurringEnabled:
+          type: boolean
+        stopControlMode:
+          type: string
+          enum: [monitor-disable, global-pause]
+      example:
+        recurringEnabled: true
+        stopControlMode: global-pause
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [auditId, eventType, occurredAt]
+      properties:
+        auditId:
+          type: string
+        eventType:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+        actor:
+          type: string
+        origin:
+          type: string
+      example:
+        auditId: AUD_1
+        eventType: MONITOR_CREATED
+        occurredAt: '2026-05-17T22:00:00Z'
+        origin: system
+    MonitorAuditEventsResponse:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+      example:
+        events: []

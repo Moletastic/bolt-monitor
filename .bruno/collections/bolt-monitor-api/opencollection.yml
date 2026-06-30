@@ -1,0 +1,59 @@
+version: 1
+name: bolt-monitor-api
+type: collection
+docs: |-
+  # Bolt Monitor API
+
+  Bruno collection for manual testing of the Bolt Monitor backend.
+
+  ## Base URL
+
+  All requests use `{{apiUrl}}` from the selected Bruno environment.
+
+  ## Current endpoints
+
+  - `GET /api/health`
+  - `GET /api/v1/probe-locations`
+  - `POST /api/v1/monitors`
+  - `GET /api/v1/monitors`
+  - `GET /api/v1/monitors/{id}`
+  - `GET /api/v1/monitors/{id}/status`
+  - `GET /api/v1/monitors/{id}/runs`
+  - `POST /api/v1/monitors/{id}/run`
+  - `GET /api/v1/monitors/{id}/incidents`
+  - `GET /api/v1/monitors/{id}/audit`
+  - `PATCH /api/v1/monitors/{id}`
+  - `POST /api/v1/monitors/{id}/enable`
+  - `POST /api/v1/monitors/{id}/disable`
+  - `GET /api/v1/incidents`
+  - `GET /api/v1/incidents/{incidentId}`
+  - `POST /api/v1/incidents/{incidentId}/ack`
+  - `POST /api/v1/incidents/{incidentId}/resolve`
+  - `GET /api/v1/admin/scheduler-config`
+  - `PATCH /api/v1/admin/scheduler-config`
+
+  ## Defaults
+
+  - default tenant: `default`
+  - valid probe location for now: `iad`
+  - runtime vars captured by requests: `monitorId`, `runId`, `incidentId`
+
+  Dashboard create/edit flows should populate probe-location pickers from `GET /api/v1/probe-locations`.
+
+  ## Example create payload
+
+  ```json
+  {
+    "name": "Homepage",
+    "type": "http",
+    "intervalSeconds": 60,
+    "probeLocations": ["iad"],
+    "enabled": true,
+    "http": {
+      "target": "https://example.com",
+      "method": "GET",
+      "timeoutMs": 5000,
+      "expectedStatusCodes": [200]
+    }
+  }
+  ```

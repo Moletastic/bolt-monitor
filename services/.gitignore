@@ -1,0 +1,12 @@
+# Lambda deployment packages
+*.zip
+
+# Compiled binaries
+*.exe
+handler
+main
+function.zip
+api-health/api-health
+check-runtime/check-runtime
+escalation-runtime/escalation-runtime
+monitor-api/monitor-api

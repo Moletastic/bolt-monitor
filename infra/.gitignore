@@ -1,0 +1,6 @@
+# SST
+.sst/
+sst-env.d.ts
+
+# Local environment overrides
+*.local.yml

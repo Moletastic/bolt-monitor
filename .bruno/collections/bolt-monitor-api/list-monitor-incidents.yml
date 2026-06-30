@@ -1,0 +1,28 @@
+info:
+  name: List Monitor Incidents
+  type: http
+  seq: 14
+  tags:
+    - incidents
+    - monitors
+
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/monitors/{{monitorId}}/incidents"
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        if (res.status === 200 && res.body && Array.isArray(res.body.incidents) && res.body.incidents.length > 0) {
+          bru.setVar("incidentId", res.body.incidents[0].incidentId);
+        }
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+
+docs: |-
+  Lists incidents scoped to current `monitorId`.
+
+  If any incident exists, stores first `incidentId` into Bruno variable `incidentId`.

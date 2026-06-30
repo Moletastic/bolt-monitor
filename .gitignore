@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Local-only scratch artifacts
+tmp/
+
+# Build outputs
+dist/
+.next/
+.open-next/
+
+# SST
+.sst/
+
+# TypeScript incremental builds
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Lambda binaries (built in CI, not committed)
+services/*/*.zip
+services/*/handler
+services/*/main
+
+# Coverage
+coverage/
+*.out

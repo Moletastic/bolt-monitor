@@ -1,0 +1,22 @@
+info:
+  name: List Monitor Runs
+  type: http
+  seq: 7
+  tags:
+    - monitors
+    - runs
+
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/monitors/{{monitorId}}/runs"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+
+docs: |-
+  Lists recent execution history for `monitorId`.
+
+  Useful when validating dashboard detail recent-runs section and execution metadata shape.

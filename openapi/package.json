@@ -1,0 +1,13 @@
+{
+  "name": "bolt-monitor-openapi-docs",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "docs": "vite --host 127.0.0.1 --port 4173 --strictPort --open /",
+    "docs:swagger": "vite --host 127.0.0.1 --port 4173 --strictPort --open /swagger.html",
+    "docs:redoc": "vite --host 127.0.0.1 --port 4173 --strictPort --open /redoc.html"
+  },
+  "devDependencies": {
+    "vite": "^7.1.7"
+  }
+}

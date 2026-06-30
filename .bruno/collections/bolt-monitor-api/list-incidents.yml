@@ -1,0 +1,28 @@
+info:
+  name: List Incidents
+  type: http
+  seq: 12
+  tags:
+    - incidents
+    - list
+
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/incidents?status=open"
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        if (res.status === 200 && res.body && Array.isArray(res.body.incidents) && res.body.incidents.length > 0) {
+          bru.setVar("incidentId", res.body.incidents[0].incidentId);
+        }
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+
+docs: |-
+  Lists incidents for operator overview.
+
+  Default request uses `status=open`. If any incident exists, stores first `incidentId` into Bruno variable `incidentId`.

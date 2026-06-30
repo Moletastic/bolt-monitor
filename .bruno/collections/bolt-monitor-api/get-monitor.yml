@@ -1,0 +1,22 @@
+info:
+  name: Get Monitor
+  type: http
+  seq: 5
+  tags:
+    - monitors
+    - get
+
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/monitors/{{monitorId}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+
+docs: |-
+  Fetches one monitor by `monitorId`.
+
+  Includes embedded current status summary when status exists.

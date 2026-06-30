@@ -1,0 +1,407 @@
+## Purpose
+
+Define the operator dashboard web application used to inspect monitoring health, triage operational attention, and manage service-first monitor workflows.
+## Requirements
+### Requirement: System provides operator dashboard web application
+System SHALL provide a web application for operators to inspect monitoring health, triage operational attention, and manage monitors through a module-oriented console layout.
+
+#### Scenario: Operator opens dashboard home
+- **WHEN** operator navigates to the dashboard application
+- **THEN** system shows an operational overview framed inside the shared dashboard sidebar shell
+- **AND** the overview summarizes service health, incident state, scheduler state, and setup gaps using available dashboard APIs
+
+#### Scenario: Operator sees prioritized attention
+- **WHEN** operator opens the dashboard home and there are down services, open incidents, disabled scheduler state, services without monitors, disabled monitor coverage, or draft services
+- **THEN** system shows a prioritized attention area that identifies the items needing operator review
+- **AND** each actionable item links to the existing module route where the operator can inspect or manage it
+
+#### Scenario: Operator reviews service health matrix
+- **WHEN** operator opens the dashboard home and services exist
+- **THEN** system shows a compact service health matrix with service identity, rollup status, lifecycle state, monitor coverage, and recent update context
+- **AND** each service row links to the existing service detail route
+
+#### Scenario: Operator opens dashboard with no configured services
+- **WHEN** operator navigates to the dashboard application and no services exist
+- **THEN** system shows an empty-state path to create the first service
+- **AND** system does not show misleading zero-health summaries as if monitoring coverage exists
+
+#### Scenario: Dashboard overview API context is unavailable
+- **WHEN** one or more dashboard overview API requests fail
+- **THEN** system shows an actionable unavailable or partial-state message for the affected overview content
+- **AND** system preserves the shared dashboard shell and navigation
+
+### Requirement: System exposes monitor overview under services module
+
+System SHALL provide the current monitor-oriented overview inside the `Services` module rather than on the root dashboard route.
+
+#### Scenario: Operator opens services module
+
+- **WHEN** operator navigates to the services landing route
+- **THEN** system shows the current monitor overview backed by real monitor API data
+
+#### Scenario: Operator opens service list with services
+
+- **WHEN** services exist in the Services module
+- **THEN** system shows each service as an actionable card that navigates to service detail from the full non-interactive card area
+- **AND** each card emphasizes service name, description, rollup status, lifecycle, technology, monitor coverage, and update context
+- **AND** when the service has child monitors, each card shows a per-monitor traffic-light dot row reflecting each monitor's current status
+- **AND** raw service identifiers are not shown as primary card content
+
+#### Scenario: Operator scans service technology
+
+- **WHEN** service technology is available
+- **THEN** system shows a consistently sized technology icon that is visually distinguishable in service overview, service cards, and service detail summary
+- **AND** unknown or missing technology uses a consistent fallback icon with the same visual footprint
+
+### Requirement: System exposes service detail as operational summary
+System SHALL provide service detail content that summarizes monitoring health and coverage for the service.
+
+#### Scenario: Operator opens service detail
+- **WHEN** operator opens an individual service
+- **THEN** system shows a monitoring-oriented service summary with service name, description, rollup status, lifecycle state, technology, monitor count, enabled monitor coverage, and last update context
+- **AND** raw service identifiers are not shown as primary header content
+- **AND** the create-monitor path remains visible from the summary area
+
+#### Scenario: Service has setup or health gaps
+- **WHEN** the service is draft, has no monitors, has disabled monitor coverage, or has a down rollup status
+- **THEN** system shows an operator-readable setup or health signal in the service summary
+
+### Requirement: System exposes monitor overview with protocol context
+System SHALL show protocol/type context when listing monitors.
+
+#### Scenario: Operator scans monitor overview on desktop
+- **WHEN** operator views a monitor overview table
+- **THEN** system includes a dedicated protocol/type column separate from monitor name
+- **AND** rows show monitor name, protocol/type, current status, enabled state, last check, duration, probe location, and available action
+- **AND** raw monitor identifiers are not shown as primary row content
+
+#### Scenario: Operator scans monitor overview on mobile
+- **WHEN** operator views monitor overview cards on a narrow viewport
+- **THEN** system keeps protocol/type visible on each monitor card
+- **AND** raw monitor identifiers are not shown as primary card content
+
+### Requirement: System exposes monitor detail in dashboard
+System SHALL provide a detailed monitor view for operational inspection.
+
+#### Scenario: Operator views monitor detail
+- **WHEN** operator opens an individual monitor
+- **THEN** system shows monitor configuration, latest status, and recent run history using existing monitor read APIs
+- **AND** keeps the monitor detail view inside the same module-oriented dashboard shell with `Services` treated as the active module
+
+#### Scenario: Operator reviews current monitor status
+- **WHEN** operator opens monitor detail
+- **THEN** system shows a current-status summary with monitor name, protocol/type, target, enabled state, current status, last outcome, last check time, duration, probe location, and cadence
+- **AND** system shows the latest error when status data includes an error
+- **AND** raw service or monitor identifiers are not shown as primary status content
+
+### Requirement: System provides useful integrations module state
+
+System SHALL make notification channel management usable immediately when operators open the Integrations module.
+
+#### Scenario: Operator opens integrations module
+
+- **WHEN** operator navigates to `/integrations`
+- **THEN** system starts loading notification channels without requiring a manual refresh action
+- **AND** system shows loading feedback while the channel list is pending
+
+#### Scenario: Notification channels are loaded
+
+- **WHEN** notification channels are returned by the API
+- **THEN** system shows configured channels with channel name, type, enabled state, default state, and available actions
+- **AND** each row shows a usage-scope indicator describing how many notification routes reference the channel, with an expandable disclosure listing the referencing routes
+
+#### Scenario: No notification channels exist
+
+- **WHEN** notification channel API returns an empty collection
+- **THEN** system shows an empty state that explains no alert channels are configured and provides a path to add one
+
+#### Scenario: Notification channels cannot be loaded
+
+- **WHEN** the notification channel API request fails
+- **THEN** system shows an actionable unavailable state and preserves the manual retry path
+
+### Requirement: System exposes incidents module as operational incident center
+System SHALL provide an incidents module that is useful for both populated and empty incident states.
+
+#### Scenario: Operator opens incidents module
+- **WHEN** operator navigates to `/incidents`
+- **THEN** system lists incidents from the incident API with opened time, summary, status, origin, and available drill-down action
+- **AND** raw monitor identifiers are not shown as primary incident labels
+
+#### Scenario: Incident collection is empty
+- **WHEN** the selected incident filter has no matching incidents
+- **THEN** system shows an empty state that distinguishes healthy no-open-incident state from no-history state
+- **AND** system explains that incidents are created by monitor execution rather than manual UI creation
+
+#### Scenario: Incident collection cannot be loaded
+- **WHEN** the incident API request fails
+- **THEN** system shows an unavailable state inside the shared dashboard shell
+
+### Requirement: System exposes settings module overview
+System SHALL provide a settings module overview for dashboard control-plane context.
+
+#### Scenario: Operator opens settings module
+- **WHEN** operator navigates to `/config`
+- **THEN** system shows a settings overview instead of placeholder content
+- **AND** the overview includes scheduler recurring execution state, probe location catalog summary when available, and safe setup/environment context
+
+#### Scenario: Settings source data is unavailable
+- **WHEN** scheduler configuration or probe location data cannot be loaded
+- **THEN** system shows an unavailable state for the affected settings section while preserving the rest of the settings page
+
+### Requirement: System preserves operator-focused identifiers in dashboard UI
+System SHALL prioritize human-readable operational identity over storage identifiers in dashboard views.
+
+#### Scenario: Operator scans dashboard surfaces
+- **WHEN** system renders service, monitor, incident, integration, or settings surfaces
+- **THEN** primary visible labels use human-readable names, summaries, statuses, protocols, targets, timestamps, or actions
+- **AND** raw service IDs, monitor IDs, channel IDs, and incident IDs are not shown as primary content unless no human-readable value exists
+
+#### Scenario: Debug identifier is needed
+- **WHEN** an identifier is useful for support or debugging
+- **THEN** system MAY expose it through a low-emphasis metadata or copy affordance rather than as the main label
+
+### Requirement: System supports monitor management through dashboard
+
+The dashboard SHALL allow operators to manage monitor configuration from the dashboard.
+
+#### Scenario: Operator creates monitor from dashboard
+
+- **WHEN** operator submits a valid create-monitor form
+- **THEN** system creates the monitor through the existing monitor create API and reflects the new monitor in dashboard views
+- **AND** the submitted probe-location identifiers are taken from the server-side probe-location catalog data rather than from a hard-coded client constant
+
+#### Scenario: Operator updates monitor from dashboard
+
+- **WHEN** operator submits valid monitor changes
+- **THEN** system updates the monitor through the existing monitor update API and reflects the saved state in dashboard views
+- **AND** the submitted probe-location identifiers are taken from the server-side probe-location catalog data rather than from a hard-coded client constant
+
+#### Scenario: Operator enables or disables monitor from dashboard
+
+- **WHEN** operator triggers enable or disable control for a monitor
+- **THEN** system calls the existing action endpoint and reflects the resulting enabled state in dashboard views
+- **AND** if the change is destructive (for example disabling a monitor that is part of the rollup), the dashboard requires an in-app confirmation before issuing the action
+
+### Requirement: System preserves monitoring design language in dashboard
+
+System SHALL implement dashboard UI using the repository's monitoring design system.
+
+#### Scenario: Dashboard renders status-oriented UI
+
+- **WHEN** system renders dashboard surfaces
+- **THEN** typography, colors, spacing, density, and status emphasis follow `DESIGN.md` and remain consistent with the intended monitoring-console visual language
+- **AND** timestamps rendered anywhere on a dashboard surface (table cells, summary cards, status banners, settings cards, service detail panels) use the mono font token so they read as data rather than prose
+
+### Requirement: System supports service deletion through dashboard
+System SHALL allow operators to permanently delete eligible services from the dashboard.
+
+#### Scenario: Operator deletes service from service detail
+- **WHEN** operator confirms deletion for an eligible service from the service detail view
+- **THEN** system deletes the service through the service delete API
+- **AND** system redirects the operator to the service list
+- **AND** system refreshes dashboard service data so the deleted service is no longer shown
+
+#### Scenario: Operator attempts to delete active service
+- **WHEN** operator attempts to delete an active service from the dashboard
+- **THEN** system explains that active services must be archived or otherwise made inactive before deletion
+- **AND** system preserves the current service detail view
+
+#### Scenario: Service deletion fails
+- **WHEN** the service delete API rejects or fails a dashboard delete request
+- **THEN** system shows an actionable error message
+- **AND** system does not navigate as if deletion succeeded
+
+### Requirement: System supports monitor deletion through dashboard
+System SHALL allow operators to permanently delete eligible monitors from the dashboard.
+
+#### Scenario: Operator deletes monitor from monitor detail
+- **WHEN** operator confirms deletion for an eligible monitor from the monitor detail view
+- **THEN** system deletes the monitor through the nested monitor delete API
+- **AND** system redirects the operator to the parent service detail view
+- **AND** system refreshes dashboard service and monitor data so the deleted monitor is no longer shown
+
+#### Scenario: Operator attempts to delete last active-service monitor
+- **WHEN** operator attempts to delete the only monitor under an active service
+- **THEN** system explains why the monitor cannot be deleted in the current service state
+- **AND** system preserves the current monitor detail view
+
+#### Scenario: Monitor deletion fails
+- **WHEN** the monitor delete API rejects or fails a dashboard delete request
+- **THEN** system shows an actionable error message
+- **AND** system does not navigate as if deletion succeeded
+
+### Requirement: System presents probe-location selection honestly
+
+The dashboard SHALL derive any monitor probe-location selection from the enabled subset of the canonical probe-location catalog read from the monitor API at request time. The dashboard SHALL NOT hard-code probe-location identifiers in client components or server actions as the source of selection.
+
+#### Scenario: Catalog contains a single enabled location
+
+- **WHEN** the enabled subset of the probe-location catalog contains exactly one location
+- **THEN** the monitor form renders a non-interactive region chip showing the location name and a helper text indicating single-region preview
+- **AND** the create and update monitor server actions submit the location from the catalog data, not from a constant
+
+#### Scenario: Catalog contains multiple enabled locations
+
+- **WHEN** the enabled subset of the probe-location catalog contains more than one location
+- **THEN** the monitor form renders a real selection control bound to the enabled locations
+- **AND** the dashboard does not impose a single-selection default that is not present in the catalog
+
+### Requirement: System confirms destructive actions with an in-app dialog
+
+The dashboard SHALL confirm permanent deletion of services, monitors, notification channels, and escalation policies using an in-app confirmation dialog rather than `window.confirm`.
+
+#### Scenario: Operator triggers destructive delete
+
+- **WHEN** operator activates a destructive delete control for a service, monitor, notification channel, or escalation policy
+- **THEN** the dashboard opens an in-app confirmation dialog whose description matches the existing per-resource confirm message
+- **AND** the cancel control receives focus by default
+- **AND** the dialog is dismissable by keyboard, by clicking outside, and by the cancel control
+
+#### Scenario: Operator confirms destructive delete
+
+- **WHEN** operator activates the confirm control inside the dialog
+- **THEN** the dashboard calls the existing delete API and navigates as before
+- **AND** focus moves to a sensible next target such as the next list item, the parent list, or a Create CTA — not back to `<body>`
+
+### Requirement: System degrades gracefully when dashboard APIs are unavailable
+
+The dashboard SHALL render an operator-readable unavailable state when a backing API request fails, and SHALL render a loading placeholder that matches the destination page's shape while a backing API request is in flight.
+
+#### Scenario: Top-level unhandled error boundary
+
+- **WHEN** an unhandled error occurs in any dashboard route
+- **THEN** the dashboard renders an unavailable-state page inside the shared AppShell
+- **AND** the page exposes a retry control that calls the Next.js error boundary reset
+
+#### Scenario: Per-section API failure on a multi-fetch page
+
+- **WHEN** a page issues several parallel API requests and one or more fail
+- **THEN** the affected section renders an unavailable card inside the shared shell
+- **AND** sections whose data loaded successfully continue to render normally
+
+#### Scenario: Top-level awaits on single-fetch pages
+
+- **WHEN** a page awaits a single API call that fails (for example `/admin/scheduler` or `/locations`)
+- **THEN** the page renders an unavailable state inside the shared shell
+- **AND** the dashboard does not surface the raw error stack trace to operators
+
+#### Scenario: Page is loading server data
+
+- **WHEN** a dashboard segment is in flight for any server data fetch
+- **THEN** system renders a loading placeholder matching the destination page's card grid, table column count, and primary heading shape
+- **AND** the loading placeholder lives inside the shared AppShell
+
+#### Scenario: Table data is loading
+
+- **WHEN** a table on a multi-fetch page is still resolving its data
+- **THEN** the table renders skeleton rows inside the body matching the destination column count
+- **AND** the table headers remain visible and stable
+
+### Requirement: System keeps policy surfaces on the dark monitoring design language
+
+The dashboard SHALL apply the dark monitoring design tokens and the shared AppShell to every route under the policies module, including policy edit.
+
+#### Scenario: Operator opens policy edit
+
+- **WHEN** operator opens an existing escalation policy detail page
+- **THEN** the page is wrapped in the shared AppShell with the `Policies` module marked active
+- **AND** status banners use the standard status tokens rather than light-mode Tailwind colors
+- **AND** escalation-state UI uses the primary token for attention-queue indicators rather than raw sky/rose colors
+
+### Requirement: System removes internal scaffolding from operator chrome
+
+The dashboard SHALL NOT expose internal scaffolding language (for example "Bootstrap assumptions" or "built-in catalog assumption") in the operator-facing sidebar, header, or top-level home page.
+
+#### Scenario: Operator scans sidebar and home page
+
+- **WHEN** operator opens any dashboard route
+- **THEN** the sidebar contains product navigation only and does not list internal scaffolding panels
+- **AND** the dashboard does not render a sticky top header above the main content carrying only an eyebrow label, tagline, or duplicate create CTA
+- **AND** the home page heading and the sidebar header do not disagree on the product name
+
+#### Scenario: Audit trail route
+
+- **WHEN** operator navigates to `/audit-trail`
+- **THEN** the route either redirects to a real surface (for example `/incidents`) or renders a real empty state that points operators to the surface where audit information lives
+- **AND** the route does not render developer-only notes as primary operator content
+
+### Requirement: System provides accessibility baseline across dashboard surfaces
+
+The dashboard SHALL meet an accessibility baseline: per-page primary heading, skip-to-main link, announced empty states, labeled status indicators, and accessible tab semantics.
+
+#### Scenario: Operator scans a dashboard page with a screen reader
+
+- **WHEN** operator opens any dashboard route
+- **THEN** the page exposes a primary `<h1>` inside the main content describing the page purpose
+- **AND** a skip-to-main-content link is the first focusable element of the page
+- **AND** status chips convey state by both text and `aria-label`, not by color alone
+
+#### Scenario: Operator encounters an empty state
+
+- **WHEN** any surface renders its empty state
+- **THEN** the empty state is announced via `aria-live="polite"`
+- **AND** the empty state explains the next operator action
+
+#### Scenario: Operator uses tab navigation on a dashboard page
+
+- **WHEN** operator navigates a tabbed interface (for example monitor detail or incident detail)
+- **THEN** the tablist uses `role="tablist"` semantics
+- **AND** tabs are reachable by keyboard and announce selection state
+
+### Requirement: System uses shared table primitives on the channels surface
+
+The dashboard SHALL render notification channels using the shared `<Table>` primitive.
+
+#### Scenario: Operator scans channels table
+
+- **WHEN** operator opens `/integrations/channels`
+- **THEN** the channels list renders using the shared Table primitive
+- **AND** row dividers, padding, and typography match the incidents and runs tables
+
+### Requirement: System uses human-readable attention-queue labels
+
+The dashboard SHALL translate internal attention-queue tones into operator-readable labels on the home page.
+
+#### Scenario: Operator opens home page
+
+- **WHEN** operator opens the home page
+- **THEN** attention-queue items display human-readable labels such as "Action needed", "At risk", or "Heads-up" instead of raw tone identifiers (`down`, `warn`, `info`)
+- **AND** the all-clear empty state copy describes the absence of operator attention without exposing internal terminology
+
+### Requirement: System renders service create and edit forms without read-only lifecycle field
+
+The dashboard SHALL NOT render the lifecycle state as an input or read-only field inside the service create or edit form.
+
+#### Scenario: Operator opens service create form
+
+- **WHEN** operator opens the new service form
+- **THEN** the form does not contain a Lifecycle label, value, or helper text
+- **AND** lifecycle state remains visible on the service detail summary, the services list card, and the home service health matrix
+
+#### Scenario: Operator opens service edit form
+
+- **WHEN** operator opens the edit service form
+- **THEN** the form does not contain a Lifecycle label, value, or helper text
+- **AND** the form collects only inputs the operator can change
+
+### Requirement: System shows per-monitor traffic-light dots on the home service health matrix
+
+The home page service health matrix SHALL render the same per-monitor traffic-light dot row on each matrix row that the services list card renders.
+
+#### Scenario: Operator scans the home service health matrix
+
+- **WHEN** the home page renders the service health matrix with services that have child monitors
+- **THEN** each matrix row includes a per-monitor dot row matching the current status of each child monitor
+- **AND** the dot row sits alongside the existing rollup status chip without replacing it
+
+### Requirement: System marks unreferenced notification channels
+
+The channels list SHALL distinguish referenced channels from unreferenced ones so operators can spot orphan configuration.
+
+#### Scenario: Channel is unreferenced
+
+- **WHEN** no notification route references a channel
+- **THEN** the channel row shows an "Unused" indicator in place of the usage count
+- **AND** the indicator does not link to any disclosure
+
