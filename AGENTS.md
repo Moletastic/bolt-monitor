@@ -45,7 +45,7 @@ return builder.Build()(monitor)
 ### Infra
 - `make check-infra` — TypeScript type check
 - `make format-infra` — format with Prettier
-- `make deploy-infra` — SST deploy to staging (uses `AWS_PROFILE=mole`)
+- `make deploy-infra` — SST deploy to staging (uses `AWS_PROFILE=bolt-monitor`)
 
 ### JavaScript Package Manager
 - `infra/` and `apps/dashboard` use `pnpm` with `pnpm-lock.yaml` committed and `packageManager` pinned per root.
@@ -105,7 +105,7 @@ Adding a new endpoint? Return one of the three constructors above and the parser
 
 ## Gotchas
 - `infra/package.json` pins local SST dev to `sst dev --mode=mono`; keep that unless you intentionally change the TTY workaround.
-- `infra/sst.config.ts` hard-codes AWS profile `mole`. AWS commands from SST will use that profile unless the config is changed.
+- `infra/sst.config.ts` hard-codes AWS profile `bolt-monitor`. AWS commands from SST will use that profile unless the config is changed.
 - Use explicit SST stage `staging` for normal local dev and deploy workflows to avoid recreating stray stage-specific resources.
 - `services/monitor-api` requires `TABLE_NAME`; the SST stack injects it for the Lambda.
 - The monitor API currently uses a single built-in tenant ID, `DEFAULT`.

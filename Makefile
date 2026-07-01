@@ -75,10 +75,10 @@ build-dashboard:
 build-all: build-go build-dashboard
 
 deploy-infra:
-	cd infra && AWS_PROFILE=mole pnpm exec sst deploy --stage staging
+	cd infra && AWS_PROFILE=bolt-monitor pnpm exec sst deploy --stage staging
 
 deploy-infra-print:
-	cd infra && AWS_PROFILE=mole pnpm exec sst deploy --stage staging --print-logs
+	cd infra && AWS_PROFILE=bolt-monitor pnpm exec sst deploy --stage staging --print-logs
 
 clean:
 	rm -f services/api-health/function.zip services/api-health/handler

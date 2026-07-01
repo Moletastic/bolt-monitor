@@ -37,7 +37,7 @@ Known limitations today:
 - Single built-in tenant ID: `DEFAULT`
 - Single execution environment; regional probe selection is intentionally out of scope for now
 - No auth, RBAC, or multi-user model yet
-- Local and deploy flows assume AWS credentials already exist and SST uses AWS profile `mole` by default
+- Local and deploy flows assume AWS credentials already exist and SST uses AWS profile `bolt-monitor` by default
 - No production hardening claims around security, scaling policy, backup policy, or multi-region execution
 
 ## 🏗️ Architecture
@@ -76,7 +76,7 @@ EventBridge Cron
 - pnpm 10.x (pinned per package root via `packageManager`; `infra/.npmrc` and `apps/dashboard/.npmrc`)
 - Go 1.26+
 - AWS credentials configured for target account
-- AWS profile access compatible with SST config in `infra/sst.config.ts` (`mole` by default)
+- AWS profile access compatible with SST config in `infra/sst.config.ts` (`bolt-monitor` by default)
 
 The default JavaScript workflow for `infra/` and `apps/dashboard` is `pnpm`
 with `pnpm-lock.yaml` committed. `npm install` against those roots is no

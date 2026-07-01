@@ -7,7 +7,7 @@ export default $config({
       home: 'aws',
       providers: {
         aws: {
-          profile: 'mole',
+          profile: 'bolt-monitor',
         },
       },
     }
