@@ -5,7 +5,7 @@ The repository already contains a functional Next.js operator dashboard, but it 
 ## What Changes
 
 - Add SST-managed hosting for `apps/dashboard` using a standalone `sst.aws.Nextjs` site
-- Wire the deployed dashboard runtime to the deployed monitor API by injecting `MONITOR_API_BASE_URL` from the SST stack
+- Wire the deployed dashboard runtime to the deployed monitor API by injecting `NEXT_PUBLIC_MONITOR_API_BASE_URL` from the SST stack
 - Publish the dashboard URL as a stack output so teams can use the generated CloudFront hostname without custom DNS
 - Document the dashboard deployment path and runtime expectations
 

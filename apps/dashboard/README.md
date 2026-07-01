@@ -4,9 +4,9 @@ Next.js operator dashboard for monitor CRUD, status, and recent run inspection.
 
 ## Environment
 
-- `MONITOR_API_BASE_URL`: base URL for monitor API, such as local SST API Gateway URL
+- `NEXT_PUBLIC_MONITOR_API_BASE_URL`: base URL for monitor API, such as local SST API Gateway URL
 
-For local development, export `MONITOR_API_BASE_URL` before running `pnpm run dev`.
+For local development, export `NEXT_PUBLIC_MONITOR_API_BASE_URL` before running `pnpm run dev`.
 For deployed hosting, SST injects this variable automatically from the stack's deployed API URL.
 
 ## Commands
@@ -49,6 +49,4 @@ pnpm exec sst dev --stage staging --mode=mono
 - Root `/` is dashboard landing page; current monitor overview now lives at `/services`.
 - Sidebar modules are `Dashboard`, `Services`, `Integrations`, `Audit Trail`, and `Config`.
 - Uses server-side fetches and server actions for same-origin-friendly bootstrap integration.
-- Probe location picker stays pinned to current built-in `iad` assumption for dashboard v1.
 - Runtime operator surfaces now exist in API for manual runs, incidents, monitor audit history, and scheduler admin control, but dashboard has not wired those views yet.
-- If runtime probe-location discovery becomes required, handle it as explicit follow-on change rather than expanding this app silently.

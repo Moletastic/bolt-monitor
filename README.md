@@ -35,11 +35,8 @@ bolt-monitor works as real software, not scaffold. Also still rough.
 Known limitations today:
 
 - Single built-in tenant ID: `DEFAULT`
-- Probe location catalog effectively hard-coded to one enabled location: `iad` / `US East`
-- Dashboard still hard-codes `iad` selection in parts of monitor flows even though API exposes `GET /api/v1/probe-locations`
-- Dashboard root is landing shell, not full cross-system summary view yet
+- Single execution environment; regional probe selection is intentionally out of scope for now
 - No auth, RBAC, or multi-user model yet
-- No contributor/community workflow docs yet beyond spec process in `openspec/`
 - Local and deploy flows assume AWS credentials already exist and SST uses AWS profile `mole` by default
 - No production hardening claims around security, scaling policy, backup policy, or multi-region execution
 
@@ -104,23 +101,15 @@ pnpm install --frozen-lockfile
 ### 3. Validate main workspaces
 
 ```bash
-cd infra
-pnpm run check
+make check-infra
 ```
 
 ```bash
-cd services/api-health
-go test ./...
+make test-go-all
 ```
 
 ```bash
-cd services/monitor-api
-go test ./...
-```
-
-```bash
-cd apps/dashboard
-pnpm run lint
+make lint-dashboard
 ```
 
 ### 4. Start SST local development
@@ -148,15 +137,15 @@ Expected response:
 
 ### 6. Point dashboard at monitor API for local development
 
-Dashboard needs `MONITOR_API_BASE_URL` set before server-rendered pages work.
+Dashboard needs `NEXT_PUBLIC_MONITOR_API_BASE_URL` set before server-rendered pages work.
 
 ```bash
-export MONITOR_API_BASE_URL=<api-url>
+export NEXT_PUBLIC_MONITOR_API_BASE_URL=<api-url>
 cd apps/dashboard
 pnpm run dev
 ```
 
-For deployed hosting, SST now injects `MONITOR_API_BASE_URL` into the dashboard runtime automatically.
+For deployed hosting, SST now injects `NEXT_PUBLIC_MONITOR_API_BASE_URL` into the dashboard runtime automatically.
 
 ### 7. Open local API docs
 
@@ -175,7 +164,7 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 
 | Variable | Used by | Required | Notes |
 | --- | --- | --- | --- |
-| `MONITOR_API_BASE_URL` | `apps/dashboard` | Yes for dashboard runtime | Base URL for server-side API fetches. Missing value throws `ApiError`. |
+| `NEXT_PUBLIC_MONITOR_API_BASE_URL` | `apps/dashboard` | Yes for dashboard runtime | Base URL for server-side API fetches. Missing value throws `ApiError`. |
 | `TABLE_NAME` | `services/monitor-api`, `services/check-runtime` | Yes in deployed/local Lambda runtime | Injected by SST stack when handlers are wired. |
 | `RUNTIME_MODE` | `services/check-runtime` | Yes for runtime Lambda behavior | Set by SST cron jobs to `scheduler` or `worker`. |
 
@@ -184,15 +173,13 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 | Intent | Command |
 | --- | --- |
 | Install infra deps | `cd infra && pnpm install --frozen-lockfile` |
-| Typecheck infra | `cd infra && pnpm run check` |
+| Typecheck infra | `make check-infra` |
 | Start local infra | `cd infra && pnpm exec sst dev --stage staging --mode=mono` |
 | Deploy infra | `cd infra && pnpm exec sst deploy --stage staging` |
 | Deploy SST-hosted dashboard | `cd infra && pnpm exec sst deploy --stage staging` |
-| Test health service | `cd services/api-health && go test ./...` |
-| Test monitor API | `cd services/monitor-api && go test ./...` |
-| Test runtime service | `cd services/check-runtime && go test ./...` |
+| Test Go services/shared modules | `make test-go-all` |
 | Install dashboard deps | `cd apps/dashboard && pnpm install --frozen-lockfile` |
-| Run dashboard lint | `cd apps/dashboard && pnpm run lint` |
+| Run dashboard lint | `make lint-dashboard` |
 | Start dashboard dev server | `cd apps/dashboard && pnpm run dev` |
 | Install OpenAPI docs deps | `cd openapi && npm install` |
 | Run local API docs | `cd openapi && npm run docs` |
@@ -204,7 +191,7 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 | `infra/` | SST app that defines API Gateway, DynamoDB, and scheduled runtime jobs |
 | `infra/stacks/bootstrap.ts` | Main infrastructure wiring point for routes, table, and cron jobs |
 | `services/api-health` | Small Go Lambda behind `GET /api/health` |
-| `services/monitor-api` | Go Lambda for monitor CRUD, status, runs, incidents, admin config, and probe location catalog |
+| `services/monitor-api` | Go Lambda for monitor CRUD, status, runs, incidents, and admin config |
 | `services/check-runtime` | Go runtime worker/scheduler service for recurring execution |
 | `shared/` | Canonical Go domain modules used across services |
 | `apps/dashboard` | Next 15 App Router operator dashboard |
@@ -217,7 +204,7 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 - Repo is spec-driven. Active implementation work should map to an OpenSpec change.
 - `go.work` wires local Go modules together across `services/` and `shared/`.
 - `services/monitor-api` and `services/check-runtime` both depend on DynamoDB table injection from SST.
-- Dashboard uses server-side fetches; if `MONITOR_API_BASE_URL` is unset, page rendering fails fast.
+- Dashboard uses server-side fetches; if `NEXT_PUBLIC_MONITOR_API_BASE_URL` is unset, page rendering fails fast.
 - Use explicit stage `staging` for both local dev and deploy workflows to avoid accidental extra SST stages.
 - SST deploys the dashboard as a standalone Next.js site and outputs `dashboardUrl` with the generated CloudFront hostname.
 - Probe location support exists at API level, but full runtime discovery is not yet wired through dashboard UX.
@@ -244,7 +231,7 @@ Deploying the SST stack now also deploys `apps/dashboard`.
 
 ```bash
 cd infra
-npx sst deploy --stage staging
+pnpm exec sst deploy --stage staging
 ```
 
 Expected outputs include:
@@ -260,7 +247,6 @@ The dashboard is currently an operator UI without an auth layer, so treat the ge
 
 Near-term focus areas, not promises:
 
-- Finish wiring dashboard flows to probe-location API instead of hard-coded defaults
 - Expand dashboard from module landing pages into richer operational summary views
 - Add authentication and authorization model
 - Improve runtime execution visibility, failure analysis, and operator ergonomics

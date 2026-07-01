@@ -33,31 +33,31 @@ test-go-all: bootstrap
 	go test ./shared/rules
 
 test-dashboard:
-	cd apps/dashboard && npm run test
+	cd apps/dashboard && pnpm run test
 
 lint-go: bootstrap
 	$(foreach svc,$(GO_SERVICES),golangci-lint run ./services/$(svc);)
 	$(foreach lib,$(GO_SHARED),golangci-lint run ./shared/$(lib);)
 
 lint-dashboard:
-	cd apps/dashboard && npm run lint
+	cd apps/dashboard && pnpm run lint
 
 lint-infra:
-	cd infra && npm run format:check
+	cd infra && pnpm run format:check
 
 lint-all: lint-go lint-dashboard lint-infra
 
 check-dashboard:
-	cd apps/dashboard && npm run typecheck
+	cd apps/dashboard && pnpm run typecheck
 
 check-infra:
-	cd infra && npm run check
+	cd infra && pnpm run check
 
 format-dashboard:
-	cd apps/dashboard && npm run format
+	cd apps/dashboard && pnpm run format
 
 format-infra:
-	cd infra && npm run format
+	cd infra && pnpm run format
 
 build-go: bootstrap
 	GOOS=linux GOARCH=arm64 go build -o services/api-health/handler ./services/api-health
@@ -70,15 +70,15 @@ build-go: bootstrap
 	cd services/monitor-api && zip function.zip handler
 
 build-dashboard:
-	cd apps/dashboard && npm run build
+	cd apps/dashboard && pnpm run build
 
 build-all: build-go build-dashboard
 
 deploy-infra:
-	cd infra && AWS_PROFILE=mole npx sst deploy --stage staging
+	cd infra && AWS_PROFILE=mole pnpm exec sst deploy --stage staging
 
 deploy-infra-print:
-	cd infra && AWS_PROFILE=mole npx sst deploy --stage staging --print-logs
+	cd infra && AWS_PROFILE=mole pnpm exec sst deploy --stage staging --print-logs
 
 clean:
 	rm -f services/api-health/function.zip services/api-health/handler

@@ -205,7 +205,7 @@ export default async function ServicesPage({
         <EmptyState
           actionHref="/services/new"
           actionLabel="Open create form"
-          description={`${message} Check MONITOR_API_BASE_URL and local monitor API availability.`}
+          description={`${message} Check NEXT_PUBLIC_MONITOR_API_BASE_URL and local monitor API availability.`}
           title="Overview unavailable"
         />
       </AppShell>

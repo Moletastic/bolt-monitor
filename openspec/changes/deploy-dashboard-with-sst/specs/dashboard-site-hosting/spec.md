@@ -13,7 +13,7 @@ The system SHALL configure the deployed dashboard runtime to use the monitor API
 
 #### Scenario: Dashboard server fetches API data after deployment
 - **WHEN** the deployed dashboard renders a page that needs monitor API data
-- **THEN** the dashboard runtime uses `MONITOR_API_BASE_URL` configured from the stack's deployed API URL
+- **THEN** the dashboard runtime uses `NEXT_PUBLIC_MONITOR_API_BASE_URL` configured from the stack's deployed API URL
 - **AND** operators do not need to set that environment variable manually after deployment
 
 ### Requirement: Deployment publishes dashboard access URL
@@ -30,4 +30,4 @@ The system SHALL document how the dashboard is deployed and what runtime assumpt
 #### Scenario: Developer reviews deployment guidance
 - **WHEN** a developer reads the repository documentation after dashboard hosting is added
 - **THEN** they can identify that the dashboard is deployed through SST
-- **AND** they can see that the first deployment uses a generated URL and stack-managed `MONITOR_API_BASE_URL`
+- **AND** they can see that the first deployment uses a generated URL and stack-managed `NEXT_PUBLIC_MONITOR_API_BASE_URL`

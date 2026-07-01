@@ -1,8 +1,8 @@
 ## Context
 
-`apps/dashboard` is already a server-rendered Next 15 App Router application, but the repository only documents how to run it locally with a manually exported `MONITOR_API_BASE_URL`. The deployable SST app in `infra/` currently manages the API and backing infrastructure, so the missing piece is a production hosting path for the dashboard that stays inside the same SST-controlled deployment surface.
+`apps/dashboard` is already a server-rendered Next 15 App Router application, but the repository only documents how to run it locally with a manually exported `NEXT_PUBLIC_MONITOR_API_BASE_URL`. The deployable SST app in `infra/` currently manages the API and backing infrastructure, so the missing piece is a production hosting path for the dashboard that stays inside the same SST-controlled deployment surface.
 
-The dashboard fetch layer reads `process.env.MONITOR_API_BASE_URL` on the server, which makes it a strong fit for SST-managed runtime environment injection. The user does not want custom DNS yet; the first deploy should use the generated CloudFront hostname that SST provides automatically.
+The dashboard fetch layer reads `process.env.NEXT_PUBLIC_MONITOR_API_BASE_URL`, which makes it a strong fit for SST-managed runtime environment injection. The user does not want custom DNS yet; the first deploy should use the generated CloudFront hostname that SST provides automatically.
 
 ## Goals / Non-Goals
 
@@ -32,9 +32,9 @@ The dashboard fetch layer reads `process.env.MONITOR_API_BASE_URL` on the server
 - Separate hosting platform like Vercel: rejected because this change is specifically about keeping deployment inside SST and AWS.
 - Static export: rejected because the dashboard uses server-side fetches and runtime environment variables.
 
-### 2. Inject `MONITOR_API_BASE_URL` from `api.url`
+### 2. Inject `NEXT_PUBLIC_MONITOR_API_BASE_URL` from `api.url`
 
-**Decision:** Wire the dashboard runtime to the existing API Gateway URL by setting `MONITOR_API_BASE_URL` from the SST `api.url` output.
+**Decision:** Wire the dashboard runtime to the existing API Gateway URL by setting `NEXT_PUBLIC_MONITOR_API_BASE_URL` from the SST `api.url` output.
 
 **Rationale:** This removes manual environment coordination and guarantees the deployed dashboard always points at the deployed API in the same stack.
 
@@ -63,7 +63,7 @@ The dashboard fetch layer reads `process.env.MONITOR_API_BASE_URL` on the server
 → Mitigation: Keep the first version minimal and standalone; avoid extra routing or DNS complexity.
 
 [Risk] Runtime/API wiring works in one stage but drifts in future if someone manually overrides env behavior.
-→ Mitigation: Make `MONITOR_API_BASE_URL` stack-managed in SST and document it as the canonical deployment path.
+→ Mitigation: Make `NEXT_PUBLIC_MONITOR_API_BASE_URL` stack-managed in SST and document it as the canonical deployment path.
 
 [Risk] Future desire for shared hostname/path routing could force refactoring.
 → Mitigation: Deliberately choose standalone deployment first; revisit `sst.aws.Router` only when DNS/path requirements appear.
@@ -71,7 +71,7 @@ The dashboard fetch layer reads `process.env.MONITOR_API_BASE_URL` on the server
 ## Migration Plan
 
 1. Add the `sst.aws.Nextjs` dashboard site to the bootstrap stack.
-2. Inject `MONITOR_API_BASE_URL` from the deployed API URL.
+2. Inject `NEXT_PUBLIC_MONITOR_API_BASE_URL` from the deployed API URL.
 3. Add `dashboardUrl` to stack outputs.
 4. Deploy via existing SST deploy workflow.
 5. Verify the generated dashboard URL renders and can reach the monitor API.
