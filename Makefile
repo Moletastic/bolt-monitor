@@ -1,5 +1,6 @@
 .PHONY: \
 	test-go test-go-all test-dashboard \
+	format-go-check vet-go ci-go \
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra \
 	format-dashboard format-infra \
@@ -8,29 +9,28 @@
 	bootstrap clean
 
 GO_SERVICES := api-health check-runtime escalation-runtime monitor-api
-GO_SHARED := aws checkexecution dynamodbschema errors monitorconfig notifications probelocationcatalog resultstatus rules
+GO_SHARED := api/response aws checkexecution dynamodb dynamodbrecord dynamodbschema errors escalation monitorconfig notifications probelocationcatalog resultstatus rules
+GO_MODULE_DIRS := $(addprefix ./services/,$(GO_SERVICES)) $(addprefix ./shared/,$(GO_SHARED))
 
 bootstrap:
 	go work sync
 
 test-go: bootstrap
-	$(foreach svc,$(GO_SERVICES),go test ./services/$(svc);)
-	$(foreach lib,$(GO_SHARED),go test ./shared/$(lib);)
+	$(foreach module,$(GO_MODULE_DIRS),go test $(module);)
 
-test-go-all: bootstrap
-	go test ./services/api-health
-	go test ./services/check-runtime
-	go test ./services/escalation-runtime
-	go test ./services/monitor-api
-	go test ./shared/aws
-	go test ./shared/checkexecution
-	go test ./shared/dynamodbschema
-	go test ./shared/errors
-	go test ./shared/monitorconfig
-	go test ./shared/notifications
-	go test ./shared/probelocationcatalog
-	go test ./shared/resultstatus
-	go test ./shared/rules
+test-go-all: test-go
+
+format-go-check:
+	@files="$$(gofmt -l $(GO_MODULE_DIRS))"; \
+	if [ -n "$$files" ]; then \
+		printf 'gofmt needed:\n%s\n' "$$files"; \
+		exit 1; \
+	fi
+
+vet-go: bootstrap
+	$(foreach module,$(GO_MODULE_DIRS),go vet $(module);)
+
+ci-go: format-go-check vet-go test-go-all
 
 test-dashboard:
 	cd apps/dashboard && pnpm run test
