@@ -24,7 +24,9 @@ function defaultTracker(): ServiceStatusTracker {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
 }
 
 function parseTracker(raw: string | null): ServiceStatusTracker {

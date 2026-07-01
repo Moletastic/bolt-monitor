@@ -2,13 +2,7 @@ import { AppShell } from '@/components/app-shell'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TableRowSkeleton } from '@/components/ui/skeleton-row'
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export default function Loading() {
   return (
@@ -47,10 +41,7 @@ export default function Loading() {
           </CardHeader>
           <CardContent className="grid gap-3">
             {Array.from({ length: 3 }).map((_, index) => (
-              <div
-                key={index}
-                className="rounded-lg border border-border bg-surface-low p-4"
-              >
+              <div key={index} className="rounded-lg border border-border bg-surface-low p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="grid gap-2">
                     <Skeleton className="h-4 w-64" />
@@ -96,10 +87,7 @@ export default function Loading() {
             </CardHeader>
             <CardContent className="grid gap-3">
               {Array.from({ length: 3 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="rounded-lg border border-border bg-surface-low p-3"
-                >
+                <div key={index} className="rounded-lg border border-border bg-surface-low p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="grid gap-2">
                       <Skeleton className="h-4 w-64" />

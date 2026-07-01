@@ -16,8 +16,8 @@ business logic, server actions, and UI components branch on
 
 ## Files in this directory
 
-| File | Purpose |
-|------|---------|
+| File               | Purpose                                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `server-action.ts` | `runServerAction` — wraps an async function in `tryCatch` and maps thrown values to `ApiError` so a server action returns `Result<T, ApiError>`. |
 
 ## Allowed patterns

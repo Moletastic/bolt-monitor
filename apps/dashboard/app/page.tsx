@@ -208,9 +208,7 @@ function AttentionQueue({ items }: { items: AttentionItem[] }) {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="font-semibold text-foreground">{item.label}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {item.detail}
-                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
                   </div>
                   <span
                     className={`w-fit rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.2em] ${toneClass[item.tone]}`}

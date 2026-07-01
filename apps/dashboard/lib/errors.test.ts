@@ -62,9 +62,9 @@ describe('errors', () => {
     })
 
     it('throws on an unknown code so drift surfaces immediately', () => {
-      expect(() =>
-        fromEnvelope({ code: 'TOTALLY_NEW_CODE', details: {} }, 500)
-      ).toThrow(/TOTALLY_NEW_CODE/)
+      expect(() => fromEnvelope({ code: 'TOTALLY_NEW_CODE', details: {} }, 500)).toThrow(
+        /TOTALLY_NEW_CODE/
+      )
     })
 
     it('uses the fallback status when not provided', () => {
@@ -77,10 +77,7 @@ describe('errors', () => {
   })
 
   describe('drift sync with shared/errors/code.go', () => {
-    const goSource = readFileSync(
-      resolve(REPO_ROOT, 'shared', 'errors', 'code.go'),
-      'utf8'
-    )
+    const goSource = readFileSync(resolve(REPO_ROOT, 'shared', 'errors', 'code.go'), 'utf8')
     const goCodes = parseGoCodeLiterals(goSource)
     const tsCodes = Object.values(ApiErrorCode) as string[]
 

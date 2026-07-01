@@ -2,10 +2,7 @@ import Link from 'next/link'
 
 import { AppShell } from '@/components/app-shell'
 import { ChannelTypeIcon } from '@/components/channel-type-icon'
-import {
-  ChannelUsageScope,
-  buildChannelUsageMap,
-} from '@/components/channel-usage-scope'
+import { ChannelUsageScope, buildChannelUsageMap } from '@/components/channel-usage-scope'
 import { EmptyState } from '@/components/empty-state'
 import { Card, CardContent } from '@/components/ui/card'
 import {

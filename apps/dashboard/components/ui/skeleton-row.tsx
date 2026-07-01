@@ -12,13 +12,7 @@ export function TableCellSkeleton({ index = 0 }: { index?: number }) {
   )
 }
 
-export function TableRowSkeleton({
-  columns,
-  rows = 1,
-}: {
-  columns: number
-  rows?: number
-}) {
+export function TableRowSkeleton({ columns, rows = 1 }: { columns: number; rows?: number }) {
   return (
     <>
       {Array.from({ length: rows }).map((_, rowIndex) => (

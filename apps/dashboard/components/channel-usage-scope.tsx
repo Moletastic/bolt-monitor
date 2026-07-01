@@ -2,7 +2,9 @@ import Link from 'next/link'
 
 import type { EscalationPolicy } from '@/lib/types'
 
-export function buildChannelUsageMap(policies: EscalationPolicy[]): Map<string, EscalationPolicy[]> {
+export function buildChannelUsageMap(
+  policies: EscalationPolicy[]
+): Map<string, EscalationPolicy[]> {
   const usage = new Map<string, EscalationPolicy[]>()
   for (const policy of policies) {
     const seen = new Set<string>()
@@ -27,9 +29,7 @@ export function ChannelUsageScope({
   policies: EscalationPolicy[]
 }) {
   if (policies.length === 0) {
-    return (
-      <span className="text-xs font-medium text-muted-foreground">Unused</span>
-    )
+    return <span className="text-xs font-medium text-muted-foreground">Unused</span>
   }
 
   return (

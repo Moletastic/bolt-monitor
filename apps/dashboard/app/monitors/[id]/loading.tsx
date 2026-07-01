@@ -28,10 +28,7 @@ export default function Loading() {
               </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {Array.from({ length: 6 }).map((_, index) => (
-                  <div
-                    key={index}
-                    className="rounded-lg border border-border bg-surface-low p-4"
-                  >
+                  <div key={index} className="rounded-lg border border-border bg-surface-low p-4">
                     <Skeleton className="h-3 w-24" />
                     <Skeleton className="mt-2 h-6 w-32" />
                   </div>
@@ -52,10 +49,7 @@ export default function Loading() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               {Array.from({ length: 3 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="rounded-lg border border-border bg-surface-low p-4"
-                >
+                <div key={index} className="rounded-lg border border-border bg-surface-low p-4">
                   <Skeleton className="h-3 w-20" />
                   <Skeleton className="mt-2 h-5 w-full" />
                 </div>
@@ -79,10 +73,7 @@ export default function Loading() {
               <CardContent>
                 <div className="grid gap-3">
                   {Array.from({ length: 4 }).map((_, index) => (
-                    <div
-                      key={index}
-                      className="rounded-lg border border-border bg-surface-low p-3"
-                    >
+                    <div key={index} className="rounded-lg border border-border bg-surface-low p-3">
                       <div className="grid gap-2">
                         <Skeleton className="h-4 w-3/4" />
                         <Skeleton className="h-3 w-1/2" />

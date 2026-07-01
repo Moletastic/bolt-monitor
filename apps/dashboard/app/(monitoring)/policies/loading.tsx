@@ -25,10 +25,7 @@ export default function Loading() {
                 <Skeleton className="h-4 w-full" />
                 <dl className="grid grid-cols-2 gap-3">
                   {Array.from({ length: 3 }).map((_, item) => (
-                    <div
-                      className={item === 2 ? 'col-span-2 grid gap-1' : 'grid gap-1'}
-                      key={item}
-                    >
+                    <div className={item === 2 ? 'col-span-2 grid gap-1' : 'grid gap-1'} key={item}>
                       <Skeleton className="h-3 w-20" />
                       <Skeleton className="h-4 w-24" />
                     </div>

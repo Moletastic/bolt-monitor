@@ -25,9 +25,7 @@ export const Status = {
 
 export type StatusValue = (typeof Status)[keyof typeof Status]
 
-export function isSuccess<T>(
-  response: ApiResponse<T>
-): response is ApiResponse<T> & { data: T } {
+export function isSuccess<T>(response: ApiResponse<T>): response is ApiResponse<T> & { data: T } {
   return response.status === Status.Success && response.data !== undefined
 }
 
@@ -38,7 +36,9 @@ export function isError<T>(
 }
 
 export function ok<T>(data: T, message?: string): ApiResponse<T> {
-  return message !== undefined ? { status: Status.Success, data, message } : { status: Status.Success, data }
+  return message !== undefined
+    ? { status: Status.Success, data, message }
+    : { status: Status.Success, data }
 }
 
 export function err<T = never>(
@@ -52,12 +52,7 @@ export function err<T = never>(
     : { status: Status.Error, reason }
 }
 
-export function okPaginated<T>(
-  data: T,
-  page: number,
-  size: number,
-  total: number
-): ApiResponse<T> {
+export function okPaginated<T>(data: T, page: number, size: number, total: number): ApiResponse<T> {
   return {
     status: Status.Success,
     data,

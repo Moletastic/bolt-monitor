@@ -156,7 +156,11 @@ export default async function ServiceDetailPage({
                     ) : null}
                   </div>
                 </div>
-                {(query.created || query.updated || query.archived || query.error || query.deletedMonitor) && (
+                {(query.created ||
+                  query.updated ||
+                  query.archived ||
+                  query.error ||
+                  query.deletedMonitor) && (
                   <p
                     className={`rounded-md border px-3 py-2 text-sm ${query.error ? 'border-status-down/30 bg-status-down/10 text-status-down' : 'border-status-up/30 bg-status-up/10 text-status-up'}`}
                   >
@@ -289,8 +293,8 @@ export default async function ServiceDetailPage({
                       lifecycle state. Editing is disabled while it remains archived.
                     </p>
                     <p>
-                      To make changes again, recreate the service or restore it from archived
-                      state in your source of truth.
+                      To make changes again, recreate the service or restore it from archived state
+                      in your source of truth.
                     </p>
                   </CardContent>
                 </Card>
@@ -340,7 +344,11 @@ export default async function ServiceDetailPage({
               />
             )
           ) : (
-            <MonitorTable monitors={monitors} readOnly={isArchived} returnTo={`/services/${serviceId}`} />
+            <MonitorTable
+              monitors={monitors}
+              readOnly={isArchived}
+              returnTo={`/services/${serviceId}`}
+            />
           )}
         </div>
       </AppShell>

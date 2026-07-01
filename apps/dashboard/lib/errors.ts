@@ -87,10 +87,7 @@ export class ApiError extends Error {
  * @param fallbackStatus HTTP status to attach when the envelope does not
  *                       carry one; defaults to 500.
  */
-export function fromEnvelope(
-  reason: ApiReasonPayload,
-  fallbackStatus = 500
-): ApiError {
+export function fromEnvelope(reason: ApiReasonPayload, fallbackStatus = 500): ApiError {
   if (!isApiErrorCode(reason.code)) {
     throw new Error(
       `fromEnvelope: unknown API error code "${reason.code}". ` +

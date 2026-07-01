@@ -39,9 +39,7 @@ export async function tryCatch<T, E = unknown>(
  * code that didn't originate from the response envelope).
  */
 
-export async function runServerAction<T>(
-  fn: () => Promise<T>
-): Promise<Result<T, ApiError>> {
+export async function runServerAction<T>(fn: () => Promise<T>): Promise<Result<T, ApiError>> {
   return tryCatch(fn, (cause) => {
     if (cause instanceof ApiError) {
       return cause
@@ -55,11 +53,7 @@ export async function runServerAction<T>(
         { message: cause.message }
       )
     }
-    return new ApiError(
-      'INTERNAL' as ApiError['code'],
-      500,
-      { message: String(cause) }
-    )
+    return new ApiError('INTERNAL' as ApiError['code'], 500, { message: String(cause) })
   })
 }
 

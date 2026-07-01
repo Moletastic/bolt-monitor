@@ -46,9 +46,17 @@ describe('result', () => {
   })
 
   it('match() folds a Result into a single value', () => {
-    const onOk = match(ok('hi'), (v) => v.toUpperCase(), () => 'NOPE')
+    const onOk = match(
+      ok('hi'),
+      (v) => v.toUpperCase(),
+      () => 'NOPE'
+    )
     expect(onOk).toBe('HI')
-    const onErr = match(err('bad'), () => 'ok', (e) => `err:${e}`)
+    const onErr = match(
+      err('bad'),
+      () => 'ok',
+      (e) => `err:${e}`
+    )
     expect(onErr).toBe('err:bad')
   })
 

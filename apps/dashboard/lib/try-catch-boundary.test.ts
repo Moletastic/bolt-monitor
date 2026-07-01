@@ -10,11 +10,7 @@ const IO_DIR = resolve(LIB_DIR, 'io')
  * Recursively collect every `.ts`/`.tsx` file under `dir` except those under
  * `excludeDir` (matched by absolute path prefix).
  */
-function collectSources(
-  dir: string,
-  excludeDir: string,
-  acc: string[] = []
-): string[] {
+function collectSources(dir: string, excludeDir: string, acc: string[] = []): string[] {
   let entries: string[]
   try {
     entries = readdirSync(dir)
@@ -48,9 +44,7 @@ function collectSources(
  * `try` mentioned in JSDoc doesn't trigger the guard.
  */
 function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/.*$/gm, '')
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
 }
 
 /**
@@ -83,9 +77,7 @@ describe('try/catch boundary guard', () => {
       const message = offenders
         .map((o) => `  ${o.file.replace(DASHBOARD_ROOT + '/', '')}`)
         .join('\n')
-      throw new Error(
-        `try/catch is not allowed in lib/** except lib/io/**. Offenders:\n${message}`
-      )
+      throw new Error(`try/catch is not allowed in lib/** except lib/io/**. Offenders:\n${message}`)
     }
   })
 })

@@ -75,10 +75,7 @@ export function map<T, U, E>(r: Result<T, E>, f: (value: T) => U): Result<U, E> 
  * @param f The function returning a new `Result` from the value.
  * @returns The chained `Result<U, E>`.
  */
-export function flatMap<T, U, E>(
-  r: Result<T, E>,
-  f: (value: T) => Result<U, E>
-): Result<U, E> {
+export function flatMap<T, U, E>(r: Result<T, E>, f: (value: T) => Result<U, E>): Result<U, E> {
   return r.ok ? f(r.value) : r
 }
 

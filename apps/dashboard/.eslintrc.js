@@ -23,13 +23,7 @@ module.exports = {
   },
   plugins: ['@typescript-eslint'],
   extends: ['next/core-web-vitals', 'plugin:@typescript-eslint/recommended'],
-  ignorePatterns: [
-    '.next',
-    'node_modules',
-    'next.config.ts',
-    'next-env.d.ts',
-    'vitest.config.ts',
-  ],
+  ignorePatterns: ['.next', 'node_modules', 'next.config.ts', 'next-env.d.ts', 'vitest.config.ts'],
   rules: {
     '@typescript-eslint/no-explicit-any': 'error',
     '@typescript-eslint/no-unsafe-argument': 'error',

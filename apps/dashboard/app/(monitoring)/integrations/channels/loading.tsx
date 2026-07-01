@@ -2,13 +2,7 @@ import { AppShell } from '@/components/app-shell'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { TableRowSkeleton } from '@/components/ui/skeleton-row'
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export default function Loading() {
   return (
