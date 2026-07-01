@@ -80,5 +80,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --reporter=silent
 
+      - name: Generate SST types
+        run: pnpm run install:providers
+
       - name: Typecheck
         run: pnpm run check
