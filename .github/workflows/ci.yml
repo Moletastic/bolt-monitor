@@ -22,6 +22,11 @@ jobs:
         with:
           go-version-file: go.work
           cache: true
+          cache-dependency-path: |
+            services/**/go.sum
+            shared/**/go.sum
+            services/**/go.mod
+            shared/**/go.mod
 
       - name: Run Go CI
         run: make ci-go
