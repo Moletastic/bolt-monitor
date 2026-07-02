@@ -37,6 +37,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.1 // indirect
 	github.com/aws/smithy-go v1.27.1 // indirect
+	github.com/stretchr/testify v1.8.4 // indirect
 )
 
 replace bolt-monitor/shared/checkexecution => ../../shared/checkexecution

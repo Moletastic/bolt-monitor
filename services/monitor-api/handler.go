@@ -796,6 +796,10 @@ func (h monitorHandler) notificationChannelFromRequest(request events.APIGateway
 		resp, _ := respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 		return escalation.NotificationChannel{}, resp, false
 	}
+	if err := validateInput(payload); err != nil {
+		resp, _ := respondAPIGateway(err)
+		return escalation.NotificationChannel{}, resp, false
+	}
 	channel := escalation.NotificationChannel{}
 	if current != nil {
 		channel = *current
@@ -812,6 +816,10 @@ func (h monitorHandler) notificationChannelFromRequest(request events.APIGateway
 	if payload.Config != nil {
 		channel.Config = append(json.RawMessage(nil), payload.Config...)
 	}
+	if err := validateInput(notificationChannelInput{Name: channel.Name, Type: string(channel.Type), Target: channel.Target}); err != nil {
+		resp, _ := respondAPIGateway(err)
+		return escalation.NotificationChannel{}, resp, false
+	}
 	if err := validateNotificationChannel(channel); err != nil {
 		resp, _ := respondAPIGateway(err)
 		return escalation.NotificationChannel{}, resp, false
@@ -820,18 +828,6 @@ func (h monitorHandler) notificationChannelFromRequest(request events.APIGateway
 }
 
 func validateNotificationChannel(channel escalation.NotificationChannel) error {
-	if strings.TrimSpace(channel.Name) == "" {
-		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "name", "reason": "required"})
-	}
-	if len(strings.TrimSpace(channel.Name)) > 80 {
-		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "name", "reason": "must be 80 characters or less"})
-	}
-	if strings.TrimSpace(string(channel.Type)) == "" {
-		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "type", "reason": "required"})
-	}
-	if strings.TrimSpace(channel.Target) == "" {
-		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "target", "reason": "required"})
-	}
 	cfg := map[string]any{}
 	if len(channel.Config) > 0 {
 		if err := json.Unmarshal(channel.Config, &cfg); err != nil {
@@ -977,13 +973,17 @@ func (h monitorHandler) policyFromRequest(ctx context.Context, request events.AP
 		resp, _ := respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 		return escalation.EscalationPolicy{}, resp, false
 	}
+	if err := validateInput(payload); err != nil {
+		resp, _ := respondAPIGateway(err)
+		return escalation.EscalationPolicy{}, resp, false
+	}
 	policy := escalation.EscalationPolicy{
 		TenantID:          h.tenantID,
 		PolicyID:          policyID,
 		Name:              strings.TrimSpace(payload.Name),
 		Description:       strings.TrimSpace(payload.Description),
-		BusinessHoursPath: cloneEscalationPath(payload.BusinessHoursPath),
-		OffHoursPath:      cloneEscalationPath(payload.OffHoursPath),
+		BusinessHoursPath: escalationPathFromRequest(payload.BusinessHoursPath),
+		OffHoursPath:      escalationPathFromRequest(payload.OffHoursPath),
 	}
 	if err := h.validateEscalationPolicy(ctx, policy); err != nil {
 		resp, _ := respondAPIGateway(err)
@@ -993,15 +993,6 @@ func (h monitorHandler) policyFromRequest(ctx context.Context, request events.AP
 }
 
 func (h monitorHandler) validateEscalationPolicy(ctx context.Context, policy escalation.EscalationPolicy) error {
-	if strings.TrimSpace(policy.Name) == "" {
-		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "name", "reason": "required"})
-	}
-	if len(policy.BusinessHoursPath.Steps) == 0 {
-		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "businessHoursPath", "reason": "must have at least one step"})
-	}
-	if len(policy.OffHoursPath.Steps) == 0 {
-		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "offHoursPath", "reason": "must have at least one step"})
-	}
 	for _, path := range []struct {
 		name string
 		path escalation.EscalationPath
@@ -1021,6 +1012,17 @@ func (h monitorHandler) validateEscalationPolicy(ctx context.Context, policy esc
 		}
 	}
 	return nil
+}
+
+func escalationPathFromRequest(path escalationPathRequest) escalation.EscalationPath {
+	steps := make([]escalation.EscalationStep, 0, len(path.Steps))
+	for _, step := range path.Steps {
+		steps = append(steps, escalation.EscalationStep{
+			ChannelID:    strings.TrimSpace(step.ChannelID),
+			DelayMinutes: step.DelayMinutes,
+		})
+	}
+	return escalation.EscalationPath{Steps: steps}
 }
 
 func requestHasInlineStepConfig(body string) bool {

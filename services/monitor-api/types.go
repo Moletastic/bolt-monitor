@@ -75,10 +75,16 @@ type listNotificationChannelsResponse struct {
 }
 
 type notificationChannelRequest struct {
-	Name   *string         `json:"name,omitempty"`
-	Type   *string         `json:"type,omitempty"`
-	Target *string         `json:"target,omitempty"`
+	Name   *string         `json:"name,omitempty" validate:"omitempty,notblank,max=80"`
+	Type   *string         `json:"type,omitempty" validate:"omitempty,notblank"`
+	Target *string         `json:"target,omitempty" validate:"omitempty,notblank"`
 	Config json.RawMessage `json:"config,omitempty"`
+}
+
+type notificationChannelInput struct {
+	Name   string `json:"name" validate:"notblank,max=80"`
+	Type   string `json:"type" validate:"notblank"`
+	Target string `json:"target" validate:"notblank"`
 }
 
 type routeReference struct {
@@ -92,10 +98,19 @@ type channelInUseResponse struct {
 }
 
 type escalationPolicyRequest struct {
-	Name              string                    `json:"name"`
-	Description       string                    `json:"description,omitempty"`
-	BusinessHoursPath escalation.EscalationPath `json:"businessHoursPath"`
-	OffHoursPath      escalation.EscalationPath `json:"offHoursPath"`
+	Name              string                `json:"name" validate:"notblank"`
+	Description       string                `json:"description,omitempty"`
+	BusinessHoursPath escalationPathRequest `json:"businessHoursPath" validate:"required"`
+	OffHoursPath      escalationPathRequest `json:"offHoursPath" validate:"required"`
+}
+
+type escalationPathRequest struct {
+	Steps []escalationStepRequest `json:"steps" validate:"min=1,dive"`
+}
+
+type escalationStepRequest struct {
+	ChannelID    string `json:"channelId" validate:"notblank"`
+	DelayMinutes int    `json:"delayMinutes"`
 }
 
 type escalationStateResponse struct {

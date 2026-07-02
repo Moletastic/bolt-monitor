@@ -47,6 +47,7 @@ func TestServiceBusinessHoursClone(t *testing.T) {
 	clone := cloneBusinessHoursConfig(service.BusinessHours)
 	if clone == nil {
 		t.Fatal("cloneBusinessHoursConfig returned nil")
+		return
 	}
 	if clone.Timezone != "America/New_York" {
 		t.Fatalf("Timezone = %q, want America/New_York", clone.Timezone)
