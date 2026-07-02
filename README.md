@@ -1,6 +1,7 @@
 # ⚡ bolt-monitor
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev)
+[![CI](https://github.com/Moletastic/bolt-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/Moletastic/bolt-monitor/actions/workflows/ci.yml)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript)](https://www.typescriptlang.org)
 [![AWS Lambda](https://img.shields.io/badge/AWS-Lambda-FF9900?logo=amazon-aws)](https://aws.amazon.com/lambda/)
