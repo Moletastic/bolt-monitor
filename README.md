@@ -37,7 +37,7 @@ Known limitations today:
 
 - Single built-in tenant ID: `DEFAULT`
 - Single execution environment; regional probe selection is intentionally out of scope for now
-- No auth, RBAC, or multi-user model yet
+- Authentication, RBAC, and multi-user access are intentionally outside the current single-operator scope
 - Local and deploy flows assume AWS credentials already exist and SST uses AWS profile `bolt-monitor` by default
 - No production hardening claims around security, scaling policy, backup policy, or multi-region execution
 
@@ -242,7 +242,7 @@ Expected outputs include:
 
 `dashboardUrl` is the generated CloudFront hostname for the deployed operator console. No custom DNS is required for the first deployment.
 
-The dashboard is currently an operator UI without an auth layer, so treat the generated URL as publicly reachable infrastructure until a follow-on access-control change lands.
+The dashboard is currently designed for private or controlled deployments. Until authentication and RBAC land in a follow-on change, place deployed dashboard URLs behind environment-level access controls such as a private network, VPN, SSO proxy, or restricted ingress.
 
 ## 🗺️ Roadmap
 
