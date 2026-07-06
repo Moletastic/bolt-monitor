@@ -24,6 +24,7 @@ func TestRegistryCoversAllConstants(t *testing.T) {
 		CodePolicyNotFound,
 		CodePolicyReferenced,
 		CodeChannelNotFound,
+		CodeNotificationDelivery,
 		CodeInternal,
 	}
 	for _, code := range allCodes {
@@ -67,6 +68,7 @@ func TestCodeWireIdentity(t *testing.T) {
 		CodePolicyNotFound:        "POLICY_NOT_FOUND",
 		CodePolicyReferenced:      "POLICY_REFERENCED",
 		CodeChannelNotFound:       "CHANNEL_NOT_FOUND",
+		CodeNotificationDelivery:  "NOTIFICATION_DELIVERY_FAILED",
 		CodeInternal:              "INTERNAL",
 	}
 	for code, want := range cases {

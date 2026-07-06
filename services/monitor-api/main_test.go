@@ -16,6 +16,7 @@ import (
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/monitorconfig"
+	"bolt-monitor/shared/notifications"
 	"bolt-monitor/shared/resultstatus"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -33,7 +34,32 @@ type fakeMonitorRepository struct {
 	activities       map[string][]dynamodbrecord.IncidentActivityRecord
 	audit            map[string][]auditEventView
 	scheduler        dynamodbrecord.SchedulerConfigRecord
+	channelTestAudit []channelTestAuditRecord
 }
+
+type channelTestAuditRecord struct {
+	TenantID    string
+	ChannelID   string
+	ChannelType string
+	Outcome     string
+	Reason      string
+	OccurredAt  time.Time
+}
+
+type fakeNotificationSender struct {
+	channelType   string
+	err           error
+	notifications []notifications.Notification
+}
+
+func (s *fakeNotificationSender) Send(_ context.Context, notification notifications.Notification) error {
+	s.notifications = append(s.notifications, notification)
+	return s.err
+}
+
+func (s *fakeNotificationSender) ChannelType() string { return s.channelType }
+
+func (s *fakeNotificationSender) ValidateConfig(json.RawMessage) error { return nil }
 
 type fakeDynamoClient struct {
 	transactInput  *sharedaws.DynamoDBTransactWriteItemsInput
@@ -521,6 +547,11 @@ func (r *fakeMonitorRepository) DeleteNotificationChannel(_ context.Context, ten
 	return nil
 }
 
+func (r *fakeMonitorRepository) RecordNotificationChannelTestAudit(_ context.Context, tenantID, channelID, channelType, outcome, reason string, occurredAt time.Time) error {
+	r.channelTestAudit = append(r.channelTestAudit, channelTestAuditRecord{TenantID: tenantID, ChannelID: channelID, ChannelType: channelType, Outcome: outcome, Reason: reason, OccurredAt: occurredAt})
+	return nil
+}
+
 func (r *fakeMonitorRepository) ChannelsReferencedByRoutes(_ context.Context, tenantID, channelID string) ([]routeReference, error) {
 	references := []routeReference{}
 	for _, policy := range r.policies {
@@ -970,6 +1001,110 @@ func TestDeleteNotificationChannelBlockedWhenReferenced(t *testing.T) {
 	}
 	if !strings.Contains(response.Body, "referencingRoutes") {
 		t.Fatalf("body = %s", response.Body)
+	}
+}
+
+func TestNotificationChannelTestSendSucceedsForReferencedChannel(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.channels["CH_1"] = escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Name: "Primary", Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"secret"}`)}
+	repo.policies["POL_1"] = escalation.EscalationPolicy{TenantID: defaultTenantID, PolicyID: "POL_1", Name: "Route", BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1"}}}, OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1"}}}}
+	sender := &fakeNotificationSender{channelType: "telegram"}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	handler.now = func() time.Time { return time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC) }
+	handler.senders = notifications.SenderRegistry{"telegram": sender}
+
+	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1/test", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body=%s, want %d", response.StatusCode, response.Body, http.StatusOK)
+	}
+	var envelope struct {
+		Status string                          `json:"status"`
+		Data   notificationChannelTestResponse `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(response.Body), &envelope); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if envelope.Status != "success" || envelope.Data.ChannelID != "CH_1" || envelope.Data.SentAt != "2026-07-06T12:00:00Z" {
+		t.Fatalf("envelope = %+v", envelope)
+	}
+	if len(sender.notifications) != 1 {
+		t.Fatalf("notifications sent = %d, want 1", len(sender.notifications))
+	}
+	if !strings.Contains(sender.notifications[0].Message, "No incident was created") {
+		t.Fatalf("test message = %q", sender.notifications[0].Message)
+	}
+	var sentConfig map[string]any
+	if err := json.Unmarshal(sender.notifications[0].Config, &sentConfig); err != nil {
+		t.Fatalf("json.Unmarshal sent config: %v", err)
+	}
+	if sentConfig["chatId"] != "chat-1" || sentConfig["botToken"] != "secret" {
+		t.Fatalf("sent config = %+v", sentConfig)
+	}
+	if len(repo.channelTestAudit) != 1 || repo.channelTestAudit[0].Outcome != "success" || repo.channelTestAudit[0].ChannelID != "CH_1" {
+		t.Fatalf("audit = %+v", repo.channelTestAudit)
+	}
+	if len(repo.incidents) != 0 || len(repo.runs) != 0 || len(repo.escalationStates) != 0 {
+		t.Fatalf("test send created operational state: incidents=%d runs=%d escalationStates=%d", len(repo.incidents), len(repo.runs), len(repo.escalationStates))
+	}
+}
+
+func TestNotificationChannelTestSendNotFound(t *testing.T) {
+	handler := newMonitorHandler(newFakeMonitorRepository(), defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/MISSING/test", PathParameters: map[string]string{"channelId": "MISSING"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusNotFound || !strings.Contains(response.Body, "CHANNEL_NOT_FOUND") {
+		t.Fatalf("response = %d %s", response.StatusCode, response.Body)
+	}
+}
+
+func TestNotificationChannelTestSendFailuresAreTypedAndAudited(t *testing.T) {
+	tests := []struct {
+		name       string
+		channel    escalation.NotificationChannel
+		senders    notifications.SenderRegistry
+		wantReason string
+	}{
+		{name: "unsupported sender", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelType("unknown"), Target: "target", Config: json.RawMessage(`{}`)}, senders: notifications.SenderRegistry{}, wantReason: "sender not registered"},
+		{name: "invalid config", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelTypeTelegram, Target: "chat", Config: json.RawMessage(`{"botToken":`)}, senders: notifications.SenderRegistry{"telegram": &fakeNotificationSender{channelType: "telegram"}}, wantReason: "invalid telegram config"},
+		{name: "provider failure redacted", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelTypeTelegram, Target: "chat", Config: json.RawMessage(`{"botToken":"secret-token"}`)}, senders: notifications.SenderRegistry{"telegram": &fakeNotificationSender{channelType: "telegram", err: stderrors.New("telegram rejected botToken secret-token Authorization Bearer")}}, wantReason: "telegram rejected [redacted] [redacted] [redacted] [redacted]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newFakeMonitorRepository()
+			repo.channels["CH_1"] = tt.channel
+			handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+			handler.senders = tt.senders
+			request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1/test", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+
+			response, err := handler.handleRequest(context.Background(), request)
+			if err != nil {
+				t.Fatalf("handleRequest returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusBadGateway || !strings.Contains(response.Body, "NOTIFICATION_DELIVERY_FAILED") {
+				t.Fatalf("response = %d %s", response.StatusCode, response.Body)
+			}
+			if !strings.Contains(response.Body, tt.wantReason) {
+				t.Fatalf("response body = %s, want reason containing %q", response.Body, tt.wantReason)
+			}
+			if strings.Contains(response.Body, "secret-token") || strings.Contains(response.Body, "botToken") || strings.Contains(response.Body, "Authorization") || strings.Contains(response.Body, "Bearer") {
+				t.Fatalf("response leaked secret material: %s", response.Body)
+			}
+			if len(repo.channelTestAudit) != 1 || repo.channelTestAudit[0].Outcome != "failure" || !strings.Contains(repo.channelTestAudit[0].Reason, tt.wantReason) {
+				t.Fatalf("audit = %+v", repo.channelTestAudit)
+			}
+			if strings.Contains(repo.channelTestAudit[0].Reason, "secret-token") || strings.Contains(repo.channelTestAudit[0].Reason, "botToken") {
+				t.Fatalf("audit leaked secret material: %+v", repo.channelTestAudit[0])
+			}
+		})
 	}
 }
 

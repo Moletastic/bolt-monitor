@@ -14,6 +14,7 @@ import (
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/monitorconfig"
+	"bolt-monitor/shared/notifications"
 	"bolt-monitor/shared/probelocationcatalog"
 	"bolt-monitor/shared/resultstatus"
 	"github.com/aws/aws-lambda-go/events"
@@ -60,6 +61,7 @@ type monitorRepository interface {
 	UpdateNotificationChannel(context.Context, escalation.NotificationChannel) (escalation.NotificationChannel, error)
 	DeleteNotificationChannel(context.Context, string, string) error
 	ChannelsReferencedByRoutes(context.Context, string, string) ([]routeReference, error)
+	RecordNotificationChannelTestAudit(context.Context, string, string, string, string, string, time.Time) error
 	GetEscalationState(context.Context, string, string) (*escalation.EscalationState, error)
 }
 
@@ -68,10 +70,21 @@ type monitorHandler struct {
 	catalog  probelocationcatalog.Catalog
 	tenantID string
 	now      func() time.Time
+	senders  notifications.SenderRegistry
 }
 
 func newMonitorHandler(repo monitorRepository, catalog probelocationcatalog.Catalog, tenantID string) monitorHandler {
-	return monitorHandler{repo: repo, catalog: catalog, tenantID: tenantID, now: time.Now}
+	return monitorHandler{repo: repo, catalog: catalog, tenantID: tenantID, now: time.Now, senders: defaultNotificationSenderRegistry()}
+}
+
+func defaultNotificationSenderRegistry() notifications.SenderRegistry {
+	return notifications.SenderRegistry{
+		"telegram":  notifications.NewTelegramSender(),
+		"email":     notifications.NewEmailSender(),
+		"sms":       notifications.NewSMSSender(),
+		"webhook":   notifications.NewWebhookSender(),
+		"pagerduty": notifications.NewPagerDutySender(),
+	}
 }
 
 func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -84,6 +97,7 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	channelID := strings.TrimSpace(request.PathParameters["channelId"])
 	if channelID == "" && strings.HasPrefix(path, "/api/v1/notification-channels/") {
 		channelID = strings.TrimPrefix(path, "/api/v1/notification-channels/")
+		channelID = strings.TrimSuffix(channelID, "/test")
 	}
 	switch {
 	case method == http.MethodGet && path == "/api/v1/probe-locations":
@@ -98,6 +112,8 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 		return h.updateNotificationChannel(ctx, channelID, request)
 	case method == http.MethodDelete && channelID != "" && path == "/api/v1/notification-channels/"+channelID:
 		return h.deleteNotificationChannel(ctx, channelID)
+	case method == http.MethodPost && channelID != "" && path == "/api/v1/notification-channels/"+channelID+"/test":
+		return h.testNotificationChannel(ctx, channelID)
 	case method == http.MethodPost && path == "/api/v1/escalation-policies":
 		return h.createEscalationPolicy(ctx, request)
 	case method == http.MethodGet && path == "/api/v1/escalation-policies":
@@ -788,6 +804,104 @@ func (h monitorHandler) deleteNotificationChannel(ctx context.Context, channelID
 		return respondAPIGateway(err)
 	}
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
+}
+
+func (h monitorHandler) testNotificationChannel(ctx context.Context, channelID string) (events.APIGatewayV2HTTPResponse, error) {
+	channel, err := h.repo.GetNotificationChannel(ctx, h.tenantID, channelID)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	if channel == nil {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeChannelNotFound, nil))
+	}
+	sender, ok := h.senders.Get(string(channel.Type))
+	if !ok {
+		return h.recordChannelTestFailure(ctx, *channel, "sender not registered")
+	}
+	config, err := mergeNotificationChannelTarget(*channel)
+	if err != nil {
+		return h.recordChannelTestFailure(ctx, *channel, err.Error())
+	}
+	now := h.now().UTC()
+	notification := notifications.Notification{
+		EventType:   notifications.EventTypeIncidentDown,
+		TenantID:    h.tenantID,
+		MonitorID:   "notification-channel-test",
+		ServiceID:   "notification-channel-test",
+		MonitorName: "Notification channel test",
+		ServiceName: "Bolt Monitor",
+		Timestamp:   now,
+		Message:     fmt.Sprintf("Bolt Monitor test notification\n\nChannel: %s\nType: %s\nThis is a test message from the dashboard. No incident was created.", channel.Name, channel.Type),
+		IncidentID:  "notification-channel-test",
+		Config:      config,
+	}
+	if err := sender.Send(ctx, notification); err != nil {
+		return h.recordChannelTestFailure(ctx, *channel, err.Error())
+	}
+	if err := h.repo.RecordNotificationChannelTestAudit(ctx, h.tenantID, channel.ChannelID, string(channel.Type), "success", "", now); err != nil {
+		return respondAPIGateway(err)
+	}
+	return envelopeResponse(http.StatusOK, response.Ok(notificationChannelTestResponse{ChannelID: channel.ChannelID, SentAt: now.Format(time.RFC3339)}, "Test notification sent."))
+}
+
+func (h monitorHandler) recordChannelTestFailure(ctx context.Context, channel escalation.NotificationChannel, reason string) (events.APIGatewayV2HTTPResponse, error) {
+	now := h.now().UTC()
+	sanitized := sanitizeNotificationDeliveryError(reason, channel.Config)
+	if err := h.repo.RecordNotificationChannelTestAudit(ctx, h.tenantID, channel.ChannelID, string(channel.Type), "failure", sanitized, now); err != nil {
+		return respondAPIGateway(err)
+	}
+	return respondAPIGateway(sharederrors.New(sharederrors.CodeNotificationDelivery, map[string]any{"channelId": channel.ChannelID, "type": string(channel.Type), "reason": sanitized}))
+}
+
+func mergeNotificationChannelTarget(channel escalation.NotificationChannel) (json.RawMessage, error) {
+	config := map[string]any{}
+	if len(channel.Config) > 0 {
+		if err := json.Unmarshal(channel.Config, &config); err != nil {
+			return nil, fmt.Errorf("invalid %s config", channel.Type)
+		}
+	}
+	target := strings.TrimSpace(channel.Target)
+	if target != "" {
+		switch channel.Type {
+		case escalation.ChannelTypeTelegram:
+			config["chatId"] = target
+		case escalation.ChannelTypeEmail:
+			config["toEmail"] = target
+		case escalation.ChannelTypeSMS:
+			config["toNumber"] = target
+		case escalation.ChannelTypeWebhook:
+			config["url"] = target
+		case escalation.ChannelTypePagerDuty:
+			config["routingKey"] = target
+		}
+	}
+	return json.Marshal(config)
+}
+
+func sanitizeNotificationDeliveryError(reason string, config json.RawMessage) string {
+	trimmed := strings.TrimSpace(reason)
+	if trimmed == "" {
+		return "notification delivery failed"
+	}
+	secretValues := map[string]struct{}{}
+	var cfg map[string]any
+	if err := json.Unmarshal(config, &cfg); err == nil {
+		for _, key := range []string{"botToken", "apiKey", "authToken", "accountSid"} {
+			if value, ok := cfg[key].(string); ok && strings.TrimSpace(value) != "" {
+				secretValues[value] = struct{}{}
+			}
+		}
+	}
+	for value := range secretValues {
+		trimmed = strings.ReplaceAll(trimmed, value, "[redacted]")
+	}
+	for _, key := range []string{"botToken", "apiKey", "authToken", "accountSid", "Authorization", "Bearer"} {
+		trimmed = strings.ReplaceAll(trimmed, key, "[redacted]")
+	}
+	if len(trimmed) > 240 {
+		trimmed = trimmed[:240]
+	}
+	return trimmed
 }
 
 func (h monitorHandler) notificationChannelFromRequest(request events.APIGatewayV2HTTPRequest, current *escalation.NotificationChannel) (escalation.NotificationChannel, events.APIGatewayV2HTTPResponse, bool) {

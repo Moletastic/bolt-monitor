@@ -22,13 +22,14 @@ import {
   createNotificationChannel,
   updateNotificationChannel,
   deleteNotificationChannel,
+  testNotificationChannel,
   listProbeLocations,
 } from '@/lib/api'
 import { getMonitorLocationField } from '@/lib/probe-locations'
 import { parseJson, runServerAction } from '@/lib/io/server-action'
 import { err, isErr, ok, type Result } from '@/lib/result'
 import { actionErr, actionOk, type ActionState } from '@/lib/action-state'
-import { messageFor } from '@/lib/errors'
+import { ApiErrorCode, messageFor } from '@/lib/errors'
 import type {
   CreateServicePayload,
   CreateMonitorPayload,
@@ -673,4 +674,30 @@ export async function deleteNotificationChannelAction(formData: FormData) {
   }
   revalidatePath('/integrations/channels')
   redirect('/integrations/channels?deleted=1')
+}
+
+export async function testNotificationChannelStateAction(
+  _previousState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const channelId = String(formData.get('channelId') ?? '').trim()
+  const result = await runServerAction(() => testNotificationChannel(channelId))
+  if (isErr(result)) {
+    if (result.error.code === ApiErrorCode.NotificationDeliveryFailed) {
+      const reason = result.error.details.reason
+      return {
+        status: 'error',
+        error: {
+          code: result.error.code,
+          details: result.error.details,
+          message:
+            typeof reason === 'string' && reason.trim()
+              ? `Test notification failed: ${reason}`
+              : 'Test notification could not be delivered.',
+        },
+      }
+    }
+    return actionErr(result.error)
+  }
+  return actionOk(undefined, 'Test notification sent.')
 }

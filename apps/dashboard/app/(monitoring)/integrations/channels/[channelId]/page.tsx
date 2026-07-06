@@ -4,8 +4,9 @@ import { AppShell } from '@/components/app-shell'
 import { ChannelUsageScope, buildChannelUsageMap } from '@/components/channel-usage-scope'
 import { DeleteResourceForm } from '@/components/delete-resource-form'
 import { NotificationChannelForm } from '@/components/notification-channel-form'
+import { SamePageActionForm } from '@/components/same-page-action-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { deleteNotificationChannelAction } from '@/lib/actions'
+import { deleteNotificationChannelAction, testNotificationChannelStateAction } from '@/lib/actions'
 import { getNotificationChannel, listEscalationPolicies } from '@/lib/api'
 
 export default async function EditChannelPage({
@@ -33,8 +34,24 @@ export default async function EditChannelPage({
           <CardHeader>
             <CardTitle>Channel details</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-5">
             <NotificationChannelForm channel={channel} />
+            <div className="rounded-lg border border-border bg-surface-low p-4">
+              <h2 className="text-sm font-semibold text-foreground">Test delivery</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Send a real test notification to this registered destination. No incident will be
+                created.
+              </p>
+              <SamePageActionForm
+                action={testNotificationChannelStateAction}
+                buttonLabel="Send test"
+                className="mt-4"
+                pendingLabel="Sending test..."
+                variant="secondary"
+              >
+                <input name="channelId" type="hidden" value={channel.channelId} />
+              </SamePageActionForm>
+            </div>
           </CardContent>
         </Card>
         <Card className="border-status-down/30">

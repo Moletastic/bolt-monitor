@@ -23,6 +23,19 @@ describe('dashboard interaction smoothness guards', () => {
     expect(pollingProvider).toContain('clearInterval(intervalRef.current)')
   })
 
+  it('keeps notification channel test sends on same-page action state', async () => {
+    const channelPage = await source('app/(monitoring)/integrations/channels/[channelId]/page.tsx')
+    const actions = await source('lib/actions.ts')
+    const api = await source('lib/api.ts')
+
+    expect(channelPage).toContain('buttonLabel="Send test"')
+    expect(channelPage).toContain('pendingLabel="Sending test..."')
+    expect(channelPage).toContain('testNotificationChannelStateAction')
+    expect(actions).toContain('testNotificationChannelStateAction')
+    expect(actions).toContain("return actionOk(undefined, 'Test notification sent.')")
+    expect(api).toContain('/api/v1/notification-channels/${channelId}/test')
+  })
+
   it('keeps imperative router navigation out of dashboard components', async () => {
     const files = [
       'components/same-page-action-form.tsx',

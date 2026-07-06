@@ -309,6 +309,13 @@ export async function deleteNotificationChannel(channelId: string) {
   await apiRequestVoid(`/api/v1/notification-channels/${channelId}`, { method: 'DELETE' })
 }
 
+export async function testNotificationChannel(channelId: string) {
+  return apiRequest<{ channelId: string; sentAt: string }>(
+    `/api/v1/notification-channels/${channelId}/test`,
+    { method: 'POST' }
+  )
+}
+
 export async function getEscalationPolicy(policyId: string) {
   return apiRequest<EscalationPolicy>(`/api/v1/escalation-policies/${policyId}`)
 }

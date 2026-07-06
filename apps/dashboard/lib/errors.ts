@@ -31,6 +31,7 @@ export const ApiErrorCode = {
   PolicyNotFound: 'POLICY_NOT_FOUND',
   PolicyReferenced: 'POLICY_REFERENCED',
   ChannelNotFound: 'CHANNEL_NOT_FOUND',
+  NotificationDeliveryFailed: 'NOTIFICATION_DELIVERY_FAILED',
   Internal: 'INTERNAL',
 } as const
 
@@ -126,6 +127,7 @@ const HUMANIZED: Record<ApiErrorCode, string> = {
   POLICY_NOT_FOUND: 'That escalation policy does not exist.',
   POLICY_REFERENCED: 'The escalation policy is still referenced by a service.',
   CHANNEL_NOT_FOUND: 'That notification channel does not exist.',
+  NOTIFICATION_DELIVERY_FAILED: 'The test notification could not be delivered.',
   INTERNAL: 'The server hit an unexpected error.',
 }
 

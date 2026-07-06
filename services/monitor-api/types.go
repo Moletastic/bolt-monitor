@@ -97,6 +97,11 @@ type channelInUseResponse struct {
 	ReferencingRoutes []routeReference `json:"referencingRoutes"`
 }
 
+type notificationChannelTestResponse struct {
+	ChannelID string `json:"channelId"`
+	SentAt    string `json:"sentAt"`
+}
+
 type escalationPolicyRequest struct {
 	Name              string                `json:"name" validate:"notblank"`
 	Description       string                `json:"description,omitempty"`

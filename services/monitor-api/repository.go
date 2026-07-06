@@ -1486,6 +1486,27 @@ func (r *dynamoMonitorRepository) DeleteNotificationChannel(ctx context.Context,
 	return err
 }
 
+func (r *dynamoMonitorRepository) RecordNotificationChannelTestAudit(ctx context.Context, tenantID, channelID, channelType, outcome, reason string, now time.Time) error {
+	if err := r.requireTableName(); err != nil {
+		return err
+	}
+	auditID := newAuditID(now)
+	auditEvent := dynamodbrecord.NewAuditEventRecord(now, auditID, tenantID, "NOTIFICATION_CHANNEL_TEST_SENT", "notification-channel", channelID)
+	records := []any{
+		auditEvent,
+		dynamodbrecord.NewAuditChangeRecord(auditEvent.AuditID, "channelType", "", channelType),
+		dynamodbrecord.NewAuditChangeRecord(auditEvent.AuditID, "outcome", "", outcome),
+	}
+	if strings.TrimSpace(reason) != "" {
+		records = append(records, dynamodbrecord.NewAuditChangeRecord(auditEvent.AuditID, "reason", "", reason))
+	}
+	items, err := marshalPutItems(r.tableName, records...)
+	if err != nil {
+		return err
+	}
+	return r.writeTransaction(ctx, items)
+}
+
 func (r *dynamoMonitorRepository) ChannelsReferencedByRoutes(ctx context.Context, tenantID, channelID string) ([]routeReference, error) {
 	policies, err := r.ListEscalationPolicies(ctx, tenantID)
 	if err != nil {
