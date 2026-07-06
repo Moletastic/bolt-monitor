@@ -36,7 +36,7 @@ describe('dashboard interaction smoothness guards', () => {
     expect(actions).toContain('testNotificationChannelStateAction')
     expect(actions).toContain("return actionOk(undefined, 'Test notification sent.')")
     expect(api).toContain('/api/v1/notification-channels/${channelId}/test')
-    expect(infra).toContain("POST /api/v1/notification-channels/{channelId}/test")
+    expect(infra).toContain('POST /api/v1/notification-channels/{channelId}/test')
   })
 
   it('explains Telegram chat ID setup before test sends fail', async () => {
