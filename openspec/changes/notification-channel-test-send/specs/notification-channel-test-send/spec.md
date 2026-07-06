@@ -81,3 +81,8 @@ The dashboard SHALL expose a `Send test` action on the notification channel deta
 - **WHEN** a channel test send fails
 - **THEN** the dashboard shows an accessible error message using the typed dashboard error message rules
 - **AND** the operator remains on the channel detail page
+
+#### Scenario: Telegram target setup is explained
+- **WHEN** an operator creates or edits a Telegram channel before sending a test notification
+- **THEN** the dashboard explains that the target must be the numeric Telegram chat ID
+- **AND** the dashboard explains that the bot must first have access to the target chat

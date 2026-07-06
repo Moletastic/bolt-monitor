@@ -28,6 +28,7 @@
 - [x] 4.3 Add a `Send test` button to existing channel detail pages only, visually separated from delete controls.
 - [x] 4.4 Show pending, success, and error feedback inline on the channel detail page without duplicate toast feedback.
 - [x] 4.5 Keep the operator on the channel detail page after success or failure.
+- [x] 4.6 Add Telegram chat ID setup guidance so operators know the bot must have access to the target chat.
 
 ## 5. Coverage
 
@@ -36,6 +37,7 @@
 - [x] 5.3 Add monitor API tests proving channels referenced by routes can still be tested.
 - [x] 5.4 Add dashboard tests or guard coverage for the channel detail `Send test` action and typed feedback surfaces.
 - [x] 5.5 Add sender/config tests for sanitized delivery failure output where practical.
+- [x] 5.6 Add sender coverage that maps Telegram `chat not found` into actionable operator guidance.
 
 ## 6. Verification
 
@@ -44,4 +46,4 @@
 - [x] 6.3 Run `make lint-dashboard`.
 - [x] 6.4 Run `make check-dashboard`.
 - [x] 6.5 Run `make test-dashboard`.
-- [ ] 6.6 Manually test at least one real configured channel in staging and confirm the dashboard shows a single inline result.
+- [x] 6.6 Manually test at least one real configured channel in staging and confirm the dashboard shows a single inline result.

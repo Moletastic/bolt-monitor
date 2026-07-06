@@ -12,18 +12,22 @@ const CHANNEL_TYPES: {
   value: EscalationChannelType
   label: string
   targetLabel: string
+  targetHelp: string
   fields: { key: string; label: string; type?: string }[]
 }[] = [
   {
     value: 'telegram',
     label: 'Telegram',
     targetLabel: 'Chat ID',
+    targetHelp:
+      'Use the numeric chat ID. For private chats, message the bot first; for groups or channels, add the bot and use the group/channel chat ID.',
     fields: [{ key: 'botToken', label: 'Bot token', type: 'password' }],
   },
   {
     value: 'email',
     label: 'Email',
     targetLabel: 'Recipient email',
+    targetHelp: 'Where this channel delivers to',
     fields: [
       { key: 'apiKey', label: 'Provider API key', type: 'password' },
       { key: 'fromEmail', label: 'From address' },
@@ -34,6 +38,7 @@ const CHANNEL_TYPES: {
     value: 'sms',
     label: 'SMS (Twilio)',
     targetLabel: 'Destination number',
+    targetHelp: 'Where this channel delivers to',
     fields: [
       { key: 'accountSid', label: 'Account SID' },
       { key: 'authToken', label: 'Auth token', type: 'password' },
@@ -41,11 +46,18 @@ const CHANNEL_TYPES: {
       { key: 'apiBaseUrl', label: 'API base URL' },
     ],
   },
-  { value: 'webhook', label: 'Webhook', targetLabel: 'Webhook URL', fields: [] },
+  {
+    value: 'webhook',
+    label: 'Webhook',
+    targetLabel: 'Webhook URL',
+    targetHelp: 'Where this channel delivers to',
+    fields: [],
+  },
   {
     value: 'pagerduty',
     label: 'PagerDuty',
     targetLabel: 'Routing key',
+    targetHelp: 'Where this channel delivers to',
     fields: [{ key: 'routingKey', label: 'Routing key' }],
   },
 ]
@@ -97,7 +109,7 @@ export function NotificationChannelForm({ channel }: { channel?: NotificationCha
           placeholder={metadata.targetLabel}
           required
         />
-        <span className="text-xs">Where this channel delivers to</span>
+        <span className="text-xs">{metadata.targetHelp}</span>
       </label>
       {metadata.fields.map((field) => {
         const raw = channel?.config?.[field.key]

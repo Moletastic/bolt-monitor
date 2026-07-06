@@ -126,6 +126,7 @@ export function createBootstrapStack() {
   api.route('GET /api/v1/notification-channels/{channelId}', monitorHandler)
   api.route('PUT /api/v1/notification-channels/{channelId}', monitorHandler)
   api.route('DELETE /api/v1/notification-channels/{channelId}', monitorHandler)
+  api.route('POST /api/v1/notification-channels/{channelId}/test', monitorHandler)
   api.route('POST /api/v1/escalation-policies', monitorHandler)
   api.route('GET /api/v1/escalation-policies', monitorHandler)
   api.route('GET /api/v1/escalation-policies/{policyId}', monitorHandler)

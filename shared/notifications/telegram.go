@@ -82,6 +82,10 @@ func (s *TelegramSender) Send(ctx context.Context, notification Notification) er
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		var tgResp telegramResponse
+		if err := json.Unmarshal(respBody, &tgResp); err == nil && strings.Contains(strings.ToLower(tgResp.Description), "chat not found") {
+			return errors.New("telegram chat not found: use the numeric chat ID and make sure the bot has access to that chat")
+		}
 		return fmt.Errorf("telegram API error: status=%d body=%s", resp.StatusCode, string(respBody))
 	}
 

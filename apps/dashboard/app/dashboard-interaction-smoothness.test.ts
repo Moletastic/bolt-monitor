@@ -27,13 +27,24 @@ describe('dashboard interaction smoothness guards', () => {
     const channelPage = await source('app/(monitoring)/integrations/channels/[channelId]/page.tsx')
     const actions = await source('lib/actions.ts')
     const api = await source('lib/api.ts')
+    const infra = await readFile(join(root, '../../infra/stacks/bootstrap.ts'), 'utf8')
 
     expect(channelPage).toContain('buttonLabel="Send test"')
     expect(channelPage).toContain('pendingLabel="Sending test..."')
     expect(channelPage).toContain('testNotificationChannelStateAction')
+    expect(channelPage).toContain('<NotificationChannelForm channel={channel} />')
     expect(actions).toContain('testNotificationChannelStateAction')
     expect(actions).toContain("return actionOk(undefined, 'Test notification sent.')")
     expect(api).toContain('/api/v1/notification-channels/${channelId}/test')
+    expect(infra).toContain("POST /api/v1/notification-channels/{channelId}/test")
+  })
+
+  it('explains Telegram chat ID setup before test sends fail', async () => {
+    const channelForm = await source('components/notification-channel-form.tsx')
+
+    expect(channelForm).toContain('Use the numeric chat ID')
+    expect(channelForm).toContain('message the bot first')
+    expect(channelForm).toContain('add the bot')
   })
 
   it('keeps imperative router navigation out of dashboard components', async () => {
@@ -99,13 +110,19 @@ describe('dashboard interaction smoothness guards', () => {
     const api = await source('lib/api.ts')
     const servicesPage = await source('app/(monitoring)/services/page.tsx')
     const policiesPage = await source('app/(monitoring)/policies/page.tsx')
+    const policyDetailPage = await source('app/(monitoring)/policies/[policyId]/page.tsx')
     const channelsPage = await source('app/(monitoring)/integrations/channels/page.tsx')
 
     expect(deleteForm).toContain('action={action}')
     expect(api).toContain('apiRequestVoid')
     expect(api).toContain('deleteMonitor(serviceId: string, monitorId: string)')
+    expect(api).toContain('deleteEscalationPolicy(policyId: string)')
     expect(servicesPage).toContain('function DeletedServiceFeedback')
     expect(servicesPage).toContain('query.deletedService ? <DeletedServiceFeedback /> : null')
+    expect(policyDetailPage).toContain('deleteEscalationPolicyAction')
+    expect(policyDetailPage).toContain('label="Delete route"')
+    expect(policyDetailPage).toContain('name="returnTo"')
+    expect(policyDetailPage).toContain('value={`/policies/${policy.policyId}`}')
     expect(deleteForm).not.toContain('javascript:throw')
     expect(deleteForm).not.toContain('document.body.focus')
     expect(servicesPage).toContain('<FocusOnMount active')

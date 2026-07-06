@@ -1,8 +1,11 @@
 import Link from 'next/link'
 
 import { AppShell } from '@/components/app-shell'
+import { DeleteResourceForm } from '@/components/delete-resource-form'
 import { EscalationPolicyForm } from '@/components/escalation-policy-form'
 import { UnavailableCard } from '@/components/unavailable-card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { deleteEscalationPolicyAction } from '@/lib/actions'
 import { getEscalationPolicy, listNotificationChannels } from '@/lib/api'
 
 type Params = Promise<{ policyId: string }>
@@ -84,6 +87,26 @@ export default async function EditEscalationPolicyPage({
           errorHref={`/policies/${policy.policyId}?error=1`}
           searchParams={Promise.resolve(searchParams)}
         />
+
+        <Card className="border-status-down/30">
+          <CardHeader>
+            <CardTitle>Delete route</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Permanently delete this notification route. Routes that are still assigned to a
+              service cannot be deleted.
+            </p>
+            <DeleteResourceForm
+              action={deleteEscalationPolicyAction}
+              confirmMessage={`Delete ${policy.name}? Services using this route will keep blocking deletion until reassigned. This cannot be undone.`}
+              label="Delete route"
+            >
+              <input name="policyId" type="hidden" value={policy.policyId} />
+              <input name="returnTo" type="hidden" value={`/policies/${policy.policyId}`} />
+            </DeleteResourceForm>
+          </CardContent>
+        </Card>
       </div>
     </AppShell>
   )

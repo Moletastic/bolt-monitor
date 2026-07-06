@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -10,6 +11,12 @@ import (
 	"testing"
 	"time"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestEmailSenderSend(t *testing.T) {
 	var authHeader string
@@ -109,6 +116,27 @@ func TestPagerDutySenderSend(t *testing.T) {
 	}
 	if !strings.Contains(gotBody, "route") {
 		t.Fatalf("body = %s", gotBody)
+	}
+}
+
+func TestTelegramSenderChatNotFoundErrorIsActionable(t *testing.T) {
+	sender := NewTelegramSender()
+	sender.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewBufferString(`{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)),
+		}, nil
+	})}
+	config, _ := json.Marshal(TelegramConfig{BotToken: "token", ChatID: "valid-looking-chat"})
+
+	err := sender.Send(context.Background(), Notification{Message: "test", Config: config})
+
+	if err == nil {
+		t.Fatal("Send returned nil error")
+	}
+	if !strings.Contains(err.Error(), "use the numeric chat ID") {
+		t.Fatalf("error = %q, want numeric chat ID guidance", err.Error())
 	}
 }
 
