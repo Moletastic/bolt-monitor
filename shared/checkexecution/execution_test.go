@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/probelocationcatalog"
 )
@@ -64,8 +65,19 @@ func TestBuildExecutionRequestsSkipsDisabledMonitors(t *testing.T) {
 
 func TestSchedulerConfigRequiresStopControl(t *testing.T) {
 	config := SchedulerConfig{RecurringEnabled: true}
-	if err := config.Validate(); err == nil {
+	err := config.Validate()
+	if err == nil {
 		t.Fatal("Validate returned nil error, want missing stop control failure")
+	}
+	typed, ok := sharederrors.As(err)
+	if !ok {
+		t.Fatalf("Validate error = %T, want typed error", err)
+	}
+	if typed.Code != sharederrors.CodeValidationFailed {
+		t.Fatalf("Code = %s, want %s", typed.Code, sharederrors.CodeValidationFailed)
+	}
+	if typed.Details["field"] != "stopControlMode" {
+		t.Fatalf("field = %v, want stopControlMode", typed.Details["field"])
 	}
 }
 

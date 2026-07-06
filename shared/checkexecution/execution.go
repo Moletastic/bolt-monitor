@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/probelocationcatalog"
 )
@@ -68,7 +69,7 @@ func (c SchedulerConfig) Validate() error {
 		return nil
 	}
 	if c.StopControlMode != StopControlMonitorDisable && c.StopControlMode != StopControlGlobalPause {
-		return fmt.Errorf("recurring execution requires reliable stop control")
+		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "stopControlMode", "reason": "recurring execution requires reliable stop control"})
 	}
 	return nil
 }

@@ -1345,6 +1345,26 @@ func TestReactivateMissingService(t *testing.T) {
 	}
 }
 
+func TestUpdateSchedulerConfigRequiresStopControlWhenEnabling(t *testing.T) {
+	handler := newMonitorHandler(newFakeMonitorRepository(), defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/admin/scheduler-config", Body: `{"recurringEnabled":true}`, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPatch}}}
+
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+	envelope := decodeEnvelope(t, response.Body)
+	if envelope.Reason.Code != "VALIDATION_FAILED" {
+		t.Fatalf("Code = %s, want VALIDATION_FAILED", envelope.Reason.Code)
+	}
+	if envelope.Reason.Details["field"] != "stopControlMode" {
+		t.Fatalf("details.field = %v, want stopControlMode", envelope.Reason.Details["field"])
+	}
+}
+
 type typedErrorEnvelope struct {
 	Status string `json:"status"`
 	Reason struct {

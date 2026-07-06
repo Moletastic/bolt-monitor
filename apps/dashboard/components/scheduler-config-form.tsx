@@ -35,6 +35,7 @@ export function SchedulerConfigForm({ recurringEnabled }: SchedulerConfigFormPro
         <label className="text-sm font-medium" htmlFor="recurringEnabled">
           Enable recurring execution
         </label>
+        <input type="hidden" name="stopControlMode" value="monitor-disable" />
         <input
           type="checkbox"
           id="recurringEnabled"
