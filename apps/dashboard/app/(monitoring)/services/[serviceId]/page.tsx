@@ -5,6 +5,7 @@ import { AppShell } from '@/components/app-shell'
 import { ArchiveServiceButton } from '@/components/archive-service-button'
 import { DeleteResourceForm } from '@/components/delete-resource-form'
 import { EmptyState } from '@/components/empty-state'
+import { FocusOnMount } from '@/components/focus-on-mount'
 import { MonitorTable } from '@/components/monitor-table'
 import { ServiceIcon } from '@/components/service-icon'
 import { ServiceForm } from '@/components/service-form'
@@ -161,18 +162,21 @@ export default async function ServiceDetailPage({
                   query.archived ||
                   query.error ||
                   query.deletedMonitor) && (
-                  <p
-                    className={`rounded-md border px-3 py-2 text-sm ${query.error ? 'border-status-down/30 bg-status-down/10 text-status-down' : 'border-status-up/30 bg-status-up/10 text-status-up'}`}
-                  >
-                    {query.error ??
-                      (query.deletedMonitor
-                        ? 'Monitor permanently deleted.'
-                        : query.archived
-                          ? 'Service archived.'
-                          : query.created
-                            ? 'Service created.'
-                            : 'Service updated.')}
-                  </p>
+                  <FocusOnMount active={Boolean(query.deletedMonitor)}>
+                    <p
+                      className={`rounded-md border px-3 py-2 text-sm ${query.error ? 'border-status-down/30 bg-status-down/10 text-status-down' : 'border-status-up/30 bg-status-up/10 text-status-up'}`}
+                      role={query.error ? 'alert' : 'status'}
+                    >
+                      {query.error ??
+                        (query.deletedMonitor
+                          ? 'Monitor permanently deleted.'
+                          : query.archived
+                            ? 'Service archived.'
+                            : query.created
+                              ? 'Service created.'
+                              : 'Service updated.')}
+                    </p>
+                  </FocusOnMount>
                 )}
                 {setupSignals.length > 0 && (
                   <div className="flex flex-wrap gap-2">

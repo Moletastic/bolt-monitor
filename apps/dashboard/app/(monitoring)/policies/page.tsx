@@ -2,11 +2,17 @@ import Link from 'next/link'
 
 import { AppShell } from '@/components/app-shell'
 import { EmptyState } from '@/components/empty-state'
+import { FocusOnMount } from '@/components/focus-on-mount'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ApiError, listEscalationPolicies } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 
-export default async function PoliciesPage() {
+export default async function PoliciesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string }>
+}) {
+  const query = await searchParams
   let policies: Awaited<ReturnType<typeof listEscalationPolicies>> = []
   let loadError: string | undefined
 
@@ -34,6 +40,16 @@ export default async function PoliciesPage() {
             Create route
           </Link>
         </div>
+        {query.deleted ? (
+          <FocusOnMount active>
+            <p
+              className="rounded-md border border-status-up/30 bg-status-up/10 px-3 py-2 text-sm text-status-up"
+              role="status"
+            >
+              Notification route permanently deleted.
+            </p>
+          </FocusOnMount>
+        ) : null}
         {loadError ? (
           <EmptyState
             description={`${loadError} Check local API connectivity and policy API availability.`}

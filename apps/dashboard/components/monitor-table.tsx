@@ -1,8 +1,8 @@
 import Link from 'next/link'
 
 import { MonitorProtocolBadge } from '@/components/monitor-protocol-badge'
+import { SamePageActionForm } from '@/components/same-page-action-form'
 import { StatusChip } from '@/components/status-chip'
-import { SubmitButton } from '@/components/submit-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { toggleMonitorAction } from '@/lib/actions'
+import { toggleMonitorStateAction } from '@/lib/actions'
 import type { Monitor } from '@/lib/types'
 import { formatDateTime, formatDuration, formatProbeLocations } from '@/lib/utils'
 
@@ -47,16 +47,20 @@ export function MonitorTable({
         ) : null}
         <div className="grid gap-4 md:hidden">
           {monitors.map((monitor) => (
-            <Link
-              className="block rounded-lg border border-border bg-surface-low p-4 transition-colors hover:border-primary/40 hover:bg-surface-low/80"
-              href={`/services/${monitor.serviceId}/monitors/${monitor.monitorId}`}
+            <div
+              className="rounded-lg border border-border bg-surface-low p-4 transition-colors hover:border-primary/40 hover:bg-surface-low/80"
               key={monitor.monitorId}
             >
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
                   <MonitorProtocolBadge type={monitor.type} />
                   <div>
-                    <span className="text-lg font-semibold text-foreground">{monitor.name}</span>
+                    <Link
+                      className="text-lg font-semibold text-foreground hover:text-primary hover:underline"
+                      href={`/services/${monitor.serviceId}/monitors/${monitor.monitorId}`}
+                    >
+                      {monitor.name}
+                    </Link>
                     <p className="mt-1 break-all text-xs text-muted-foreground">
                       {getTarget(monitor)}
                     </p>
@@ -96,23 +100,21 @@ export function MonitorTable({
                   </dd>
                 </div>
               </dl>
-              <form
-                action={toggleMonitorAction}
-                className="mt-4 flex justify-end pointer-events-auto"
+              <SamePageActionForm
+                action={toggleMonitorStateAction}
+                buttonLabel={monitor.enabled ? 'Disable' : 'Enable'}
+                className="mt-4 flex flex-col items-end"
+                disabled={readOnly}
+                pendingLabel={monitor.enabled ? 'Disabling...' : 'Enabling...'}
+                size="sm"
+                variant={monitor.enabled ? 'outline' : 'default'}
               >
                 <input name="serviceId" type="hidden" value={monitor.serviceId} />
                 <input name="monitorId" type="hidden" value={monitor.monitorId} />
                 <input name="enabled" type="hidden" value={monitor.enabled ? 'false' : 'true'} />
                 <input name="returnTo" type="hidden" value={returnTo} />
-                <SubmitButton
-                  disabled={readOnly}
-                  size="sm"
-                  variant={monitor.enabled ? 'outline' : 'default'}
-                >
-                  {monitor.enabled ? 'Disable' : 'Enable'}
-                </SubmitButton>
-              </form>
-            </Link>
+              </SamePageActionForm>
+            </div>
           ))}
         </div>
         <div className="hidden overflow-x-auto md:block">
@@ -180,7 +182,15 @@ export function MonitorTable({
                     </Link>
                   </TableCell>
                   <TableCell className="text-right">
-                    <form action={toggleMonitorAction} className="inline-flex">
+                    <SamePageActionForm
+                      action={toggleMonitorStateAction}
+                      buttonLabel={monitor.enabled ? 'Disable' : 'Enable'}
+                      className="inline-flex flex-col items-end"
+                      disabled={readOnly}
+                      pendingLabel={monitor.enabled ? 'Disabling...' : 'Enabling...'}
+                      size="sm"
+                      variant={monitor.enabled ? 'outline' : 'default'}
+                    >
                       <input name="serviceId" type="hidden" value={monitor.serviceId} />
                       <input name="monitorId" type="hidden" value={monitor.monitorId} />
                       <input
@@ -189,14 +199,7 @@ export function MonitorTable({
                         value={monitor.enabled ? 'false' : 'true'}
                       />
                       <input name="returnTo" type="hidden" value={returnTo} />
-                      <SubmitButton
-                        disabled={readOnly}
-                        size="sm"
-                        variant={monitor.enabled ? 'outline' : 'default'}
-                      >
-                        {monitor.enabled ? 'Disable' : 'Enable'}
-                      </SubmitButton>
-                    </form>
+                    </SamePageActionForm>
                   </TableCell>
                 </TableRow>
               ))}

@@ -1,11 +1,12 @@
 import Link from 'next/link'
 
 import { AppShell } from '@/components/app-shell'
+import { ChannelUsageScope, buildChannelUsageMap } from '@/components/channel-usage-scope'
 import { DeleteResourceForm } from '@/components/delete-resource-form'
 import { NotificationChannelForm } from '@/components/notification-channel-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { deleteNotificationChannelAction } from '@/lib/actions'
-import { getNotificationChannel } from '@/lib/api'
+import { getNotificationChannel, listEscalationPolicies } from '@/lib/api'
 
 export default async function EditChannelPage({
   params,
@@ -13,7 +14,12 @@ export default async function EditChannelPage({
   params: Promise<{ channelId: string }>
 }) {
   const { channelId } = await params
-  const channel = await getNotificationChannel(channelId)
+  const [channel, policies] = await Promise.all([
+    getNotificationChannel(channelId),
+    listEscalationPolicies().catch(() => []),
+  ])
+  const usage = buildChannelUsageMap(policies).get(channel.channelId) ?? []
+  const deleteBlocked = usage.length > 0
   return (
     <AppShell currentPath="/integrations/channels">
       <div className="grid gap-6">
@@ -36,9 +42,20 @@ export default async function EditChannelPage({
             <CardTitle>Delete channel</CardTitle>
           </CardHeader>
           <CardContent>
+            {deleteBlocked ? (
+              <div
+                className="mb-4 rounded-md border border-status-warn/30 bg-status-warn/10 px-3 py-2 text-sm text-status-warn"
+                role="status"
+              >
+                This channel is used by notification routes and cannot be deleted until those
+                references are removed. Current usage:{' '}
+                <ChannelUsageScope channelId={channel.channelId} policies={usage} />
+              </div>
+            ) : null}
             <DeleteResourceForm
               action={deleteNotificationChannelAction}
               confirmMessage={`Delete ${channel.name}? Routes using this channel will stop firing. This cannot be undone.`}
+              disabled={deleteBlocked}
               label="Delete channel"
             >
               <input name="channelId" type="hidden" value={channel.channelId} />

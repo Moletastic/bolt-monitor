@@ -4,6 +4,7 @@ import { AppShell } from '@/components/app-shell'
 import { ChannelTypeIcon } from '@/components/channel-type-icon'
 import { ChannelUsageScope, buildChannelUsageMap } from '@/components/channel-usage-scope'
 import { EmptyState } from '@/components/empty-state'
+import { FocusOnMount } from '@/components/focus-on-mount'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
@@ -17,7 +18,12 @@ import { listEscalationPolicies, listNotificationChannels } from '@/lib/api'
 import type { EscalationPolicy } from '@/lib/types'
 import { formatDateTime } from '@/lib/utils'
 
-export default async function ChannelsPage() {
+export default async function ChannelsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deleted?: string }>
+}) {
+  const query = await searchParams
   const [channels, policiesResult] = await Promise.all([
     listNotificationChannels().catch(() => []),
     listEscalationPolicies().catch(() => [] as EscalationPolicy[]),
@@ -41,6 +47,16 @@ export default async function ChannelsPage() {
             Create channel
           </Link>
         </div>
+        {query.deleted ? (
+          <FocusOnMount active>
+            <p
+              className="rounded-md border border-status-up/30 bg-status-up/10 px-3 py-2 text-sm text-status-up"
+              role="status"
+            >
+              Notification channel permanently deleted.
+            </p>
+          </FocusOnMount>
+        ) : null}
         {channels.length === 0 ? (
           <EmptyState
             actionHref="/integrations/channels/new"

@@ -79,6 +79,28 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return unwrap(parsed as ApiResponse<T>, response.status)
 }
 
+async function apiRequestVoid(path: string, init?: RequestInit): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    ...init,
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  })
+
+  const text = await response.text()
+  const parsed = text ? (JSON.parse(text) as ApiResponse<unknown>) : undefined
+
+  if (!response.ok) {
+    const reason = parsed && isError(parsed) ? parsed.reason : undefined
+    if (reason) {
+      throw attachMessage(fromEnvelope(reason, response.status), parsed?.message)
+    }
+    throw new ApiError(ApiErrorCode.Internal, response.status, {}, parsed?.message)
+  }
+}
+
 export async function listServices() {
   const response = await apiRequest<ListServicesResponse>('/api/v1/services')
   return response.services
@@ -103,7 +125,7 @@ export async function updateService(serviceId: string, payload: UpdateServicePay
 }
 
 export async function deleteService(serviceId: string) {
-  await apiRequest<void>(`/api/v1/services/${serviceId}`, {
+  await apiRequestVoid(`/api/v1/services/${serviceId}`, {
     method: 'DELETE',
   })
 }
@@ -146,7 +168,7 @@ export async function updateMonitor(
 }
 
 export async function deleteMonitor(serviceId: string, monitorId: string) {
-  await apiRequest<void>(`/api/v1/services/${serviceId}/monitors/${monitorId}`, {
+  await apiRequestVoid(`/api/v1/services/${serviceId}/monitors/${monitorId}`, {
     method: 'DELETE',
   })
 }
@@ -284,7 +306,7 @@ export async function updateNotificationChannel(
 }
 
 export async function deleteNotificationChannel(channelId: string) {
-  await apiRequest<void>(`/api/v1/notification-channels/${channelId}`, { method: 'DELETE' })
+  await apiRequestVoid(`/api/v1/notification-channels/${channelId}`, { method: 'DELETE' })
 }
 
 export async function getEscalationPolicy(policyId: string) {
@@ -309,7 +331,7 @@ export async function updateEscalationPolicy(
 }
 
 export async function deleteEscalationPolicy(policyId: string) {
-  await apiRequest<void>(`/api/v1/escalation-policies/${policyId}`, {
+  await apiRequestVoid(`/api/v1/escalation-policies/${policyId}`, {
     method: 'DELETE',
   })
 }

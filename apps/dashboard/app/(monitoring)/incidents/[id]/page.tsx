@@ -3,12 +3,12 @@ import Link from 'next/link'
 
 import { AppShell } from '@/components/app-shell'
 import { EmptyState } from '@/components/empty-state'
+import { SamePageActionForm } from '@/components/same-page-action-form'
 import { StatusChip } from '@/components/status-chip'
-import { SubmitButton } from '@/components/submit-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs } from '@/components/ui/tabs'
 import { ApiError, getIncident } from '@/lib/api'
-import { acknowledgeIncidentAction, resolveIncidentAction } from '@/lib/actions'
+import { acknowledgeIncidentStateAction, resolveIncidentStateAction } from '@/lib/actions'
 import { formatDateTime } from '@/lib/utils'
 import { AlertHistoryTab } from './alert-history-tab'
 import { AuditTab } from './audit-tab'
@@ -46,29 +46,33 @@ export default async function IncidentDetailPage({
             {isOpen && (
               <div className="flex gap-3">
                 {incident.status === 'open' && (
-                  <form action={acknowledgeIncidentAction}>
+                  <SamePageActionForm
+                    action={acknowledgeIncidentStateAction}
+                    buttonLabel="Acknowledge"
+                    pendingLabel="Acknowledging..."
+                    variant="secondary"
+                  >
                     <input name="incidentId" type="hidden" value={incident.incidentId} />
                     <input
                       name="returnTo"
                       type="hidden"
                       value={`/incidents/${incident.incidentId}`}
                     />
-                    <SubmitButton type="submit" variant="secondary">
-                      Acknowledge
-                    </SubmitButton>
-                  </form>
+                  </SamePageActionForm>
                 )}
-                <form action={resolveIncidentAction}>
+                <SamePageActionForm
+                  action={resolveIncidentStateAction}
+                  buttonLabel="Resolve"
+                  pendingLabel="Resolving..."
+                  variant="default"
+                >
                   <input name="incidentId" type="hidden" value={incident.incidentId} />
                   <input
                     name="returnTo"
                     type="hidden"
                     value={`/incidents/${incident.incidentId}`}
                   />
-                  <SubmitButton type="submit" variant="default">
-                    Resolve
-                  </SubmitButton>
-                </form>
+                </SamePageActionForm>
               </div>
             )}
           </div>

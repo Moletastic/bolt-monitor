@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { startTransition, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface PollingProviderProps {
@@ -11,16 +11,23 @@ export function PollingProvider({ intervalMs = 5000 }: PollingProviderProps) {
   const router = useRouter()
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const isVisibleRef = useRef(true)
+  const lastVisibilityStateRef = useRef<DocumentVisibilityState | null>(null)
+
+  const refreshDashboard = useCallback(() => {
+    startTransition(() => {
+      router.refresh()
+    })
+  }, [router])
 
   const startPolling = useCallback(() => {
     if (intervalRef.current) return
 
     intervalRef.current = setInterval(() => {
       if (isVisibleRef.current) {
-        router.refresh()
+        refreshDashboard()
       }
     }, intervalMs)
-  }, [router, intervalMs])
+  }, [refreshDashboard, intervalMs])
 
   const stopPolling = useCallback(() => {
     if (intervalRef.current) {
@@ -30,17 +37,22 @@ export function PollingProvider({ intervalMs = 5000 }: PollingProviderProps) {
   }, [])
 
   const handleVisibilityChange = useCallback(() => {
-    if (document.visibilityState === 'visible') {
+    const nextVisibilityState = document.visibilityState
+    if (lastVisibilityStateRef.current === nextVisibilityState) return
+    lastVisibilityStateRef.current = nextVisibilityState
+
+    if (nextVisibilityState === 'visible') {
       isVisibleRef.current = true
-      router.refresh()
+      refreshDashboard()
       startPolling()
     } else {
       isVisibleRef.current = false
       stopPolling()
     }
-  }, [router, startPolling, stopPolling])
+  }, [refreshDashboard, startPolling, stopPolling])
 
   useEffect(() => {
+    lastVisibilityStateRef.current = document.visibilityState
     isVisibleRef.current = document.visibilityState === 'visible'
 
     if (document.visibilityState === 'visible') {

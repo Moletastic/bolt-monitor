@@ -6,6 +6,8 @@ import { DeleteResourceForm } from '@/components/delete-resource-form'
 import { EmptyState } from '@/components/empty-state'
 import { MonitorForm } from '@/components/monitor-form'
 import { MonitorProtocolBadge } from '@/components/monitor-protocol-badge'
+import { QueryFeedbackBanner } from '@/components/query-feedback-banner'
+import { SamePageActionForm } from '@/components/same-page-action-form'
 import { StatusChip } from '@/components/status-chip'
 import { SubmitButton } from '@/components/submit-button'
 import { UnavailableCard } from '@/components/unavailable-card'
@@ -32,7 +34,7 @@ import {
 import {
   deleteMonitorAction,
   toggleMaintenanceModeAction,
-  toggleMonitorAction,
+  toggleMonitorStateAction,
   triggerManualRunAction,
 } from '@/lib/actions'
 import {
@@ -290,16 +292,17 @@ export default async function ServiceMonitorDetailPage({
                     )}
                   </div>
                   {(query.created || query.updated || query.error || query.run) && (
-                    <p
-                      className={`rounded-md border px-3 py-2 text-sm ${query.error ? 'border-status-down/30 bg-status-down/10 text-status-down' : 'border-status-up/30 bg-status-up/10 text-status-up'}`}
-                    >
-                      {query.error ||
+                    <QueryFeedbackBanner
+                      message={
+                        query.error ||
                         (query.run
                           ? 'Manual run triggered.'
                           : query.created
                             ? 'Monitor created.'
-                            : 'Monitor updated.')}
-                    </p>
+                            : 'Monitor updated.')
+                      }
+                      tone={query.error ? 'error' : 'success'}
+                    />
                   )}
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-lg border border-border bg-surface-low p-4">
@@ -380,7 +383,12 @@ export default async function ServiceMonitorDetailPage({
                     </SubmitButton>
                   </form>
                 )}
-                <form action={toggleMonitorAction}>
+                <SamePageActionForm
+                  action={toggleMonitorStateAction}
+                  buttonLabel={monitor.enabled ? 'Disable monitor' : 'Enable monitor'}
+                  pendingLabel={monitor.enabled ? 'Disabling monitor...' : 'Enabling monitor...'}
+                  variant={monitor.enabled ? 'outline' : 'default'}
+                >
                   <input name="serviceId" type="hidden" value={serviceId} />
                   <input name="monitorId" type="hidden" value={monitor.monitorId} />
                   <input name="enabled" type="hidden" value={monitor.enabled ? 'false' : 'true'} />
@@ -389,10 +397,7 @@ export default async function ServiceMonitorDetailPage({
                     type="hidden"
                     value={`/services/${serviceId}/monitors/${monitor.monitorId}`}
                   />
-                  <SubmitButton variant={monitor.enabled ? 'outline' : 'default'}>
-                    {monitor.enabled ? 'Disable monitor' : 'Enable monitor'}
-                  </SubmitButton>
-                </form>
+                </SamePageActionForm>
                 <form action={toggleMaintenanceModeAction}>
                   <input name="serviceId" type="hidden" value={serviceId} />
                   <input name="monitorId" type="hidden" value={monitor.monitorId} />

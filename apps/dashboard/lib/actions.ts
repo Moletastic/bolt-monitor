@@ -173,6 +173,10 @@ function appendError(returnTo: string, message: string): string {
   return `${returnTo}${returnTo.includes('?') ? '&' : '?'}error=${encodeURIComponent(message)}`
 }
 
+function appendInlineFeedback(path: string): string {
+  return `${path}${path.includes('?') ? '&' : '?'}feedback=inline`
+}
+
 export async function createMonitorAction(formData: FormData) {
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}/monitors/new`)
@@ -199,7 +203,9 @@ export async function createMonitorAction(formData: FormData) {
 
   revalidatePath('/services')
   revalidatePath(`/services/${serviceId}`)
-  redirect(`/services/${serviceId}/monitors/${result.value.monitorId}?created=1`)
+  redirect(
+    appendInlineFeedback(`/services/${serviceId}/monitors/${result.value.monitorId}?created=1`)
+  )
 }
 
 export async function updateMonitorAction(formData: FormData) {
@@ -228,7 +234,7 @@ export async function updateMonitorAction(formData: FormData) {
   revalidatePath('/services')
   revalidatePath(`/services/${serviceId}`)
   revalidatePath(`/services/${serviceId}/monitors/${monitorId}`)
-  redirect(`/services/${serviceId}/monitors/${monitorId}?updated=1`)
+  redirect(appendInlineFeedback(`/services/${serviceId}/monitors/${monitorId}?updated=1`))
 }
 
 export async function toggleMonitorAction(formData: FormData) {
@@ -246,6 +252,25 @@ export async function toggleMonitorAction(formData: FormData) {
   revalidatePath(`/services/${serviceId}`)
   revalidatePath(`/services/${serviceId}/monitors/${monitorId}`)
   redirect(returnTo)
+}
+
+export async function toggleMonitorStateAction(
+  _previousState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const serviceId = String(formData.get('serviceId') ?? '').trim()
+  const monitorId = String(formData.get('monitorId') ?? '').trim()
+  const enabled = formData.get('enabled') === 'true'
+
+  const result = await runServerAction(() => setMonitorEnabled(serviceId, monitorId, enabled))
+  if (isErr(result)) {
+    return actionErr(result.error)
+  }
+
+  revalidatePath('/services')
+  revalidatePath(`/services/${serviceId}`)
+  revalidatePath(`/services/${serviceId}/monitors/${monitorId}`)
+  return actionOk(undefined, enabled ? 'Monitor enabled.' : 'Monitor disabled.')
 }
 
 export async function toggleMaintenanceModeAction(formData: FormData) {
@@ -278,7 +303,7 @@ export async function deleteMonitorAction(formData: FormData) {
   revalidatePath('/services')
   revalidatePath(`/services/${serviceId}`)
   revalidatePath(`/services/${serviceId}/monitors/${monitorId}`)
-  redirect(`/services/${serviceId}?deletedMonitor=1`)
+  redirect(appendInlineFeedback(`/services/${serviceId}?deletedMonitor=1`))
 }
 
 export async function acknowledgeIncidentAction(formData: FormData) {
@@ -295,6 +320,22 @@ export async function acknowledgeIncidentAction(formData: FormData) {
   redirect(returnTo)
 }
 
+export async function acknowledgeIncidentStateAction(
+  _previousState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const incidentId = String(formData.get('incidentId') ?? '').trim()
+
+  const result = await runServerAction(() => acknowledgeIncident(incidentId))
+  if (isErr(result)) {
+    return actionErr(result.error)
+  }
+
+  revalidatePath('/incidents')
+  revalidatePath(`/incidents/${incidentId}`)
+  return actionOk(undefined, 'Incident acknowledged.')
+}
+
 export async function resolveIncidentAction(formData: FormData) {
   const incidentId = String(formData.get('incidentId') ?? '').trim()
   const returnTo = getReturnTo(formData, '/incidents')
@@ -307,6 +348,22 @@ export async function resolveIncidentAction(formData: FormData) {
   revalidatePath('/incidents')
   revalidatePath(`/incidents/${incidentId}`)
   redirect(returnTo)
+}
+
+export async function resolveIncidentStateAction(
+  _previousState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const incidentId = String(formData.get('incidentId') ?? '').trim()
+
+  const result = await runServerAction(() => resolveIncident(incidentId))
+  if (isErr(result)) {
+    return actionErr(result.error)
+  }
+
+  revalidatePath('/incidents')
+  revalidatePath(`/incidents/${incidentId}`)
+  return actionOk(undefined, 'Incident resolved.')
 }
 
 export async function updateSchedulerConfigAction(formData: FormData) {
@@ -356,7 +413,7 @@ export async function triggerManualRunAction(formData: FormData) {
 
   revalidatePath(`/services/${serviceId}`)
   revalidatePath(`/services/${serviceId}/monitors/${monitorId}`)
-  redirect(`${returnTo}?run=triggered`)
+  redirect(appendInlineFeedback(`${returnTo}?run=triggered`))
 }
 
 export async function createServiceAction(formData: FormData) {
@@ -382,7 +439,7 @@ export async function createServiceAction(formData: FormData) {
   }
 
   revalidatePath('/services')
-  redirect(`/services/${result.value.serviceId}?created=1`)
+  redirect(appendInlineFeedback(`/services/${result.value.serviceId}?created=1`))
 }
 
 export async function updateServiceAction(formData: FormData) {
@@ -410,7 +467,7 @@ export async function updateServiceAction(formData: FormData) {
 
   revalidatePath('/services')
   revalidatePath(`/services/${serviceId}`)
-  redirect(`/services/${serviceId}?updated=1`)
+  redirect(appendInlineFeedback(`/services/${serviceId}?updated=1`))
 }
 
 function stringOrNull(value: FormDataEntryValue | null) {
@@ -446,7 +503,7 @@ export async function archiveServiceAction(formData: FormData) {
 
   revalidatePath('/services')
   revalidatePath(`/services/${serviceId}`)
-  redirect(`/services/${serviceId}?archived=1`)
+  redirect(appendInlineFeedback(`/services/${serviceId}?archived=1`))
 }
 
 export async function deleteServiceAction(formData: FormData) {
@@ -460,7 +517,7 @@ export async function deleteServiceAction(formData: FormData) {
 
   revalidatePath('/services')
   revalidatePath(`/services/${serviceId}`)
-  redirect('/services?deletedService=1')
+  redirect(appendInlineFeedback('/services?deletedService=1'))
 }
 
 export async function createEscalationPolicyAction(formData: FormData) {
