@@ -1,23 +1,23 @@
 export type MonitorType = 'http' | 'tcp' | 'grpc' | 'dns'
 export type ServiceLifecycle = 'draft' | 'active' | 'archived'
+export type ServiceCategory =
+  | 'server'
+  | 'database'
+  | 'cache'
+  | 'http'
+  | 'queue'
+  | 'container'
+  | 'function'
 
-export const TECHNOLOGY_KEYS = [
-  'golang',
-  'mariadb',
-  'mysql',
-  'nginx',
-  'postgres',
-  'python',
-  'typescript',
-  'mongodb',
-  'redis',
-  'kafka',
-  'docker',
-  'apache',
-  'javascript',
-  'rabbitmq',
-] as const
-export type TechnologyKey = (typeof TECHNOLOGY_KEYS)[number]
+export const SERVICE_CATEGORIES: ServiceCategory[] = [
+  'server',
+  'database',
+  'cache',
+  'http',
+  'queue',
+  'container',
+  'function',
+]
 
 export interface HttpConfiguration {
   target: string
@@ -79,7 +79,7 @@ export interface Service {
   name: string
   description?: string
   lifecycleState: ServiceLifecycle
-  technologyKey?: TechnologyKey
+  serviceCategory?: ServiceCategory
   monitorCount?: number
   enabledMonitorCount?: number
   rollupStatus?: string
@@ -87,7 +87,30 @@ export interface Service {
   businessHours?: BusinessHoursConfig
   createdAt?: string
   updatedAt?: string
+  cardMetrics?: ServiceCardMetrics
   monitors?: Monitor[]
+}
+
+export type ServiceCardMetricState = 'ready' | 'no_monitors' | 'no_data'
+
+export interface ServiceCardTrendPoint {
+  monitorId: string
+  startedAt: string
+  durationMs: number
+  outcome: string
+  success: boolean
+}
+
+export interface ServiceCardMetrics {
+  state: ServiceCardMetricState
+  sampleCount: number
+  successCount: number
+  monitorCount: number
+  upMonitorCount: number
+  avgLatencyMs?: number
+  p99LatencyMs?: number
+  recentUptimePct?: number
+  trend?: ServiceCardTrendPoint[]
 }
 
 export interface CheckRun {
@@ -131,7 +154,7 @@ export interface CreateServicePayload {
   name: string
   description?: string
   lifecycleState?: ServiceLifecycle
-  technologyKey?: TechnologyKey
+  serviceCategory?: ServiceCategory
   escalationPolicyId?: string
   businessHours?: BusinessHoursConfig
 }
@@ -140,7 +163,7 @@ export interface UpdateServicePayload {
   name?: string
   description?: string
   lifecycleState?: ServiceLifecycle
-  technologyKey?: TechnologyKey
+  serviceCategory?: ServiceCategory
   escalationPolicyId?: string | null
   businessHours?: BusinessHoursConfig | null
 }

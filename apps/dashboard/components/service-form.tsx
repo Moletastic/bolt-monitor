@@ -5,7 +5,7 @@ import Link from 'next/link'
 
 import { createServiceAction, updateServiceAction } from '@/lib/actions'
 import {
-  TECHNOLOGY_KEYS,
+  SERVICE_CATEGORIES,
   type Service,
   type EscalationPolicy,
   type BusinessHoursConfig,
@@ -123,12 +123,12 @@ export function ServiceForm({
               />
             </label>
             <label className="grid gap-2 text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">Primary technology</span>
-              <Select defaultValue={service?.technologyKey ?? ''} name="technologyKey">
+              <span className="font-semibold text-foreground">Service category</span>
+              <Select defaultValue={service?.serviceCategory ?? ''} name="serviceCategory">
                 <option value="">None</option>
-                {TECHNOLOGY_KEYS.map((technologyKey) => (
-                  <option key={technologyKey} value={technologyKey}>
-                    {technologyKey}
+                {SERVICE_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
                   </option>
                 ))}
               </Select>

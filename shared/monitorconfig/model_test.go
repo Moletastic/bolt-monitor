@@ -17,8 +17,8 @@ func (f fakeCatalog) IsSelectableLocation(locationID string) bool {
 
 func TestCreateServiceRequestToService(t *testing.T) {
 	service, err := (CreateServiceRequest{
-		Name:          "Auth Service",
-		TechnologyKey: "golang",
+		Name:            "Auth Service",
+		ServiceCategory: ServiceCategoryFunction,
 	}).ToService("default")
 	if err != nil {
 		t.Fatalf("ToService returned error: %v", err)
@@ -29,8 +29,8 @@ func TestCreateServiceRequestToService(t *testing.T) {
 	if service.TenantID != "DEFAULT" {
 		t.Fatalf("TenantID = %q, want DEFAULT", service.TenantID)
 	}
-	if service.TechnologyKey != "golang" {
-		t.Fatalf("TechnologyKey = %q, want golang", service.TechnologyKey)
+	if service.ServiceCategory != ServiceCategoryFunction {
+		t.Fatalf("ServiceCategory = %q, want function", service.ServiceCategory)
 	}
 }
 
@@ -202,10 +202,10 @@ func TestMonitorValidateWithCatalogRejectsUnknownProbeLocation(t *testing.T) {
 	}
 }
 
-func TestServiceValidateRejectsUnsupportedTechnologyKey(t *testing.T) {
-	service := Service{TenantID: "DEFAULT", Name: "Auth", TechnologyKey: "bad-icon"}
+func TestServiceValidateRejectsUnsupportedServiceCategory(t *testing.T) {
+	service := Service{TenantID: "DEFAULT", Name: "Auth", ServiceCategory: "bad-category"}
 	if err := service.Validate(); err == nil {
-		t.Fatal("Validate returned nil error, want unsupported technologyKey failure")
+		t.Fatal("Validate returned nil error, want unsupported serviceCategory failure")
 	}
 }
 

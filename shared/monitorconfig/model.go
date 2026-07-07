@@ -26,24 +26,26 @@ const (
 	ServiceLifecycleArchived ServiceLifecycle = "archived"
 )
 
-// slugPattern is unused but kept for future use
-// var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+type ServiceCategory string
 
-var supportedTechnologyKeys = map[string]struct{}{
-	"golang":     {},
-	"mariadb":    {},
-	"mysql":      {},
-	"nginx":      {},
-	"postgres":   {},
-	"python":     {},
-	"typescript": {},
-	"mongodb":    {},
-	"redis":      {},
-	"kafka":      {},
-	"docker":     {},
-	"apache":     {},
-	"javascript": {},
-	"rabbitmq":   {},
+const (
+	ServiceCategoryServer    ServiceCategory = "server"
+	ServiceCategoryDatabase  ServiceCategory = "database"
+	ServiceCategoryCache     ServiceCategory = "cache"
+	ServiceCategoryHTTP      ServiceCategory = "http"
+	ServiceCategoryQueue     ServiceCategory = "queue"
+	ServiceCategoryContainer ServiceCategory = "container"
+	ServiceCategoryFunction  ServiceCategory = "function"
+)
+
+var supportedServiceCategories = map[ServiceCategory]struct{}{
+	ServiceCategoryServer:    {},
+	ServiceCategoryDatabase:  {},
+	ServiceCategoryCache:     {},
+	ServiceCategoryHTTP:      {},
+	ServiceCategoryQueue:     {},
+	ServiceCategoryContainer: {},
+	ServiceCategoryFunction:  {},
 }
 
 var allowedIntervalSeconds = map[int]struct{}{
@@ -63,7 +65,7 @@ type Service struct {
 	Name               string                          `json:"name"`
 	Description        string                          `json:"description,omitempty"`
 	LifecycleState     ServiceLifecycle                `json:"lifecycleState"`
-	TechnologyKey      string                          `json:"technologyKey,omitempty"`
+	ServiceCategory    ServiceCategory                 `json:"serviceCategory,omitempty"`
 	EscalationPolicyID string                          `json:"escalationPolicyId,omitempty"`
 	BusinessHours      *escalation.BusinessHoursConfig `json:"businessHours,omitempty"`
 	MonitorCount       int                             `json:"monitorCount,omitempty"`
@@ -117,7 +119,7 @@ type HTTPConfiguration struct {
 type CreateServiceRequest struct {
 	Name               string                          `json:"name"`
 	Description        string                          `json:"description,omitempty"`
-	TechnologyKey      string                          `json:"technologyKey,omitempty"`
+	ServiceCategory    ServiceCategory                 `json:"serviceCategory,omitempty"`
 	EscalationPolicyID string                          `json:"escalationPolicyId,omitempty"`
 	BusinessHours      *escalation.BusinessHoursConfig `json:"businessHours,omitempty"`
 }
@@ -154,13 +156,13 @@ type ProbeLocationCatalog interface {
 	IsSelectableLocation(locationID string) bool
 }
 
-func SupportedTechnologyKeys() []string {
-	keys := make([]string, 0, len(supportedTechnologyKeys))
-	for key := range supportedTechnologyKeys {
-		keys = append(keys, key)
+func SupportedServiceCategories() []ServiceCategory {
+	categories := make([]ServiceCategory, 0, len(supportedServiceCategories))
+	for cat := range supportedServiceCategories {
+		categories = append(categories, cat)
 	}
-	sort.Strings(keys)
-	return keys
+	sort.Slice(categories, func(i, j int) bool { return categories[i] < categories[j] })
+	return categories
 }
 
 func (r CreateServiceRequest) ToService(tenantID string) (Service, error) {
@@ -169,7 +171,7 @@ func (r CreateServiceRequest) ToService(tenantID string) (Service, error) {
 		Name:               strings.TrimSpace(r.Name),
 		Description:        strings.TrimSpace(r.Description),
 		LifecycleState:     ServiceLifecycleDraft,
-		TechnologyKey:      normalizeTechnologyKey(r.TechnologyKey),
+		ServiceCategory:    normalizeServiceCategory(r.ServiceCategory),
 		EscalationPolicyID: strings.TrimSpace(r.EscalationPolicyID),
 		BusinessHours:      cloneBusinessHoursConfig(r.BusinessHours),
 	}
@@ -221,12 +223,12 @@ func (s Service) Validate() error {
 		}
 		return nil
 	}))
-	builder.Add(rules.Field("technologyKey", func(service Service) error {
-		if service.TechnologyKey == "" {
+	builder.Add(rules.Field("serviceCategory", func(service Service) error {
+		if service.ServiceCategory == "" {
 			return nil
 		}
-		if _, ok := supportedTechnologyKeys[service.TechnologyKey]; !ok {
-			return validationError(fmt.Sprintf("%q is not supported", service.TechnologyKey))
+		if _, ok := supportedServiceCategories[service.ServiceCategory]; !ok {
+			return validationError(fmt.Sprintf("%q is not supported", service.ServiceCategory))
 		}
 		return nil
 	}))
@@ -482,6 +484,6 @@ func normalizeSlug(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-func normalizeTechnologyKey(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+func normalizeServiceCategory(value ServiceCategory) ServiceCategory {
+	return ServiceCategory(strings.ToLower(strings.TrimSpace(string(value))))
 }

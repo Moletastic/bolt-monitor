@@ -20,7 +20,7 @@ type serviceResponse struct {
 	Name               string                          `json:"name"`
 	Description        string                          `json:"description,omitempty"`
 	LifecycleState     string                          `json:"lifecycleState"`
-	TechnologyKey      string                          `json:"technologyKey,omitempty"`
+	ServiceCategory    string                          `json:"serviceCategory,omitempty"`
 	EscalationPolicyID string                          `json:"escalationPolicyId,omitempty"`
 	BusinessHours      *escalation.BusinessHoursConfig `json:"businessHours,omitempty"`
 	MonitorCount       int                             `json:"monitorCount"`
@@ -28,7 +28,36 @@ type serviceResponse struct {
 	RollupStatus       string                          `json:"rollupStatus"`
 	CreatedAt          string                          `json:"createdAt,omitempty"`
 	UpdatedAt          string                          `json:"updatedAt,omitempty"`
+	CardMetrics        *serviceCardMetricsResponse     `json:"cardMetrics,omitempty"`
 	Monitors           []monitorResponse               `json:"monitors,omitempty"`
+}
+
+type serviceCardMetricState string
+
+const (
+	serviceCardMetricStateReady      serviceCardMetricState = "ready"
+	serviceCardMetricStateNoMonitors serviceCardMetricState = "no_monitors"
+	serviceCardMetricStateNoData     serviceCardMetricState = "no_data"
+)
+
+type serviceCardMetricsResponse struct {
+	State           serviceCardMetricState  `json:"state"`
+	SampleCount     int                     `json:"sampleCount"`
+	SuccessCount    int                     `json:"successCount"`
+	MonitorCount    int                     `json:"monitorCount"`
+	UpMonitorCount  int                     `json:"upMonitorCount"`
+	AvgLatencyMs    *int64                  `json:"avgLatencyMs,omitempty"`
+	P99LatencyMs    *int64                  `json:"p99LatencyMs,omitempty"`
+	RecentUptimePct *float64                `json:"recentUptimePct,omitempty"`
+	Trend           []serviceCardTrendPoint `json:"trend,omitempty"`
+}
+
+type serviceCardTrendPoint struct {
+	MonitorID  string `json:"monitorId"`
+	StartedAt  string `json:"startedAt"`
+	DurationMs int64  `json:"durationMs"`
+	Outcome    string `json:"outcome"`
+	Success    bool   `json:"success"`
 }
 
 type listServicesResponse struct {
@@ -39,7 +68,7 @@ type updateServiceRequest struct {
 	ServiceID          *string                         `json:"serviceId,omitempty"`
 	Name               *string                         `json:"name,omitempty"`
 	Description        *string                         `json:"description,omitempty"`
-	TechnologyKey      *string                         `json:"technologyKey,omitempty"`
+	ServiceCategory    *string                         `json:"serviceCategory,omitempty"`
 	EscalationPolicyID *string                         `json:"escalationPolicyId,omitempty"`
 	BusinessHours      *escalation.BusinessHoursConfig `json:"businessHours,omitempty"`
 }
@@ -293,13 +322,13 @@ type auditEventView struct {
 }
 
 func toServiceResponse(service monitorconfig.Service) serviceResponse {
-	return serviceResponse{
+	response := serviceResponse{
 		TenantID:           service.TenantID,
 		ServiceID:          service.ServiceID,
 		Name:               service.Name,
 		Description:        service.Description,
 		LifecycleState:     string(service.LifecycleState),
-		TechnologyKey:      service.TechnologyKey,
+		ServiceCategory:    string(service.ServiceCategory),
 		EscalationPolicyID: service.EscalationPolicyID,
 		BusinessHours:      dynamodbrecord.CloneBusinessHoursConfig(service.BusinessHours),
 		MonitorCount:       service.MonitorCount,
@@ -307,6 +336,37 @@ func toServiceResponse(service monitorconfig.Service) serviceResponse {
 		RollupStatus:       service.RollupStatus,
 		CreatedAt:          service.CreatedAt,
 		UpdatedAt:          service.UpdatedAt,
+	}
+	if len(service.MonitorSummaries) > 0 {
+		response.Monitors = make([]monitorResponse, 0, len(service.MonitorSummaries))
+		for _, summary := range service.MonitorSummaries {
+			response.Monitors = append(response.Monitors, toMonitorSummaryResponse(summary))
+		}
+	}
+	return response
+}
+
+func toMonitorSummaryResponse(summary monitorconfig.MonitorSummary) monitorResponse {
+	var status *monitorStatusResponse
+	if strings.TrimSpace(summary.CurrentStatus) != "" {
+		status = &monitorStatusResponse{
+			CurrentStatus:       summary.CurrentStatus,
+			LastCheckedAt:       summary.LastCheckedAt,
+			LastDurationMs:      summary.LastDurationMs,
+			LastProbeLocationID: summary.LastProbeLocationID,
+			LastError:           summary.LastError,
+		}
+	}
+	return monitorResponse{
+		TenantID:        summary.TenantID,
+		ServiceID:       summary.ServiceID,
+		MonitorID:       summary.MonitorID,
+		Name:            summary.Name,
+		Type:            summary.Type,
+		IntervalSeconds: summary.IntervalSeconds,
+		ProbeLocations:  append([]string(nil), summary.ProbeLocations...),
+		Enabled:         summary.Enabled,
+		Status:          status,
 	}
 }
 

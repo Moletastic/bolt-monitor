@@ -119,10 +119,33 @@ func (r *dynamoMonitorRepository) ListServices(ctx context.Context, tenantID str
 				}
 			}
 		}
+		summaries, err := r.serviceMonitorSummaries(ctx, tenantID, service.ServiceID)
+		if err != nil {
+			return nil, err
+		}
+		service.MonitorSummaries = summaries
 		services = append(services, service)
 	}
 	sort.Slice(services, func(i, j int) bool { return services[i].ServiceID < services[j].ServiceID })
 	return services, nil
+}
+
+func (r *dynamoMonitorRepository) serviceMonitorSummaries(ctx context.Context, tenantID, serviceID string) ([]monitorconfig.MonitorSummary, error) {
+	monitors, err := r.ListMonitors(ctx, tenantID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	statuses := make(map[string]resultstatus.MonitorStatus, len(monitors))
+	for _, monitor := range monitors {
+		status, found, err := r.GetMonitorStatus(ctx, tenantID, serviceID, monitor.MonitorID)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			statuses[monitorStatusKey(monitor.ServiceID, monitor.MonitorID)] = status
+		}
+	}
+	return buildMonitorSummaries(monitors, statuses), nil
 }
 
 func (r *dynamoMonitorRepository) GetService(ctx context.Context, tenantID, serviceID string) (monitorconfig.Service, bool, error) {
@@ -670,6 +693,30 @@ func (r *dynamoMonitorRepository) ListMonitorRuns(ctx context.Context, tenantID,
 	}
 	sort.Slice(runs, func(i, j int) bool { return runs[i].StartedAt.After(runs[j].StartedAt) })
 	return runs, nil
+}
+
+func (r *dynamoMonitorRepository) GetServiceCardMetrics(ctx context.Context, tenantID, serviceID string) (serviceCardMetricsResponse, error) {
+	monitors, err := r.ListMonitors(ctx, tenantID, serviceID)
+	if err != nil {
+		return serviceCardMetricsResponse{}, err
+	}
+	statuses := make(map[string]resultstatus.MonitorStatus, len(monitors))
+	runsByMonitor := make(map[string][]resultstatus.CheckRun, len(monitors))
+	for _, monitor := range monitors {
+		status, found, err := r.GetMonitorStatus(ctx, tenantID, serviceID, monitor.MonitorID)
+		if err != nil {
+			return serviceCardMetricsResponse{}, err
+		}
+		if found {
+			statuses[monitor.MonitorID] = status
+		}
+		runs, err := r.ListMonitorRuns(ctx, tenantID, serviceID, monitor.MonitorID, 20)
+		if err != nil {
+			return serviceCardMetricsResponse{}, err
+		}
+		runsByMonitor[monitor.MonitorID] = runs
+	}
+	return buildServiceCardMetrics(monitors, statuses, runsByMonitor), nil
 }
 
 func (r *dynamoMonitorRepository) CreateManualRun(ctx context.Context, monitor monitorconfig.Monitor, now time.Time) (manualRunRequestRecord, error) {
@@ -1358,6 +1405,82 @@ func buildMonitorSummaries(monitors []monitorconfig.Monitor, statuses map[string
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].MonitorID < summaries[j].MonitorID })
 	return summaries
+}
+
+func buildServiceCardMetrics(monitors []monitorconfig.Monitor, statuses map[string]resultstatus.MonitorStatus, runsByMonitor map[string][]resultstatus.CheckRun) serviceCardMetricsResponse {
+	metrics := serviceCardMetricsResponse{
+		MonitorCount: len(monitors),
+		Trend:        []serviceCardTrendPoint{},
+	}
+	if len(monitors) == 0 {
+		metrics.State = serviceCardMetricStateNoMonitors
+		return metrics
+	}
+	for _, status := range statuses {
+		if strings.EqualFold(status.CurrentStatus, string(resultstatus.MonitorStateUp)) {
+			metrics.UpMonitorCount++
+		}
+	}
+	successDurations := []int64{}
+	for _, monitor := range monitors {
+		for _, run := range runsByMonitor[monitor.MonitorID] {
+			metrics.SampleCount++
+			success := run.Outcome == checkexecution.OutcomeSuccess
+			if success {
+				metrics.SuccessCount++
+				successDurations = append(successDurations, run.DurationMs)
+			}
+			metrics.Trend = append(metrics.Trend, serviceCardTrendPoint{
+				MonitorID:  run.MonitorID,
+				StartedAt:  run.StartedAt.UTC().Format(time.RFC3339),
+				DurationMs: run.DurationMs,
+				Outcome:    string(run.Outcome),
+				Success:    success,
+			})
+		}
+	}
+	if metrics.SampleCount == 0 {
+		metrics.State = serviceCardMetricStateNoData
+		return metrics
+	}
+	metrics.State = serviceCardMetricStateReady
+	uptime := float64(metrics.SuccessCount) / float64(metrics.SampleCount) * 100
+	metrics.RecentUptimePct = &uptime
+	if len(successDurations) > 0 {
+		avg := averageInt64(successDurations)
+		p99 := percentileNearestRank(successDurations, 99)
+		metrics.AvgLatencyMs = &avg
+		metrics.P99LatencyMs = &p99
+	}
+	sort.Slice(metrics.Trend, func(i, j int) bool { return metrics.Trend[i].StartedAt < metrics.Trend[j].StartedAt })
+	return metrics
+}
+
+func averageInt64(values []int64) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	var total int64
+	for _, value := range values {
+		total += value
+	}
+	return total / int64(len(values))
+}
+
+func percentileNearestRank(values []int64, percentile int) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]int64(nil), values...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	index := (percentile*len(sorted)+99)/100 - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(sorted) {
+		index = len(sorted) - 1
+	}
+	return sorted[index]
 }
 
 func countEnabledMonitors(monitors []monitorconfig.Monitor) int {

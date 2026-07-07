@@ -131,10 +131,10 @@ export default async function ServiceDetailPage({
               <CardContent className="space-y-5">
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div className="flex items-start gap-4">
-                    <ServiceIcon size="lg" technologyKey={service.technologyKey} />
+                    <ServiceIcon serviceCategory={service.serviceCategory} size="lg" />
                     <div>
                       <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-muted-foreground">
-                        {service.technologyKey ?? 'service'} · {service.lifecycleState}
+                        {service.serviceCategory ?? 'service'} · {service.lifecycleState}
                       </p>
                       <h2 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
                         {service.name}
@@ -191,7 +191,7 @@ export default async function ServiceDetailPage({
                       Technology
                     </p>
                     <p className="mt-2 text-xl font-semibold text-foreground">
-                      {service.technologyKey ?? 'None'}
+                      {service.serviceCategory ?? 'None'}
                     </p>
                   </div>
                   <div className="rounded-lg border border-border bg-surface-low p-4">

@@ -420,15 +420,15 @@ export async function triggerManualRunAction(formData: FormData) {
 export async function createServiceAction(formData: FormData) {
   const returnTo = getReturnTo(formData, '/services/new')
 
-  const technologyKey = String(formData.get('technologyKey') ?? '').trim()
+  const serviceCategory = String(formData.get('serviceCategory') ?? '').trim()
   const payload: CreateServicePayload = {
     name: String(formData.get('name') ?? '').trim(),
     description: String(formData.get('description') ?? '').trim() || undefined,
     lifecycleState: String(
       formData.get('lifecycleState') ?? 'draft'
     ).trim() as CreateServicePayload['lifecycleState'],
-    technologyKey: technologyKey
-      ? (technologyKey as CreateServicePayload['technologyKey'])
+    serviceCategory: serviceCategory
+      ? (serviceCategory as CreateServicePayload['serviceCategory'])
       : undefined,
     escalationPolicyId: stringOrNull(formData.get('escalationPolicyId')) ?? undefined,
     businessHours: parseServiceBusinessHours(formData.get('businessHoursPayload')) ?? undefined,
@@ -447,15 +447,15 @@ export async function updateServiceAction(formData: FormData) {
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}`)
 
-  const technologyKey = String(formData.get('technologyKey') ?? '').trim()
+  const serviceCategory = String(formData.get('serviceCategory') ?? '').trim()
   const payload: UpdateServicePayload = {
     name: String(formData.get('name') ?? '').trim(),
     description: String(formData.get('description') ?? '').trim() || undefined,
     lifecycleState: String(
       formData.get('lifecycleState') ?? 'draft'
-    ).trim() as CreateServicePayload['lifecycleState'],
-    technologyKey: technologyKey
-      ? (technologyKey as CreateServicePayload['technologyKey'])
+    ).trim() as UpdateServicePayload['lifecycleState'],
+    serviceCategory: serviceCategory
+      ? (serviceCategory as UpdateServicePayload['serviceCategory'])
       : undefined,
     escalationPolicyId: stringOrNull(formData.get('escalationPolicyId')),
     businessHours: parseServiceBusinessHours(formData.get('businessHoursPayload')),

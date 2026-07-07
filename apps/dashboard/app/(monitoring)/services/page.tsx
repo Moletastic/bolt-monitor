@@ -3,15 +3,11 @@ import Link from 'next/link'
 import { AppShell } from '@/components/app-shell'
 import { EmptyState } from '@/components/empty-state'
 import { FocusOnMount } from '@/components/focus-on-mount'
-import { MonitorTrafficLights } from '@/components/monitor-traffic-light'
+import { ServiceOverviewCard } from '@/components/service-overview-card'
 import { ServiceIcon } from '@/components/service-icon'
 import { ServiceListStatusToast } from '@/components/service-list-status-toast'
-import { StatusChip } from '@/components/status-chip'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ApiError, listServices } from '@/lib/api'
-import { formatDateTime } from '@/lib/utils'
-
-type ServiceSummary = Awaited<ReturnType<typeof listServices>>[number]
 
 function DeletedServiceFeedback({ active = true }: { active?: boolean }) {
   return (
@@ -24,17 +20,6 @@ function DeletedServiceFeedback({ active = true }: { active?: boolean }) {
       </p>
     </FocusOnMount>
   )
-}
-
-function formatCoverage(service: ServiceSummary) {
-  const total = service.monitorCount ?? service.monitors?.length ?? 0
-  const enabled = service.enabledMonitorCount
-
-  if (enabled === undefined) {
-    return `${total} monitor${total === 1 ? '' : 's'}`
-  }
-
-  return `${enabled}/${total} enabled`
 }
 
 export default async function ServicesPage({
@@ -98,7 +83,7 @@ export default async function ServicesPage({
                       key={service.serviceId}
                     >
                       <div className="flex items-center gap-3">
-                        <ServiceIcon size="sm" technologyKey={service.technologyKey} />
+                        <ServiceIcon serviceCategory={service.serviceCategory} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-foreground">
                             {service.name}
@@ -149,63 +134,9 @@ export default async function ServicesPage({
               </Card>
             </div>
           </section>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {services.map((service) => (
-              <Card
-                className="transition-colors hover:border-primary/40 hover:bg-surface-low/70"
-                key={service.serviceId}
-              >
-                <Link
-                  aria-label={`Open ${service.name}`}
-                  className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  href={`/services/${service.serviceId}`}
-                >
-                  <CardContent className="space-y-4 pt-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3">
-                        <ServiceIcon technologyKey={service.technologyKey} />
-                        <div>
-                          <p className="text-lg font-semibold text-foreground">{service.name}</p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                            {service.lifecycleState}
-                          </p>
-                        </div>
-                      </div>
-                      <StatusChip status={service.rollupStatus ?? service.lifecycleState} />
-                    </div>
-                    <MonitorTrafficLights monitors={service.monitors ?? []} />
-                    <p className="min-h-10 text-sm text-muted-foreground">
-                      {service.description || 'No service description yet.'}
-                    </p>
-                    <dl className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <dt className="text-muted-foreground">Lifecycle</dt>
-                        <dd className="mt-1 font-semibold text-foreground capitalize">
-                          {service.lifecycleState}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Technology</dt>
-                        <dd className="mt-1 font-semibold text-foreground">
-                          {service.technologyKey ?? 'None'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Coverage</dt>
-                        <dd className="mt-1 font-semibold text-foreground">
-                          {formatCoverage(service)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">Updated</dt>
-                        <dd className="mt-1 font-mono text-sm text-foreground">
-                          {formatDateTime(service.updatedAt)}
-                        </dd>
-                      </div>
-                    </dl>
-                  </CardContent>
-                </Link>
-              </Card>
+              <ServiceOverviewCard key={service.serviceId} service={service} />
             ))}
           </section>
         </div>

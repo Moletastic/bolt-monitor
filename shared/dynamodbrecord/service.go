@@ -18,7 +18,7 @@ type ServiceItemRecord struct {
 	Name               string                          `dynamodbav:"Name"`
 	Description        string                          `dynamodbav:"Description,omitempty"`
 	LifecycleState     string                          `dynamodbav:"LifecycleState"`
-	TechnologyKey      string                          `dynamodbav:"TechnologyKey,omitempty"`
+	ServiceCategory    string                          `dynamodbav:"ServiceCategory,omitempty"`
 	EscalationPolicyID string                          `dynamodbav:"EscalationPolicyID,omitempty"`
 	BusinessHours      *escalation.BusinessHoursConfig `dynamodbav:"BusinessHours,omitempty"`
 	CreatedAt          string                          `dynamodbav:"CreatedAt,omitempty"`
@@ -35,7 +35,7 @@ func NewServiceItemRecord(service monitorconfig.Service) ServiceItemRecord {
 		Name:               service.Name,
 		Description:        service.Description,
 		LifecycleState:     string(service.LifecycleState),
-		TechnologyKey:      service.TechnologyKey,
+		ServiceCategory:    string(service.ServiceCategory),
 		EscalationPolicyID: strings.TrimSpace(service.EscalationPolicyID),
 		BusinessHours:      CloneBusinessHoursConfig(service.BusinessHours),
 		CreatedAt:          service.CreatedAt,
@@ -58,7 +58,7 @@ func (r ServiceItemRecord) ToService() monitorconfig.Service {
 		Name:               r.Name,
 		Description:        r.Description,
 		LifecycleState:     monitorconfig.ServiceLifecycle(r.LifecycleState),
-		TechnologyKey:      r.TechnologyKey,
+		ServiceCategory:    monitorconfig.ServiceCategory(r.ServiceCategory),
 		EscalationPolicyID: strings.TrimSpace(r.EscalationPolicyID),
 		BusinessHours:      CloneBusinessHoursConfig(r.BusinessHours),
 		CreatedAt:          r.CreatedAt,

@@ -37,6 +37,7 @@ type monitorRepository interface {
 	ReactivateService(context.Context, string, string) (monitorconfig.Service, error)
 	GetMonitorStatus(context.Context, string, string, string) (resultstatus.MonitorStatus, bool, error)
 	ListMonitorRuns(context.Context, string, string, string, int32) ([]resultstatus.CheckRun, error)
+	GetServiceCardMetrics(context.Context, string, string) (serviceCardMetricsResponse, error)
 	CreateManualRun(context.Context, monitorconfig.Monitor, time.Time) (manualRunRequestRecord, error)
 	RecordExecutionResult(ctx context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error
 	ListIncidents(context.Context, string, string) ([]dynamodbrecord.IncidentRecord, error)
@@ -216,7 +217,13 @@ func (h monitorHandler) listServices(ctx context.Context) (events.APIGatewayV2HT
 	}
 	payload := listServicesResponse{Services: make([]serviceResponse, 0, len(services))}
 	for _, service := range services {
-		payload.Services = append(payload.Services, toServiceResponse(service))
+		serviceResponse := toServiceResponse(service)
+		metrics, err := h.repo.GetServiceCardMetrics(ctx, h.tenantID, service.ServiceID)
+		if err != nil {
+			return respondAPIGateway(err)
+		}
+		serviceResponse.CardMetrics = &metrics
+		payload.Services = append(payload.Services, serviceResponse)
 	}
 	return envelopeResponse(http.StatusOK, response.OkPaginated(payload, 1, len(payload.Services), len(payload.Services)))
 }
@@ -234,6 +241,11 @@ func (h monitorHandler) getService(ctx context.Context, serviceID string) (event
 		return respondAPIGateway(err)
 	}
 	serviceResponse := toServiceResponse(service)
+	metrics, err := h.repo.GetServiceCardMetrics(ctx, h.tenantID, serviceID)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	serviceResponse.CardMetrics = &metrics
 	serviceResponse.Monitors = make([]monitorResponse, 0, len(monitors))
 	for _, monitor := range monitors {
 		status, foundStatus, err := h.repo.GetMonitorStatus(ctx, h.tenantID, serviceID, monitor.MonitorID)
@@ -271,8 +283,8 @@ func (h monitorHandler) updateService(ctx context.Context, serviceID string, req
 	if payload.Description != nil {
 		updated.Description = strings.TrimSpace(*payload.Description)
 	}
-	if payload.TechnologyKey != nil {
-		updated.TechnologyKey = strings.TrimSpace(*payload.TechnologyKey)
+	if payload.ServiceCategory != nil {
+		updated.ServiceCategory = monitorconfig.ServiceCategory(strings.TrimSpace(*payload.ServiceCategory))
 	}
 	if payload.EscalationPolicyID != nil {
 		updated.EscalationPolicyID = strings.TrimSpace(*payload.EscalationPolicyID)

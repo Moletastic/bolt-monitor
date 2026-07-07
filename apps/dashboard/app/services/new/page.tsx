@@ -29,7 +29,7 @@ export default async function NewServicePage({
               Services own the top-level identity and can start in draft before any monitor exists.
             </p>
             <p>
-              `technologyKey` drives one primary service icon while monitor icons remain
+              `serviceCategory` drives one primary service icon while monitor icons remain
               frontend-derived.
             </p>
             <p>

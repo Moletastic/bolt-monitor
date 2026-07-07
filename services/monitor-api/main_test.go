@@ -360,6 +360,23 @@ func (r *fakeMonitorRepository) ListMonitorRuns(_ context.Context, tenantID, ser
 	return filtered, nil
 }
 
+func (r *fakeMonitorRepository) GetServiceCardMetrics(_ context.Context, tenantID, serviceID string) (serviceCardMetricsResponse, error) {
+	monitors := []monitorconfig.Monitor{}
+	statuses := map[string]resultstatus.MonitorStatus{}
+	runsByMonitor := map[string][]resultstatus.CheckRun{}
+	for _, monitor := range r.monitors {
+		if monitor.TenantID != tenantID || monitor.ServiceID != serviceID {
+			continue
+		}
+		monitors = append(monitors, monitor)
+		if status, ok := r.statuses[monitorKey(serviceID, monitor.MonitorID)]; ok {
+			statuses[monitor.MonitorID] = status
+		}
+		runsByMonitor[monitor.MonitorID] = r.runs[monitorKey(serviceID, monitor.MonitorID)]
+	}
+	return buildServiceCardMetrics(monitors, statuses, runsByMonitor), nil
+}
+
 func (r *fakeMonitorRepository) CreateManualRun(_ context.Context, monitor monitorconfig.Monitor, now time.Time) (manualRunRequestRecord, error) {
 	run := manualRunRequestRecord{RunID: newRunID(now), ServiceID: monitor.ServiceID, MonitorID: monitor.MonitorID, TenantID: monitor.TenantID, Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now.UTC().Format(time.RFC3339)}
 	r.manual[run.RunID] = run
@@ -881,6 +898,116 @@ func TestGetServiceIncludesNestedMonitors(t *testing.T) {
 	}
 	if len(body.Data.Monitors) != 1 || body.Data.Monitors[0].ServiceID != "auth" {
 		t.Fatalf("body.Data.Monitors = %+v", body.Data.Monitors)
+	}
+}
+
+func TestListServicesIncludesRecentCardMetrics(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive, MonitorCount: 2, EnabledCount: 2, RollupStatus: rollupUp}
+	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true}
+	repo.monitors[monitorKey("auth", "admin-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", Name: "Admin", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true}
+	repo.statuses[monitorKey("auth", "public-http")] = resultstatus.MonitorStatus{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", CurrentStatus: "UP", LastCheckedAt: time.Date(2026, 5, 25, 1, 0, 0, 0, time.UTC), LastOutcome: checkexecution.OutcomeSuccess}
+	repo.statuses[monitorKey("auth", "admin-http")] = resultstatus.MonitorStatus{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", CurrentStatus: "DOWN", LastCheckedAt: time.Date(2026, 5, 25, 1, 1, 0, 0, time.UTC), LastOutcome: checkexecution.OutcomeError}
+	repo.runs[monitorKey("auth", "public-http")] = []resultstatus.CheckRun{
+		{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", StartedAt: time.Date(2026, 5, 25, 1, 0, 0, 0, time.UTC), DurationMs: 100, Outcome: checkexecution.OutcomeSuccess},
+		{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", StartedAt: time.Date(2026, 5, 25, 1, 1, 0, 0, time.UTC), DurationMs: 200, Outcome: checkexecution.OutcomeSuccess},
+	}
+	repo.runs[monitorKey("auth", "admin-http")] = []resultstatus.CheckRun{
+		{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", StartedAt: time.Date(2026, 5, 25, 1, 2, 0, 0, time.UTC), DurationMs: 5000, Outcome: checkexecution.OutcomeError},
+	}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services", RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}}}
+
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", response.StatusCode, http.StatusOK, response.Body)
+	}
+	var body struct {
+		Status string               `json:"status"`
+		Data   listServicesResponse `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(response.Body), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(body.Data.Services) != 1 || body.Data.Services[0].CardMetrics == nil {
+		t.Fatalf("services = %+v", body.Data.Services)
+	}
+	metrics := body.Data.Services[0].CardMetrics
+	if metrics.State != serviceCardMetricStateReady || metrics.SampleCount != 3 || metrics.SuccessCount != 2 {
+		t.Fatalf("metrics counts = %+v", metrics)
+	}
+	if metrics.UpMonitorCount != 1 || metrics.MonitorCount != 2 {
+		t.Fatalf("monitor coverage = %d/%d, want 1/2", metrics.UpMonitorCount, metrics.MonitorCount)
+	}
+	if metrics.AvgLatencyMs == nil || *metrics.AvgLatencyMs != 150 {
+		t.Fatalf("AvgLatencyMs = %v, want 150", metrics.AvgLatencyMs)
+	}
+	if metrics.P99LatencyMs == nil || *metrics.P99LatencyMs != 200 {
+		t.Fatalf("P99LatencyMs = %v, want 200", metrics.P99LatencyMs)
+	}
+	if metrics.RecentUptimePct == nil || *metrics.RecentUptimePct < 66.6 || *metrics.RecentUptimePct > 66.7 {
+		t.Fatalf("RecentUptimePct = %v, want about 66.7", metrics.RecentUptimePct)
+	}
+	if len(metrics.Trend) != 3 || metrics.Trend[0].StartedAt > metrics.Trend[1].StartedAt {
+		t.Fatalf("Trend = %+v", metrics.Trend)
+	}
+}
+
+func TestListServicesCardMetricsEmptyStates(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceID   string
+		configure   func(*fakeMonitorRepository)
+		wantedState serviceCardMetricState
+	}{
+		{
+			name:        "no monitors",
+			serviceID:   "draft",
+			configure:   func(*fakeMonitorRepository) {},
+			wantedState: serviceCardMetricStateNoMonitors,
+		},
+		{
+			name:      "monitors no runs",
+			serviceID: "waiting",
+			configure: func(repo *fakeMonitorRepository) {
+				repo.monitors[monitorKey("waiting", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "waiting", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true}
+			},
+			wantedState: serviceCardMetricStateNoData,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newFakeMonitorRepository()
+			repo.services[serviceKey(test.serviceID)] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: test.serviceID, Name: test.name, LifecycleState: monitorconfig.ServiceLifecycleDraft}
+			test.configure(repo)
+			handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+			request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services", RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}}}
+
+			response, err := handler.handleRequest(context.Background(), request)
+			if err != nil {
+				t.Fatalf("handleRequest returned error: %v", err)
+			}
+			var body struct {
+				Status string               `json:"status"`
+				Data   listServicesResponse `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(response.Body), &body); err != nil {
+				t.Fatalf("json.Unmarshal: %v", err)
+			}
+			if len(body.Data.Services) != 1 || body.Data.Services[0].CardMetrics == nil {
+				t.Fatalf("services = %+v", body.Data.Services)
+			}
+			metrics := body.Data.Services[0].CardMetrics
+			if metrics.State != test.wantedState {
+				t.Fatalf("State = %s, want %s", metrics.State, test.wantedState)
+			}
+			if metrics.AvgLatencyMs != nil || metrics.P99LatencyMs != nil || metrics.RecentUptimePct != nil {
+				t.Fatalf("empty metrics should not include values: %+v", metrics)
+			}
+		})
 	}
 }
 

@@ -254,7 +254,7 @@ function ServiceHealthMatrix({ services }: { services: Service[] }) {
                         className="flex items-center gap-3 text-foreground hover:text-primary"
                         href={`/services/${service.serviceId}`}
                       >
-                        <ServiceIcon technologyKey={service.technologyKey} />
+                        <ServiceIcon serviceCategory={service.serviceCategory} />
                         <span>
                           <span className="block font-semibold">{service.name}</span>
                           <span className="block text-xs uppercase tracking-[0.2em] text-muted-foreground">
