@@ -1,77 +1,34 @@
 import { AppShell } from '@/components/app-shell'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 
 export default function Loading() {
   return (
     <AppShell currentPath="/services">
       <div className="grid gap-6">
         <h1 className="sr-only">Services</h1>
-        <section className="grid gap-4 xl:grid-cols-[2fr_1fr_1fr]">
-          <Card className="overflow-hidden">
-            <CardHeader>
-              <CardTitle>
-                <Skeleton className="h-4 w-40" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-2">
-                <Skeleton className="h-8 w-64" />
-                <Skeleton className="h-4 w-[28rem] max-w-full" />
-              </div>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {Array.from({ length: 9 }).map((_, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-3 rounded-lg border border-border/80 bg-surface-low px-3 py-2"
-                  >
-                    <Skeleton className="h-9 w-9 rounded-xl" />
-                    <div className="grid min-w-0 flex-1 gap-1">
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-3 w-16" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <Skeleton className="h-4 w-16" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Skeleton className="h-9 w-12" />
-              <Skeleton className="h-4 w-full" />
-            </CardContent>
-          </Card>
-          <div className="grid gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <Skeleton className="h-4 w-16" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Skeleton className="h-9 w-12" />
-                <Skeleton className="h-4 w-full" />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <Skeleton className="h-4 w-28" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Skeleton className="h-9 w-12" />
-                <Skeleton className="h-4 w-full" />
-              </CardContent>
-            </Card>
+        <section className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className="hidden space-y-2 md:block">
+            <Skeleton className="h-9 w-36" />
+            <Skeleton className="h-4 w-[28rem] max-w-full" />
+          </div>
+          <div className="grid grid-cols-3 gap-2 md:gap-3">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Card key={index}>
+                <CardContent className="space-y-2 p-3 md:p-4">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-8 w-10" />
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </section>
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <section className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full md:w-36" />
+          <Skeleton className="hidden h-10 w-32 md:block" />
+        </section>
+        <section className="grid gap-4 pb-24 md:grid-cols-2 md:pb-0 xl:grid-cols-4">
           {Array.from({ length: 6 }).map((_, index) => (
             <Card key={index}>
               <CardContent className="space-y-4 pt-6">
