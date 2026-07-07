@@ -134,9 +134,7 @@ export function ServiceOverviewCard({ service }: { service: Service }) {
               >
                 <TechIcon category={service.serviceCategory} />
               </span>
-              <p className="truncate text-lg font-semibold text-foreground">
-                {service.name}
-              </p>
+              <p className="truncate text-lg font-semibold text-foreground">{service.name}</p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
               <StatusChip status={service.rollupStatus ?? service.lifecycleState} />
