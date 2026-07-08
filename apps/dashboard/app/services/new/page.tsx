@@ -1,6 +1,5 @@
 import { AppShell } from '@/components/app-shell'
 import { ServiceForm } from '@/components/service-form'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { listEscalationPolicies } from '@/lib/api'
 
 export default async function NewServicePage({
@@ -18,25 +17,14 @@ export default async function NewServicePage({
 
   return (
     <AppShell currentPath="/services/new">
-      <div className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
+      <div className="grid gap-6">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Create service</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Define the identity and alert routing for a new service.
+          </p>
+        </div>
         <ServiceForm error={params.error} policies={policies} />
-        <Card>
-          <CardHeader>
-            <CardTitle>Create flow notes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <p>
-              Services own the top-level identity and can start in draft before any monitor exists.
-            </p>
-            <p>
-              `serviceCategory` drives one primary service icon while monitor icons remain
-              frontend-derived.
-            </p>
-            <p>
-              Nested monitor creation moves to the service detail view after the service is saved.
-            </p>
-          </CardContent>
-        </Card>
       </div>
     </AppShell>
   )
