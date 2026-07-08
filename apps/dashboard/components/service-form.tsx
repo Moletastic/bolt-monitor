@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createServiceAction, updateServiceAction } from '@/lib/actions'
 import {
   SERVICE_CATEGORIES,
+  formatServiceCategoryLabel,
   type Service,
   type EscalationPolicy,
   type BusinessHoursConfig,
@@ -60,10 +61,6 @@ function buildBusinessHoursPayload(state: {
 
 function toggleDay(days: number[], day: number): number[] {
   return days.includes(day) ? days.filter((d) => d !== day) : [...days, day].sort((a, b) => a - b)
-}
-
-function formatCategoryLabel(category: ServiceCategory) {
-  return category === 'http' ? 'HTTP' : category.charAt(0).toUpperCase() + category.slice(1)
 }
 
 function SectionIcon({ children }: { children: ReactNode }) {
@@ -177,7 +174,7 @@ export function ServiceForm({
                           key={category}
                           value={category}
                         >
-                          {formatCategoryLabel(category)}
+                          {formatServiceCategoryLabel(category)}
                         </option>
                       ))}
                     </Select>

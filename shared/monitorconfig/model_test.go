@@ -209,6 +209,22 @@ func TestServiceValidateRejectsUnsupportedServiceCategory(t *testing.T) {
 	}
 }
 
+func TestServiceValidateAcceptsSupportedServiceCategories(t *testing.T) {
+	for _, category := range SupportedServiceCategories() {
+		service := Service{TenantID: "DEFAULT", Name: "Auth", ServiceCategory: category}
+		if err := service.Validate(); err != nil {
+			t.Fatalf("Validate(%q) returned error: %v", category, err)
+		}
+	}
+}
+
+func TestServiceValidateAllowsMissingServiceCategory(t *testing.T) {
+	service := Service{TenantID: "DEFAULT", Name: "Auth"}
+	if err := service.Validate(); err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+}
+
 func TestMonitorValidatePreservesFieldDetails(t *testing.T) {
 	monitor := validTestMonitor()
 	monitor.IntervalSeconds = 90

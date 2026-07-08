@@ -1,15 +1,6 @@
 export type MonitorType = 'http' | 'tcp' | 'grpc' | 'dns'
 export type ServiceLifecycle = 'draft' | 'active' | 'archived'
-export type ServiceCategory =
-  | 'server'
-  | 'database'
-  | 'cache'
-  | 'http'
-  | 'queue'
-  | 'container'
-  | 'function'
-
-export const SERVICE_CATEGORIES: ServiceCategory[] = [
+export const SERVICE_CATEGORIES = [
   'server',
   'database',
   'cache',
@@ -17,7 +8,77 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
   'queue',
   'container',
   'function',
+  'web',
+  'api',
+  'worker',
+  'scheduler',
+  'storage',
+  'search',
+  'auth',
+  'payments',
+  'analytics',
+  'observability',
+  'ai',
+  'integration',
+  'media',
+  'content',
+  'finance',
+  'learning',
+  'gaming',
+  'commerce',
+  'messaging',
+  'support',
+  'marketing',
+  'admin',
+  'security',
+  'location',
+  'social',
 ]
+
+export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number]
+
+export const SERVICE_CATEGORY_LABELS: Record<ServiceCategory, string> = {
+  server: 'Server',
+  database: 'Database',
+  cache: 'Cache',
+  http: 'HTTP',
+  queue: 'Queue',
+  container: 'Container',
+  function: 'Function',
+  web: 'Web app',
+  api: 'API',
+  worker: 'Worker',
+  scheduler: 'Scheduler',
+  storage: 'Storage',
+  search: 'Search',
+  auth: 'Authentication',
+  payments: 'Payments',
+  analytics: 'Analytics',
+  observability: 'Observability',
+  ai: 'AI',
+  integration: 'Integration',
+  media: 'Media',
+  content: 'Content',
+  finance: 'Finance',
+  learning: 'Learning',
+  gaming: 'Gaming',
+  commerce: 'Commerce',
+  messaging: 'Messaging',
+  support: 'Support',
+  marketing: 'Marketing',
+  admin: 'Admin',
+  security: 'Security',
+  location: 'Location',
+  social: 'Social',
+}
+
+export function isServiceCategory(value: string): value is ServiceCategory {
+  return (SERVICE_CATEGORIES as readonly string[]).includes(value)
+}
+
+export function formatServiceCategoryLabel(category: ServiceCategory) {
+  return SERVICE_CATEGORY_LABELS[category]
+}
 
 export interface HttpConfiguration {
   target: string

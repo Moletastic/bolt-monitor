@@ -29,23 +29,73 @@ const (
 type ServiceCategory string
 
 const (
-	ServiceCategoryServer    ServiceCategory = "server"
-	ServiceCategoryDatabase  ServiceCategory = "database"
-	ServiceCategoryCache     ServiceCategory = "cache"
-	ServiceCategoryHTTP      ServiceCategory = "http"
-	ServiceCategoryQueue     ServiceCategory = "queue"
-	ServiceCategoryContainer ServiceCategory = "container"
-	ServiceCategoryFunction  ServiceCategory = "function"
+	ServiceCategoryServer        ServiceCategory = "server"
+	ServiceCategoryDatabase      ServiceCategory = "database"
+	ServiceCategoryCache         ServiceCategory = "cache"
+	ServiceCategoryHTTP          ServiceCategory = "http"
+	ServiceCategoryQueue         ServiceCategory = "queue"
+	ServiceCategoryContainer     ServiceCategory = "container"
+	ServiceCategoryFunction      ServiceCategory = "function"
+	ServiceCategoryWeb           ServiceCategory = "web"
+	ServiceCategoryAPI           ServiceCategory = "api"
+	ServiceCategoryWorker        ServiceCategory = "worker"
+	ServiceCategoryScheduler     ServiceCategory = "scheduler"
+	ServiceCategoryStorage       ServiceCategory = "storage"
+	ServiceCategorySearch        ServiceCategory = "search"
+	ServiceCategoryAuth          ServiceCategory = "auth"
+	ServiceCategoryPayments      ServiceCategory = "payments"
+	ServiceCategoryAnalytics     ServiceCategory = "analytics"
+	ServiceCategoryObservability ServiceCategory = "observability"
+	ServiceCategoryAI            ServiceCategory = "ai"
+	ServiceCategoryIntegration   ServiceCategory = "integration"
+	ServiceCategoryMedia         ServiceCategory = "media"
+	ServiceCategoryContent       ServiceCategory = "content"
+	ServiceCategoryFinance       ServiceCategory = "finance"
+	ServiceCategoryLearning      ServiceCategory = "learning"
+	ServiceCategoryGaming        ServiceCategory = "gaming"
+	ServiceCategoryCommerce      ServiceCategory = "commerce"
+	ServiceCategoryMessaging     ServiceCategory = "messaging"
+	ServiceCategorySupport       ServiceCategory = "support"
+	ServiceCategoryMarketing     ServiceCategory = "marketing"
+	ServiceCategoryAdmin         ServiceCategory = "admin"
+	ServiceCategorySecurity      ServiceCategory = "security"
+	ServiceCategoryLocation      ServiceCategory = "location"
+	ServiceCategorySocial        ServiceCategory = "social"
 )
 
 var supportedServiceCategories = map[ServiceCategory]struct{}{
-	ServiceCategoryServer:    {},
-	ServiceCategoryDatabase:  {},
-	ServiceCategoryCache:     {},
-	ServiceCategoryHTTP:      {},
-	ServiceCategoryQueue:     {},
-	ServiceCategoryContainer: {},
-	ServiceCategoryFunction:  {},
+	ServiceCategoryServer:        {},
+	ServiceCategoryDatabase:      {},
+	ServiceCategoryCache:         {},
+	ServiceCategoryHTTP:          {},
+	ServiceCategoryQueue:         {},
+	ServiceCategoryContainer:     {},
+	ServiceCategoryFunction:      {},
+	ServiceCategoryWeb:           {},
+	ServiceCategoryAPI:           {},
+	ServiceCategoryWorker:        {},
+	ServiceCategoryScheduler:     {},
+	ServiceCategoryStorage:       {},
+	ServiceCategorySearch:        {},
+	ServiceCategoryAuth:          {},
+	ServiceCategoryPayments:      {},
+	ServiceCategoryAnalytics:     {},
+	ServiceCategoryObservability: {},
+	ServiceCategoryAI:            {},
+	ServiceCategoryIntegration:   {},
+	ServiceCategoryMedia:         {},
+	ServiceCategoryContent:       {},
+	ServiceCategoryFinance:       {},
+	ServiceCategoryLearning:      {},
+	ServiceCategoryGaming:        {},
+	ServiceCategoryCommerce:      {},
+	ServiceCategoryMessaging:     {},
+	ServiceCategorySupport:       {},
+	ServiceCategoryMarketing:     {},
+	ServiceCategoryAdmin:         {},
+	ServiceCategorySecurity:      {},
+	ServiceCategoryLocation:      {},
+	ServiceCategorySocial:        {},
 }
 
 var allowedIntervalSeconds = map[int]struct{}{

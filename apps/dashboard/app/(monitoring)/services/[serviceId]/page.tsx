@@ -13,6 +13,7 @@ import { StatusChip } from '@/components/status-chip'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ApiError, getService, listEscalationPolicies } from '@/lib/api'
 import { deleteServiceAction } from '@/lib/actions'
+import { formatServiceCategoryLabel } from '@/lib/types'
 import { formatDateTime } from '@/lib/utils'
 
 type ServiceDetail = Awaited<ReturnType<typeof getService>>
@@ -40,6 +41,10 @@ function policyName(
 function describeBusinessHours(businessHours: NonNullable<ServiceDetail['businessHours']>) {
   const days = businessHours.daysOfWeek.map((day) => dayLabels[day] ?? String(day)).join(', ')
   return `${businessHours.timezone} · ${businessHours.startHour}:00–${businessHours.endHour}:00 · ${days}`
+}
+
+function serviceCategoryLabel(category: ServiceDetail['serviceCategory']) {
+  return category ? formatServiceCategoryLabel(category) : 'None'
 }
 
 const dayLabels: Record<number, string> = {
@@ -134,7 +139,7 @@ export default async function ServiceDetailPage({
                     <ServiceIcon serviceCategory={service.serviceCategory} size="lg" />
                     <div>
                       <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-muted-foreground">
-                        {service.serviceCategory ?? 'service'} · {service.lifecycleState}
+                        {serviceCategoryLabel(service.serviceCategory)} · {service.lifecycleState}
                       </p>
                       <h2 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
                         {service.name}
@@ -191,7 +196,7 @@ export default async function ServiceDetailPage({
                       Technology
                     </p>
                     <p className="mt-2 text-xl font-semibold text-foreground">
-                      {service.serviceCategory ?? 'None'}
+                      {serviceCategoryLabel(service.serviceCategory)}
                     </p>
                   </div>
                   <div className="rounded-lg border border-border bg-surface-low p-4">
