@@ -125,7 +125,13 @@ export default async function ServiceDetailPage({
     const serviceDeleteBlocked = service.lifecycleState === 'active'
 
     return (
-      <AppShell currentPath={`/services/${serviceId}`}>
+      <AppShell
+        breadcrumbs={[
+          { label: 'Services', href: '/services' },
+          { label: service.name || 'Service' },
+        ]}
+        currentPath={`/services/${serviceId}`}
+      >
         <h1 className="sr-only">{service.name}</h1>
         <div className="grid gap-6">
           <section className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
@@ -368,7 +374,13 @@ export default async function ServiceDetailPage({
     }
 
     return (
-      <AppShell currentPath={`/services/${serviceId}`}>
+      <AppShell
+        breadcrumbs={[
+          { label: 'Services', href: '/services' },
+          { label: 'Service' },
+        ]}
+        currentPath={`/services/${serviceId}`}
+      >
         <EmptyState
           description={`${error instanceof Error ? error.message : 'Unable to load service detail.'} Check local API connectivity and service identifier.`}
           title="Service detail unavailable"

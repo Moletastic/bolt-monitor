@@ -34,7 +34,10 @@ export default async function LocationsPage() {
   }
 
   return (
-    <AppShell currentPath="/locations">
+    <AppShell
+      breadcrumbs={[{ label: 'Settings', href: '/config' }, { label: 'Probe locations' }]}
+      currentPath="/locations"
+    >
       <div className="grid gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Probe Locations</h1>

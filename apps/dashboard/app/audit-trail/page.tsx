@@ -3,7 +3,10 @@ import { EmptyState } from '@/components/empty-state'
 
 export default function AuditTrailPage() {
   return (
-    <AppShell currentPath="/audit-trail">
+    <AppShell
+      breadcrumbs={[{ label: 'Incidents', href: '/incidents' }, { label: 'Audit trail' }]}
+      currentPath="/audit-trail"
+    >
       <EmptyState
         actionHref="/incidents"
         actionLabel="Open incidents"

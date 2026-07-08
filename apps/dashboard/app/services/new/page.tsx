@@ -16,7 +16,10 @@ export default async function NewServicePage({
   }
 
   return (
-    <AppShell currentPath="/services/new">
+    <AppShell
+      breadcrumbs={[{ label: 'Services', href: '/services' }, { label: 'Create service' }]}
+      currentPath="/services/new"
+    >
       <div className="grid gap-6">
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">Create service</h1>

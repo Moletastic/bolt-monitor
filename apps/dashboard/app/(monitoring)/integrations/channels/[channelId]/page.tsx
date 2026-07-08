@@ -1,5 +1,3 @@
-import Link from 'next/link'
-
 import { AppShell } from '@/components/app-shell'
 import { ChannelUsageScope, buildChannelUsageMap } from '@/components/channel-usage-scope'
 import { DeleteResourceForm } from '@/components/delete-resource-form'
@@ -22,13 +20,16 @@ export default async function EditChannelPage({
   const usage = buildChannelUsageMap(policies).get(channel.channelId) ?? []
   const deleteBlocked = usage.length > 0
   return (
-    <AppShell currentPath="/integrations/channels">
+    <AppShell
+      breadcrumbs={[
+        { label: 'Channels', href: '/integrations/channels' },
+        { label: channel.name || 'Channel' },
+      ]}
+      currentPath="/integrations/channels"
+    >
       <div className="grid gap-6">
         <div>
-          <Link className="text-sm text-primary hover:underline" href="/integrations/channels">
-            Back to channels
-          </Link>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">Edit notification channel</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Edit notification channel</h1>
         </div>
         <Card>
           <CardHeader>

@@ -22,7 +22,14 @@ export default async function NewServiceMonitorPage({
     const field = getMonitorLocationField(locations)
 
     return (
-      <AppShell currentPath={`/services/${serviceId}/monitors/new`}>
+      <AppShell
+        breadcrumbs={[
+          { label: 'Services', href: '/services' },
+          { label: service.name || 'Service', href: `/services/${service.serviceId}` },
+          { label: 'Create monitor' },
+        ]}
+        currentPath={`/services/${serviceId}/monitors/new`}
+      >
         <div className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
           <MonitorForm error={query.error} locations={locations} serviceId={service.serviceId} />
           <Card>
@@ -62,7 +69,14 @@ export default async function NewServiceMonitorPage({
     }
 
     return (
-      <AppShell currentPath={`/services/${serviceId}/monitors/new`}>
+      <AppShell
+        breadcrumbs={[
+          { label: 'Services', href: '/services' },
+          { label: 'Service', href: `/services/${serviceId}` },
+          { label: 'Create monitor' },
+        ]}
+        currentPath={`/services/${serviceId}/monitors/new`}
+      >
         <EmptyState
           description={`${error instanceof Error ? error.message : 'Unable to load monitor create flow.'}`}
           title="Create monitor unavailable"

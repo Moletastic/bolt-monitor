@@ -31,7 +31,13 @@ export default async function IncidentDetailPage({
     const isOpen = incident.status === 'open' || incident.status === 'acknowledged'
 
     return (
-      <AppShell currentPath="/incidents">
+      <AppShell
+        breadcrumbs={[
+          { label: 'Incidents', href: '/incidents' },
+          { label: incident.summary || incident.incidentId },
+        ]}
+        currentPath="/incidents"
+      >
         <div className="grid gap-6">
           <div className="flex items-start justify-between">
             <div>
@@ -176,7 +182,10 @@ export default async function IncidentDetailPage({
     }
 
     return (
-      <AppShell currentPath="/incidents">
+      <AppShell
+        breadcrumbs={[{ label: 'Incidents', href: '/incidents' }, { label: 'Incident' }]}
+        currentPath="/incidents"
+      >
         <EmptyState
           description={`${error instanceof Error ? error.message : 'Unable to load incident detail.'}`}
           title="Incident unavailable"

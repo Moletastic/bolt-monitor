@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Server, AlertTriangle, Settings, LayoutDashboard, Bell, RadioTower } from 'lucide-react'
 
+import { Breadcrumbs, type BreadcrumbItem } from '@/components/breadcrumbs'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -31,7 +32,15 @@ function isNavItemActive(currentPath: string, item: (typeof navItems)[number]) {
   )
 }
 
-export function AppShell({ children, currentPath }: { children: ReactNode; currentPath: string }) {
+export function AppShell({
+  children,
+  currentPath,
+  breadcrumbs,
+}: {
+  children: ReactNode
+  currentPath: string
+  breadcrumbs?: BreadcrumbItem[]
+}) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen flex-col lg:flex-row">
@@ -77,6 +86,9 @@ export function AppShell({ children, currentPath }: { children: ReactNode; curre
         </aside>
         <div className="flex-1">
           <main className="data-grid min-h-screen px-5 py-6 lg:px-8" id="main-content">
+            {breadcrumbs && breadcrumbs.length > 0 ? (
+              <Breadcrumbs items={breadcrumbs} />
+            ) : null}
             {children}
           </main>
         </div>

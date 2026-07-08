@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { AppShell } from '@/components/app-shell'
@@ -244,7 +243,14 @@ export default async function ServiceMonitorDetailPage({
   const probeLocations = probeLocationsResult.data ?? []
 
   return (
-    <AppShell currentPath={`/services/${serviceId}/monitors/${monitorId}`}>
+    <AppShell
+      breadcrumbs={[
+        { label: 'Services', href: '/services' },
+        { label: service.name || 'Service', href: `/services/${serviceId}` },
+        { label: monitor.name || 'Monitor' },
+      ]}
+      currentPath={`/services/${serviceId}/monitors/${monitorId}`}
+    >
       <h1 className="sr-only">{monitor.name}</h1>
       <div className="grid gap-6">
         <section className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
@@ -269,12 +275,6 @@ export default async function ServiceMonitorDetailPage({
                           {monitor.http?.method ?? monitor.type.toUpperCase()}{' '}
                           {getMonitorTarget(monitor)}
                         </p>
-                        <Link
-                          className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
-                          href={`/services/${serviceId}`}
-                        >
-                          Back to service
-                        </Link>
                       </div>
                     </div>
                     <StatusChip status={status.currentStatus} />

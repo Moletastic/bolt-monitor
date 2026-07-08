@@ -1,5 +1,3 @@
-import Link from 'next/link'
-
 import { AppShell } from '@/components/app-shell'
 import { DeleteResourceForm } from '@/components/delete-resource-form'
 import { EscalationPolicyForm } from '@/components/escalation-policy-form'
@@ -29,7 +27,13 @@ export default async function EditEscalationPolicyPage({
     const message =
       fetchError instanceof Error ? fetchError.message : 'Unable to load escalation policy.'
     return (
-      <AppShell currentPath="/policies">
+      <AppShell
+        breadcrumbs={[
+          { label: 'Notification routes', href: '/policies' },
+          { label: 'Notification route' },
+        ]}
+        currentPath="/policies"
+      >
         <div className="grid gap-6">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -40,9 +44,6 @@ export default async function EditEscalationPolicyPage({
             </p>
           </div>
           <UnavailableCard message={message} title="Escalation policy unavailable" />
-          <Link className="text-sm text-primary hover:underline" href="/policies">
-            Back to routes
-          </Link>
         </div>
       </AppShell>
     )
@@ -51,7 +52,13 @@ export default async function EditEscalationPolicyPage({
   const channels = await listNotificationChannels().catch(() => [])
 
   return (
-    <AppShell currentPath="/policies">
+    <AppShell
+      breadcrumbs={[
+        { label: 'Notification routes', href: '/policies' },
+        { label: policy.name || 'Notification route' },
+      ]}
+      currentPath="/policies"
+    >
       <div className="grid gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">

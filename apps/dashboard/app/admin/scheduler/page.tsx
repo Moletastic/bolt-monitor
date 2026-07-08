@@ -11,7 +11,10 @@ export default async function SchedulerPage() {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to load scheduler config.'
     return (
-      <AppShell currentPath="/admin/scheduler">
+      <AppShell
+        breadcrumbs={[{ label: 'Settings', href: '/config' }, { label: 'Scheduler' }]}
+        currentPath="/admin/scheduler"
+      >
         <div className="grid gap-6">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Scheduler</h1>
@@ -26,7 +29,10 @@ export default async function SchedulerPage() {
   }
 
   return (
-    <AppShell currentPath="/admin/scheduler">
+    <AppShell
+      breadcrumbs={[{ label: 'Settings', href: '/config' }, { label: 'Scheduler' }]}
+      currentPath="/admin/scheduler"
+    >
       <div className="grid gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Scheduler</h1>
