@@ -100,9 +100,12 @@ describe('dashboard interaction smoothness guards', () => {
 
   it('keeps mobile monitor card actions outside row-level links', async () => {
     const monitorTable = await source('components/monitor-table.tsx')
+    const actionsMenu = await source('components/monitor-actions-menu.tsx')
 
-    expect(monitorTable).toContain('<SamePageActionForm')
-    expect(monitorTable).not.toContain('</SamePageActionForm>\n            </Link>')
+    expect(monitorTable).toContain('<MonitorActionsMenu')
+    expect(monitorTable).not.toContain('</MonitorActionsMenu>\n            </Link>')
+    expect(actionsMenu).toContain('import { toggleMonitorStateAction }')
+    expect(actionsMenu).toContain('role="menuitem"')
   })
 
   it('keeps destructive delete focus from falling back to the document body', async () => {

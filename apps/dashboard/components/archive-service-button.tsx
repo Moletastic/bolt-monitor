@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { Archive } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -31,7 +32,8 @@ export function ArchiveServiceButton({
         }}
         title="Archive service?"
         trigger={
-          <Button disabled={disabled} type="button" variant="outline">
+          <Button className="gap-2" disabled={disabled} type="button" variant="outline">
+            <Archive aria-hidden="true" className="h-4 w-4" />
             Archive service
           </Button>
         }

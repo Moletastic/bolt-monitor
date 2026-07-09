@@ -248,6 +248,15 @@ export async function getMonitorIncidents(serviceId: string, monitorId: string) 
   return response.incidents
 }
 
+export async function listServiceIncidents(serviceId: string, limit?: number) {
+  const path =
+    limit === undefined
+      ? `/api/v1/services/${serviceId}/incidents`
+      : `/api/v1/services/${serviceId}/incidents?limit=${limit}`
+  const response = await apiRequest<IncidentListResponse>(path)
+  return response.incidents
+}
+
 export async function listMonitorAuditEvents(serviceId: string, monitorId: string) {
   const response = await apiRequest<MonitorAuditResponse>(
     `/api/v1/services/${serviceId}/monitors/${monitorId}/audit`
