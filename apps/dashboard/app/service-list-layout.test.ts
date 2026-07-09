@@ -50,8 +50,6 @@ describe('filterServiceList', () => {
     expect(filterServiceList(services, '', 'draft').map((item) => item.serviceId)).toEqual([
       'svc-2',
     ])
-    expect(filterServiceList(services, '', 'down').map((item) => item.serviceId)).toEqual([
-      'svc-3',
-    ])
+    expect(filterServiceList(services, '', 'down').map((item) => item.serviceId)).toEqual(['svc-3'])
   })
 })

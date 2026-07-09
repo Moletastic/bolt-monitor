@@ -86,9 +86,7 @@ export function AppShell({
         </aside>
         <div className="flex-1">
           <main className="data-grid min-h-screen px-5 py-6 lg:px-8" id="main-content">
-            {breadcrumbs && breadcrumbs.length > 0 ? (
-              <Breadcrumbs items={breadcrumbs} />
-            ) : null}
+            {breadcrumbs && breadcrumbs.length > 0 ? <Breadcrumbs items={breadcrumbs} /> : null}
             {children}
           </main>
         </div>

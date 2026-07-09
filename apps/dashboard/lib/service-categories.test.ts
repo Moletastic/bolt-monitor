@@ -17,10 +17,7 @@ function parseGoServiceCategories(source: string): string[] {
 }
 
 describe('service category catalog', () => {
-  const goSource = readFileSync(
-    resolve(REPO_ROOT, 'shared', 'monitorconfig', 'model.go'),
-    'utf8'
-  )
+  const goSource = readFileSync(resolve(REPO_ROOT, 'shared', 'monitorconfig', 'model.go'), 'utf8')
   const goCategories = parseGoServiceCategories(goSource)
 
   it('matches the Go service category registry', () => {

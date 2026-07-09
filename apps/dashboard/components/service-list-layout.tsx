@@ -21,7 +21,9 @@ interface SummaryIndicatorProps {
 function SummaryIndicator({ label, value, tone = 'default' }: SummaryIndicatorProps) {
   return (
     <div className="rounded-lg border border-border/80 bg-card px-3 py-3 shadow-sm md:min-w-32 md:px-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
       <p
         className={cn(
           'mt-1 font-mono text-2xl font-semibold text-foreground md:text-3xl',
@@ -41,7 +43,9 @@ export function ServiceListLayout({ services }: { services: Service[] }) {
   const visibleServices = filterServiceList(services, deferredSearch, filter)
   const activeCount = services.filter((service) => service.lifecycleState === 'active').length
   const draftCount = services.filter((service) => service.lifecycleState === 'draft').length
-  const downCount = services.filter((service) => service.rollupStatus?.toUpperCase() === 'DOWN').length
+  const downCount = services.filter(
+    (service) => service.rollupStatus?.toUpperCase() === 'DOWN'
+  ).length
 
   return (
     <div className="grid gap-6">
@@ -59,7 +63,10 @@ export function ServiceListLayout({ services }: { services: Service[] }) {
         </div>
       </section>
 
-      <section aria-label="Service list controls" className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+      <section
+        aria-label="Service list controls"
+        className="grid gap-3 md:grid-cols-[1fr_auto_auto]"
+      >
         <div>
           <label className="sr-only" htmlFor="service-search">
             Search services

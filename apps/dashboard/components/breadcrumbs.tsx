@@ -8,13 +8,7 @@ export type BreadcrumbItem = {
   href?: string
 }
 
-export function Breadcrumbs({
-  items,
-  className,
-}: {
-  items: BreadcrumbItem[]
-  className?: string
-}) {
+export function Breadcrumbs({ items, className }: { items: BreadcrumbItem[]; className?: string }) {
   if (items.length === 0) {
     return null
   }
@@ -49,10 +43,7 @@ export function Breadcrumbs({
                 )}
               </li>
               {!isLast ? (
-                <li
-                  aria-hidden="true"
-                  className="select-none px-1 text-muted-foreground/60"
-                >
+                <li aria-hidden="true" className="select-none px-1 text-muted-foreground/60">
                   /
                 </li>
               ) : null}

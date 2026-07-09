@@ -11,10 +11,7 @@ export default async function NewPolicyPage({
   const channels = await listNotificationChannels().catch(() => [])
   return (
     <AppShell
-      breadcrumbs={[
-        { label: 'Notification routes', href: '/policies' },
-        { label: 'Create route' },
-      ]}
+      breadcrumbs={[{ label: 'Notification routes', href: '/policies' }, { label: 'Create route' }]}
       currentPath="/policies"
     >
       <div className="grid gap-6">
