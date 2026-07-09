@@ -44,7 +44,10 @@ export function Breadcrumbs({ items, className }: { items: BreadcrumbItem[]; cla
                 )}
               </li>
               {!isLast ? (
-                <li aria-hidden="true" className="flex select-none items-center px-1 text-muted-foreground/60">
+                <li
+                  aria-hidden="true"
+                  className="flex select-none items-center px-1 text-muted-foreground/60"
+                >
                   <ChevronRight className="h-3 w-3" aria-hidden="true" />
                 </li>
               ) : null}
