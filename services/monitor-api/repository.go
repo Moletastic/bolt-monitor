@@ -920,6 +920,42 @@ func (r *dynamoMonitorRepository) ListMonitorIncidents(ctx context.Context, tena
 	return incidents, nil
 }
 
+func (r *dynamoMonitorRepository) ListServiceIncidents(ctx context.Context, tenantID, serviceID string, limit int32) ([]dynamodbrecord.IncidentRecord, error) {
+	if err := r.requireTableName(); err != nil {
+		return nil, err
+	}
+	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
+		TableName:              sharedaws.String(r.tableName),
+		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)},
+			":prefix": &sharedaws.AttributeValueMemberS{Value: "INCIDENT#"},
+		},
+		ScanIndexForward: sharedaws.Bool(false),
+		Limit:            sharedaws.Int32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	normalized := strings.ToLower(strings.TrimSpace(serviceID))
+	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(out.Items))
+	for _, item := range out.Items {
+		var record dynamodbrecord.IncidentItemRecord
+		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
+			return nil, err
+		}
+		if record.EntityType != dynamodbrecord.IncidentRefEntityType {
+			continue
+		}
+		if !strings.EqualFold(record.ServiceID, normalized) {
+			continue
+		}
+		incidents = append(incidents, record.ToIncident())
+	}
+	sort.Slice(incidents, func(i, j int) bool { return incidents[i].OpenedAt > incidents[j].OpenedAt })
+	return incidents, nil
+}
+
 func (r *dynamoMonitorRepository) AcknowledgeIncident(ctx context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
 	incident, found, err := r.GetIncident(ctx, tenantID, incidentID)
 	if err != nil || !found {

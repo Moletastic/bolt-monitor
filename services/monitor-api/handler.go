@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,11 @@ import (
 	"bolt-monitor/shared/probelocationcatalog"
 	"bolt-monitor/shared/resultstatus"
 	"github.com/aws/aws-lambda-go/events"
+)
+
+const (
+	defaultServiceIncidentsLimit = int32(5)
+	maxServiceIncidentsLimit     = int32(50)
 )
 
 type monitorRepository interface {
@@ -44,6 +50,7 @@ type monitorRepository interface {
 	GetIncident(context.Context, string, string) (dynamodbrecord.IncidentRecord, bool, error)
 	ListIncidentActivities(context.Context, string, string) ([]dynamodbrecord.IncidentActivityRecord, error)
 	ListMonitorIncidents(context.Context, string, string, string) ([]dynamodbrecord.IncidentRecord, error)
+	ListServiceIncidents(context.Context, string, string, int32) ([]dynamodbrecord.IncidentRecord, error)
 	AcknowledgeIncident(context.Context, string, string, time.Time) (dynamodbrecord.IncidentRecord, bool, error)
 	ResolveIncident(context.Context, string, string, time.Time) (dynamodbrecord.IncidentRecord, bool, error)
 	GetSchedulerConfig(context.Context, string) (dynamodbrecord.SchedulerConfigRecord, error)
@@ -179,6 +186,8 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 		return h.getMonitorRuns(ctx, serviceID, monitorID)
 	case method == http.MethodPost && strings.HasSuffix(path, "/run") && serviceID != "" && monitorID != "":
 		return h.runMonitor(ctx, serviceID, monitorID)
+	case method == http.MethodGet && strings.HasSuffix(path, "/incidents") && serviceID != "" && monitorID == "":
+		return h.getServiceIncidents(ctx, serviceID, request)
 	case method == http.MethodGet && strings.HasSuffix(path, "/incidents") && serviceID != "" && monitorID != "":
 		return h.getMonitorIncidents(ctx, serviceID, monitorID)
 	case method == http.MethodGet && strings.HasSuffix(path, "/audit") && serviceID != "" && monitorID != "":
@@ -635,6 +644,34 @@ func (h monitorHandler) getMonitorIncidents(ctx context.Context, serviceID, moni
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
 	}
 	incidents, err := h.repo.ListMonitorIncidents(ctx, h.tenantID, serviceID, monitorID)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	payload := listIncidentsResponse{Incidents: make([]incidentResponse, 0, len(incidents))}
+	for _, incident := range incidents {
+		payload.Incidents = append(payload.Incidents, toIncidentResponse(incident))
+	}
+	return envelopeResponse(http.StatusOK, response.Ok(payload))
+}
+
+func (h monitorHandler) getServiceIncidents(ctx context.Context, serviceID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if _, found, err := h.repo.GetService(ctx, h.tenantID, serviceID); err != nil {
+		return respondAPIGateway(err)
+	} else if !found {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
+	}
+	limit := defaultServiceIncidentsLimit
+	if raw := strings.TrimSpace(request.QueryStringParameters["limit"]); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil || parsed <= 0 || parsed > int64(maxServiceIncidentsLimit) {
+			return respondAPIGateway(sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{
+				"field":  "limit",
+				"reason": "must be a positive integer no greater than the maximum",
+			}))
+		}
+		limit = int32(parsed)
+	}
+	incidents, err := h.repo.ListServiceIncidents(ctx, h.tenantID, serviceID, limit)
 	if err != nil {
 		return respondAPIGateway(err)
 	}

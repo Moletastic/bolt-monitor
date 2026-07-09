@@ -147,6 +147,7 @@ export function createBootstrapStack() {
   api.route('GET /api/v1/services/{serviceId}/monitors/{monitorId}/runs', monitorHandler)
   api.route('POST /api/v1/services/{serviceId}/monitors/{monitorId}/run', monitorHandler)
   api.route('GET /api/v1/services/{serviceId}/monitors/{monitorId}/incidents', monitorHandler)
+  api.route('GET /api/v1/services/{serviceId}/incidents', monitorHandler)
   api.route('GET /api/v1/services/{serviceId}/monitors/{monitorId}/audit', monitorHandler)
   api.route('GET /api/v1/services/{serviceId}/audit', monitorHandler)
   api.route('POST /api/v1/services/{serviceId}/monitors/{monitorId}/enable', monitorHandler)

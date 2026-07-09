@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -422,6 +424,20 @@ func (r *fakeMonitorRepository) ListMonitorIncidents(_ context.Context, tenantID
 		if incident.TenantID == tenantID && incident.ServiceID == serviceID && incident.MonitorID == monitorID {
 			incidents = append(incidents, incident)
 		}
+	}
+	return incidents, nil
+}
+
+func (r *fakeMonitorRepository) ListServiceIncidents(_ context.Context, tenantID, serviceID string, limit int32) ([]dynamodbrecord.IncidentRecord, error) {
+	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(r.incidents))
+	for _, incident := range r.incidents {
+		if incident.TenantID == tenantID && incident.ServiceID == serviceID {
+			incidents = append(incidents, incident)
+		}
+	}
+	sort.Slice(incidents, func(i, j int) bool { return incidents[i].OpenedAt > incidents[j].OpenedAt })
+	if int64(len(incidents)) > int64(limit) {
+		incidents = incidents[:limit]
 	}
 	return incidents, nil
 }
@@ -1813,5 +1829,222 @@ func TestEscalationPolicyValidationSurfacesFieldPath(t *testing.T) {
 	}
 	if got := envelope.Reason.Details["field"]; got != "businessHoursPath.steps[0].channelId" {
 		t.Fatalf("field = %v, want businessHoursPath.steps[0].channelId", got)
+	}
+}
+
+func TestListServiceIncidentsReturnsIncidentsForService(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive}
+	repo.incidents["inc-auth-1"] = dynamodbrecord.IncidentRecord{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", IncidentID: "inc-auth-1", Status: "open", Summary: "Auth monitor 1", OpenedAt: "2026-05-25T01:00:00Z", UpdatedAt: "2026-05-25T01:05:00Z"}
+	repo.incidents["inc-auth-2"] = dynamodbrecord.IncidentRecord{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", IncidentID: "inc-auth-2", Status: "resolved", Summary: "Auth monitor 2", OpenedAt: "2026-05-25T00:00:00Z", UpdatedAt: "2026-05-25T00:30:00Z"}
+	repo.incidents["inc-other-1"] = dynamodbrecord.IncidentRecord{TenantID: defaultTenantID, ServiceID: "payments", MonitorID: "checkout", IncidentID: "inc-other-1", Status: "open", Summary: "Other service", OpenedAt: "2026-05-25T02:00:00Z", UpdatedAt: "2026-05-25T02:05:00Z"}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{
+		RawPath:        "/api/v1/services/auth/incidents",
+		PathParameters: map[string]string{"serviceId": "auth"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}},
+	}
+
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", response.StatusCode, http.StatusOK, response.Body)
+	}
+	var body struct {
+		Status string                `json:"status"`
+		Data   listIncidentsResponse `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(response.Body), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if body.Status != "success" {
+		t.Fatalf("body.Status = %q, want success", body.Status)
+	}
+	if len(body.Data.Incidents) != 2 {
+		t.Fatalf("len(incidents) = %d, want 2 (body=%s)", len(body.Data.Incidents), response.Body)
+	}
+	if body.Data.Incidents[0].IncidentID != "inc-auth-1" || body.Data.Incidents[1].IncidentID != "inc-auth-2" {
+		t.Fatalf("sort order = [%s, %s], want newest first by openedAt", body.Data.Incidents[0].IncidentID, body.Data.Incidents[1].IncidentID)
+	}
+	for _, incident := range body.Data.Incidents {
+		if incident.ServiceID != "auth" {
+			t.Fatalf("incident %q has serviceId %q, want auth", incident.IncidentID, incident.ServiceID)
+		}
+	}
+}
+
+func TestListServiceIncidentsMissingServiceReturns404(t *testing.T) {
+	handler := newMonitorHandler(newFakeMonitorRepository(), defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{
+		RawPath:        "/api/v1/services/missing/incidents",
+		PathParameters: map[string]string{"serviceId": "missing"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}},
+	}
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", response.StatusCode)
+	}
+	envelope := decodeEnvelope(t, response.Body)
+	if envelope.Reason.Code != "SERVICE_NOT_FOUND" {
+		t.Fatalf("Code = %s, want SERVICE_NOT_FOUND", envelope.Reason.Code)
+	}
+}
+
+func TestListServiceIncidentsEmptyListWhenNoIncidents(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{
+		RawPath:        "/api/v1/services/auth/incidents",
+		PathParameters: map[string]string{"serviceId": "auth"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}},
+	}
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", response.StatusCode, http.StatusOK, response.Body)
+	}
+	var body struct {
+		Status string                `json:"status"`
+		Data   listIncidentsResponse `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(response.Body), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if body.Status != "success" {
+		t.Fatalf("body.Status = %q, want success", body.Status)
+	}
+	if body.Data.Incidents == nil || len(body.Data.Incidents) != 0 {
+		t.Fatalf("incidents = %+v, want empty slice", body.Data.Incidents)
+	}
+}
+
+func TestListServiceIncidentsRespectsLimitQueryParam(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive}
+	for i := 0; i < 8; i++ {
+		id := fmt.Sprintf("inc-auth-%d", i)
+		repo.incidents[id] = dynamodbrecord.IncidentRecord{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "m", IncidentID: id, Status: "open", Summary: id, OpenedAt: fmt.Sprintf("2026-05-25T01:%02d:00Z", i), UpdatedAt: fmt.Sprintf("2026-05-25T01:%02d:00Z", i)}
+	}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{
+		RawPath: "/api/v1/services/auth/incidents", PathParameters: map[string]string{"serviceId": "auth"},
+		QueryStringParameters: map[string]string{"limit": "3"},
+		RequestContext:        events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}},
+	}
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	var body struct {
+		Data listIncidentsResponse `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(response.Body), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(body.Data.Incidents) != 3 {
+		t.Fatalf("len(incidents) = %d, want 3", len(body.Data.Incidents))
+	}
+	if body.Data.Incidents[0].IncidentID != "inc-auth-7" {
+		t.Fatalf("first incident = %s, want inc-auth-7 (newest)", body.Data.Incidents[0].IncidentID)
+	}
+}
+
+func TestListServiceIncidentsDefaultLimitWhenAbsent(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive}
+	for i := 0; i < 12; i++ {
+		id := fmt.Sprintf("inc-auth-%02d", i)
+		repo.incidents[id] = dynamodbrecord.IncidentRecord{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "m", IncidentID: id, Status: "open", Summary: id, OpenedAt: fmt.Sprintf("2026-05-25T%02d:00:00Z", i), UpdatedAt: fmt.Sprintf("2026-05-25T%02d:00:00Z", i)}
+	}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{
+		RawPath: "/api/v1/services/auth/incidents", PathParameters: map[string]string{"serviceId": "auth"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}},
+	}
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	var body struct {
+		Data listIncidentsResponse `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(response.Body), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(body.Data.Incidents) != 5 {
+		t.Fatalf("len(incidents) = %d, want 5 (default limit)", len(body.Data.Incidents))
+	}
+}
+
+func TestListServiceIncidentsRejectsOutOfRangeLimit(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+
+	cases := map[string]string{"zero": "0", "negative": "-1", "above-max": "51", "non-numeric": "abc"}
+	for name, value := range cases {
+		t.Run(name, func(t *testing.T) {
+			request := events.APIGatewayV2HTTPRequest{
+				RawPath: "/api/v1/services/auth/incidents", PathParameters: map[string]string{"serviceId": "auth"},
+				QueryStringParameters: map[string]string{"limit": value},
+				RequestContext:        events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}},
+			}
+			response, err := handler.handleRequest(context.Background(), request)
+			if err != nil {
+				t.Fatalf("handleRequest returned error: %v", err)
+			}
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", response.StatusCode)
+			}
+			envelope := decodeEnvelope(t, response.Body)
+			if envelope.Reason.Code != "VALIDATION_FAILED" {
+				t.Fatalf("Code = %s, want VALIDATION_FAILED", envelope.Reason.Code)
+			}
+			if got := envelope.Reason.Details["field"]; got != "limit" {
+				t.Fatalf("field = %v, want limit", got)
+			}
+		})
+	}
+}
+
+func TestListServiceIncidentsFiltersToRequestedService(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.services[serviceKey("payments")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "payments", Name: "Payments", LifecycleState: monitorconfig.ServiceLifecycleActive}
+	repo.incidents["inc-payments-1"] = dynamodbrecord.IncidentRecord{TenantID: defaultTenantID, ServiceID: "payments", MonitorID: "checkout", IncidentID: "inc-payments-1", Status: "open", Summary: "payments", OpenedAt: "2026-05-25T03:00:00Z", UpdatedAt: "2026-05-25T03:00:00Z"}
+	repo.incidents["inc-other-1"] = dynamodbrecord.IncidentRecord{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "homepage", IncidentID: "inc-other-1", Status: "open", Summary: "auth", OpenedAt: "2026-05-25T04:00:00Z", UpdatedAt: "2026-05-25T04:00:00Z"}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{
+		RawPath: "/api/v1/services/payments/incidents", PathParameters: map[string]string{"serviceId": "payments"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}},
+	}
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	var body struct {
+		Data listIncidentsResponse `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(response.Body), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(body.Data.Incidents) != 1 || body.Data.Incidents[0].ServiceID != "payments" {
+		t.Fatalf("incidents = %+v, want only payments incidents", body.Data.Incidents)
 	}
 }
