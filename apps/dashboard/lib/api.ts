@@ -24,6 +24,8 @@ import {
   type NotificationChannel,
   type CreateNotificationChannelPayload,
   type UpdateNotificationChannelPayload,
+  type GlobalSearchResponse,
+  type GlobalSearchResourceType,
 } from '@/lib/types'
 import { type ApiResponse, isError, Status } from '@/lib/api-response'
 import { ApiError, ApiErrorCode, fromEnvelope, type ApiReasonPayload } from '@/lib/errors'
@@ -104,6 +106,22 @@ async function apiRequestVoid(path: string, init?: RequestInit): Promise<void> {
 export async function listServices() {
   const response = await apiRequest<ListServicesResponse>('/api/v1/services')
   return response.services
+}
+
+export async function searchResources({
+  query,
+  limit,
+  types,
+}: {
+  query: string
+  limit?: number
+  types?: GlobalSearchResourceType[]
+}) {
+  const params = new URLSearchParams({ q: query })
+  if (limit !== undefined) params.set('limit', String(limit))
+  if (types && types.length > 0) params.set('types', types.join(','))
+  const response = await apiRequest<GlobalSearchResponse>(`/api/v1/search?${params.toString()}`)
+  return response.results
 }
 
 export async function getService(serviceId: string) {

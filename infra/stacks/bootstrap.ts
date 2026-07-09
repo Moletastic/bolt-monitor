@@ -121,6 +121,7 @@ export function createBootstrapStack() {
   }
 
   api.route('GET /api/v1/probe-locations', monitorHandler)
+  api.route('GET /api/v1/search', monitorHandler)
   api.route('POST /api/v1/notification-channels', monitorHandler)
   api.route('GET /api/v1/notification-channels', monitorHandler)
   api.route('GET /api/v1/notification-channels/{channelId}', monitorHandler)

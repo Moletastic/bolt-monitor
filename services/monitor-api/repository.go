@@ -82,6 +82,9 @@ func (r *dynamoMonitorRepository) CreateService(ctx context.Context, service mon
 	if err := r.writeTransaction(ctx, items); err != nil {
 		return monitorconfig.Service{}, err
 	}
+	if err := r.replaceSearchIndex(ctx, service.TenantID, searchResourceService, service.ServiceID, "", buildServiceSearchRecords(service)); err != nil {
+		return monitorconfig.Service{}, err
+	}
 	return service, nil
 }
 
@@ -216,6 +219,9 @@ func (r *dynamoMonitorRepository) UpdateService(ctx context.Context, service mon
 	if err := r.writeTransaction(ctx, items); err != nil {
 		return monitorconfig.Service{}, err
 	}
+	if err := r.replaceSearchIndex(ctx, service.TenantID, searchResourceService, service.ServiceID, "", buildServiceSearchRecords(service)); err != nil {
+		return monitorconfig.Service{}, err
+	}
 	return service, nil
 }
 
@@ -252,6 +258,14 @@ func (r *dynamoMonitorRepository) DeleteService(ctx context.Context, tenantID, s
 	}
 	if err := r.deleteKeysAndPut(ctx, deleteSet.list(), putItems); err != nil {
 		return true, err
+	}
+	if err := r.deleteSearchIndex(ctx, tenantID, searchResourceService, serviceID, ""); err != nil {
+		return true, err
+	}
+	for _, monitor := range monitors {
+		if err := r.deleteSearchIndex(ctx, tenantID, searchResourceMonitor, monitor.MonitorID, serviceID); err != nil {
+			return true, err
+		}
 	}
 	return true, nil
 }
@@ -317,6 +331,9 @@ func (r *dynamoMonitorRepository) CreateMonitor(ctx context.Context, monitor mon
 		return monitorconfig.Monitor{}, err
 	}
 	if err := r.writeTransaction(ctx, items); err != nil {
+		return monitorconfig.Monitor{}, err
+	}
+	if err := r.replaceSearchIndex(ctx, monitor.TenantID, searchResourceMonitor, monitor.MonitorID, monitor.ServiceID, buildMonitorSearchRecords(monitor, service.Name)); err != nil {
 		return monitorconfig.Monitor{}, err
 	}
 	return monitor, nil
@@ -405,6 +422,9 @@ func (r *dynamoMonitorRepository) UpdateMonitor(ctx context.Context, monitor mon
 	if err := r.writeTransaction(ctx, items); err != nil {
 		return monitorconfig.Monitor{}, err
 	}
+	if err := r.replaceSearchIndex(ctx, monitor.TenantID, searchResourceMonitor, monitor.MonitorID, monitor.ServiceID, buildMonitorSearchRecords(monitor, service.Name)); err != nil {
+		return monitorconfig.Monitor{}, err
+	}
 	return monitor, nil
 }
 
@@ -441,6 +461,9 @@ func (r *dynamoMonitorRepository) DeleteMonitor(ctx context.Context, tenantID, s
 		return true, err
 	}
 	if err := r.deleteKeysAndPut(ctx, deleteSet.list(), putItems); err != nil {
+		return true, err
+	}
+	if err := r.deleteSearchIndex(ctx, tenantID, searchResourceMonitor, monitorID, serviceID); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -481,6 +504,9 @@ func (r *dynamoMonitorRepository) SetMonitorEnabled(ctx context.Context, tenantI
 		return monitorconfig.Monitor{}, false, err
 	}
 	if err := r.writeTransaction(ctx, items); err != nil {
+		return monitorconfig.Monitor{}, false, err
+	}
+	if err := r.replaceSearchIndex(ctx, monitor.TenantID, searchResourceMonitor, monitor.MonitorID, monitor.ServiceID, buildMonitorSearchRecords(monitor, service.Name)); err != nil {
 		return monitorconfig.Monitor{}, false, err
 	}
 	return monitor, true, nil
@@ -562,6 +588,9 @@ func (r *dynamoMonitorRepository) ArchiveService(ctx context.Context, tenantID, 
 	if err := r.writeTransaction(ctx, items); err != nil {
 		return monitorconfig.Service{}, err
 	}
+	if err := r.replaceSearchIndex(ctx, service.TenantID, searchResourceService, service.ServiceID, "", buildServiceSearchRecords(service)); err != nil {
+		return monitorconfig.Service{}, err
+	}
 	return service, nil
 }
 
@@ -600,6 +629,9 @@ func (r *dynamoMonitorRepository) ReactivateService(ctx context.Context, tenantI
 		return monitorconfig.Service{}, err
 	}
 	if err := r.writeTransaction(ctx, items); err != nil {
+		return monitorconfig.Service{}, err
+	}
+	if err := r.replaceSearchIndex(ctx, service.TenantID, searchResourceService, service.ServiceID, "", buildServiceSearchRecords(service)); err != nil {
 		return monitorconfig.Service{}, err
 	}
 	return service, nil
@@ -1569,6 +1601,9 @@ func (r *dynamoMonitorRepository) CreateNotificationChannel(ctx context.Context,
 	if err != nil {
 		return escalation.NotificationChannel{}, err
 	}
+	if err := r.replaceSearchIndex(ctx, channel.TenantID, searchResourceChannel, channel.ChannelID, "", buildChannelSearchRecords(channel)); err != nil {
+		return escalation.NotificationChannel{}, err
+	}
 	return channel, nil
 }
 
@@ -1634,6 +1669,9 @@ func (r *dynamoMonitorRepository) UpdateNotificationChannel(ctx context.Context,
 	if err != nil {
 		return escalation.NotificationChannel{}, err
 	}
+	if err := r.replaceSearchIndex(ctx, channel.TenantID, searchResourceChannel, channel.ChannelID, "", buildChannelSearchRecords(channel)); err != nil {
+		return escalation.NotificationChannel{}, err
+	}
 	return channel, nil
 }
 
@@ -1642,7 +1680,10 @@ func (r *dynamoMonitorRepository) DeleteNotificationChannel(ctx context.Context,
 		return err
 	}
 	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: notificationChannelSK(channelID)}}})
-	return err
+	if err != nil {
+		return err
+	}
+	return r.deleteSearchIndex(ctx, tenantID, searchResourceChannel, channelID, "")
 }
 
 func (r *dynamoMonitorRepository) RecordNotificationChannelTestAudit(ctx context.Context, tenantID, channelID, channelType, outcome, reason string, now time.Time) error {
@@ -1705,6 +1746,9 @@ func (r *dynamoMonitorRepository) CreateEscalationPolicy(ctx context.Context, po
 	}
 	_, err = r.client.PutItem(ctx, &sharedaws.DynamoDBPutItemInput{TableName: sharedaws.String(r.tableName), Item: av})
 	if err != nil {
+		return escalation.EscalationPolicy{}, err
+	}
+	if err := r.replaceSearchIndex(ctx, policy.TenantID, searchResourcePolicy, policy.PolicyID, "", buildPolicySearchRecords(policy)); err != nil {
 		return escalation.EscalationPolicy{}, err
 	}
 	return policy, nil
@@ -1825,6 +1869,9 @@ func (r *dynamoMonitorRepository) UpdateEscalationPolicy(ctx context.Context, po
 	if err != nil {
 		return escalation.EscalationPolicy{}, err
 	}
+	if err := r.replaceSearchIndex(ctx, policy.TenantID, searchResourcePolicy, policy.PolicyID, "", buildPolicySearchRecords(policy)); err != nil {
+		return escalation.EscalationPolicy{}, err
+	}
 	return policy, nil
 }
 
@@ -1833,7 +1880,10 @@ func (r *dynamoMonitorRepository) DeleteEscalationPolicy(ctx context.Context, te
 		return err
 	}
 	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: escalationPolicySK(policyID)}}})
-	return err
+	if err != nil {
+		return err
+	}
+	return r.deleteSearchIndex(ctx, tenantID, searchResourcePolicy, policyID, "")
 }
 
 func (r *dynamoMonitorRepository) ServiceReferencesEscalationPolicy(ctx context.Context, tenantID, policyID string) (bool, error) {

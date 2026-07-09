@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Server, AlertTriangle, Settings, LayoutDashboard, Bell, RadioTower } from 'lucide-react'
 
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/breadcrumbs'
+import { GlobalSearch } from '@/components/global-search'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -85,6 +86,9 @@ export function AppShell({
           </div>
         </aside>
         <div className="flex-1">
+          <div className="sticky top-0 z-20 border-b border-border bg-background/90 px-5 py-3 backdrop-blur lg:px-8">
+            <GlobalSearch />
+          </div>
           <main className="data-grid min-h-screen px-5 py-6 lg:px-8" id="main-content">
             {breadcrumbs && breadcrumbs.length > 0 ? <Breadcrumbs items={breadcrumbs} /> : null}
             {children}

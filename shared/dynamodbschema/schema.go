@@ -25,6 +25,7 @@ const (
 	EntityEscalationPolicy    = "EscalationPolicy"
 	EntityEscalationState     = "EscalationState"
 	EntityNotificationChannel = "NotificationChannel"
+	EntitySearchIndex         = "SearchIndex"
 )
 
 const (
@@ -152,6 +153,10 @@ func NotificationChannelItem(tenantID, channelID string) Item {
 	return Item{PK: TenantPK(tenantID), SK: "NOTIFICATION_CHANNEL#" + normalizeToken(channelID), EntityType: EntityNotificationChannel, TenantID: normalizeField(tenantID)}
 }
 
+func SearchIndexItem(tenantID, prefix, resourceType, resourceKey string) Item {
+	return Item{PK: TenantPK(tenantID), SK: "SEARCH#" + normalizeSearchPrefix(prefix) + "#" + strings.ToUpper(strings.TrimSpace(resourceType)) + "#" + normalizeToken(resourceKey), EntityType: EntitySearchIndex, TenantID: normalizeField(tenantID)}
+}
+
 func EscalationStateItem(tenantID, incidentID string) Item {
 	return Item{PK: IncidentPK(incidentID), SK: "ESCALATION_STATE", EntityType: EntityEscalationState, TenantID: normalizeField(tenantID), IncidentID: normalizeField(incidentID)}
 }
@@ -171,12 +176,17 @@ func ServiceRefSK(serviceID string) string        { return "SERVICE#" + normaliz
 func ServiceMonitorRefSK(monitorID string) string { return "MONITOR#" + normalizeToken(monitorID) }
 func IncidentPK(incidentID string) string         { return "INCIDENT#" + normalizeToken(incidentID) }
 func AuditPK(auditID string) string               { return "AUDIT#" + normalizeToken(auditID) }
+func SearchIndexSKPrefix(query string) string     { return "SEARCH#" + normalizeSearchPrefix(query) }
 
 func normalizeToken(value string) string {
 	return strings.ToUpper(strings.TrimSpace(value))
 }
 
 func normalizeField(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeSearchPrefix(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 

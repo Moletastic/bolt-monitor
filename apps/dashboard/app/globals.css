@@ -76,6 +76,16 @@ textarea {
   }
 }
 
+@keyframes global-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.global-search-spinner {
+  animation: global-search-spin 700ms linear infinite;
+}
+
 .motion-safe\:animate-segment-fade-in {
   animation: segment-fade-in 180ms ease-out both;
 }

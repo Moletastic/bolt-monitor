@@ -191,6 +191,23 @@ export interface ListServicesResponse {
   services: Service[]
 }
 
+export type GlobalSearchResourceType = 'service' | 'monitor' | 'policy' | 'channel'
+
+export interface GlobalSearchResult {
+  type: GlobalSearchResourceType
+  id: string
+  serviceId?: string
+  label: string
+  description: string
+  href: string
+  iconKey: string
+  matchText: string
+}
+
+export interface GlobalSearchResponse {
+  results: GlobalSearchResult[]
+}
+
 export interface MonitorRunsResponse {
   runs: CheckRun[]
 }

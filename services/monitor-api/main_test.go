@@ -164,6 +164,29 @@ func newFakeMonitorRepository() *fakeMonitorRepository {
 func serviceKey(serviceID string) string            { return serviceID }
 func monitorKey(serviceID, monitorID string) string { return serviceID + "/" + monitorID }
 
+func (r *fakeMonitorRepository) SearchResources(_ context.Context, tenantID, query string, limit int, types map[string]struct{}) ([]searchResult, error) {
+	if len(normalizeSearchText(query)) < minSearchQueryLength {
+		return []searchResult{}, nil
+	}
+	results := []searchResult{}
+	allowed := func(resourceType string) bool {
+		if len(types) == 0 {
+			return true
+		}
+		_, ok := types[resourceType]
+		return ok
+	}
+	for _, service := range r.services {
+		if service.TenantID == tenantID && allowed(searchResourceService) && strings.Contains(normalizeSearchText(service.Name+" "+service.ServiceID), normalizeSearchText(query)) {
+			results = append(results, searchResult{Type: searchResourceService, ID: service.ServiceID, Label: service.Name, Description: "Service", Href: "/services/" + service.ServiceID, IconKey: "service", MatchText: normalizeSearchText(service.Name)})
+		}
+	}
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
+}
+
 func (r *fakeMonitorRepository) CreateService(_ context.Context, service monitorconfig.Service) (monitorconfig.Service, error) {
 	if _, ok := r.services[serviceKey(service.ServiceID)]; ok {
 		return monitorconfig.Service{}, errServiceAlreadyExists

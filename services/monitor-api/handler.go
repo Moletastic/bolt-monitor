@@ -71,6 +71,7 @@ type monitorRepository interface {
 	ChannelsReferencedByRoutes(context.Context, string, string) ([]routeReference, error)
 	RecordNotificationChannelTestAudit(context.Context, string, string, string, string, string, time.Time) error
 	GetEscalationState(context.Context, string, string) (*escalation.EscalationState, error)
+	SearchResources(context.Context, string, string, int, map[string]struct{}) ([]searchResult, error)
 }
 
 type monitorHandler struct {
@@ -108,6 +109,8 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 		channelID = strings.TrimSuffix(channelID, "/test")
 	}
 	switch {
+	case method == http.MethodGet && path == "/api/v1/search":
+		return h.searchResources(ctx, request)
 	case method == http.MethodGet && path == "/api/v1/probe-locations":
 		return h.listProbeLocations()
 	case method == http.MethodPost && path == "/api/v1/notification-channels":
@@ -199,6 +202,26 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	default:
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeNotFound, nil))
 	}
+}
+
+func (h monitorHandler) searchResources(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	limit := defaultSearchLimit
+	if raw := strings.TrimSpace(request.QueryStringParameters["limit"]); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			return respondAPIGateway(sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "limit", "reason": "must be a positive integer"}))
+		}
+		limit = parsed
+	}
+	types, err := parseSearchTypes(request.QueryStringParameters["types"])
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	results, err := h.repo.SearchResources(ctx, h.tenantID, request.QueryStringParameters["q"], limit, types)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	return envelopeResponse(http.StatusOK, response.Ok(searchResponse{Results: results}))
 }
 
 func (h monitorHandler) createService(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
