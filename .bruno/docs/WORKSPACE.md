@@ -22,6 +22,5 @@ Workspace for Bolt Monitor API exploration and manual testing.
 
 ## Notes
 
-- Current default probe location is `iad`.
 - Current default tenant is `default`.
 - Requests assume local SST or deployed dev API uses same base URL variable.

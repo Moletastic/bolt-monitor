@@ -12,7 +12,6 @@ import {
   type IncidentActivityListResponse,
   type IncidentListResponse,
   type SchedulerConfigResponse,
-  type ProbeLocationListResponse,
   type MonitorAuditResponse,
   type ServiceAuditEventsResponse,
   type ManualRunResponse,
@@ -252,11 +251,6 @@ export async function updateSchedulerConfig(payload: {
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
-}
-
-export async function listProbeLocations() {
-  const response = await apiRequest<ProbeLocationListResponse>('/api/v1/probe-locations')
-  return response.probeLocations
 }
 
 export async function getMonitorIncidents(serviceId: string, monitorId: string) {

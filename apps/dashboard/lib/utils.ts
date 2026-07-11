@@ -60,10 +60,6 @@ export function formatOutcome(status?: string) {
   return status.toUpperCase()
 }
 
-export function formatProbeLocations(locations: string[]) {
-  return locations.length > 0 ? locations.join(', ').toUpperCase() : 'None'
-}
-
 export function slugify(value: string) {
   return value
     .toLowerCase()

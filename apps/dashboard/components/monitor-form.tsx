@@ -1,7 +1,6 @@
 import { createMonitorAction, updateMonitorAction } from '@/lib/actions'
-import type { Monitor, ProbeLocation } from '@/lib/types'
+import type { Monitor } from '@/lib/types'
 import { monitorCadenceOptions } from '@/lib/utils'
-import { getMonitorLocationField } from '@/lib/probe-locations'
 
 import { SubmitButton } from '@/components/submit-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,17 +21,13 @@ function stringHeaders(headers?: Record<string, string>) {
 export function MonitorForm({
   monitor,
   serviceId,
-  locations,
   error,
 }: {
   monitor?: Monitor
   serviceId: string
-  locations: ProbeLocation[]
   error?: string
 }) {
   const action = monitor ? updateMonitorAction : createMonitorAction
-  const locationField = getMonitorLocationField(locations)
-  const currentLocation = monitor?.probeLocations?.[0]
 
   return (
     <Card>
@@ -99,49 +94,6 @@ export function MonitorForm({
                 type="number"
               />
             </label>
-            <div className="grid gap-2 text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">Probe location</span>
-              {locationField.kind === 'single-fixed' ? (
-                <>
-                  <input
-                    name="probeLocation"
-                    type="hidden"
-                    value={locationField.location.locationId}
-                  />
-                  <div
-                    aria-label="Probe location"
-                    className="flex items-center gap-2 rounded-md border border-border bg-surface-low px-3 py-2 text-sm text-foreground"
-                  >
-                    <span aria-hidden="true" className="font-semibold">
-                      {locationField.location.locationId.toUpperCase()}
-                    </span>
-                    <span aria-hidden="true" className="text-muted-foreground">
-                      ·
-                    </span>
-                    <span>{locationField.location.displayName}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Single-region preview. Once multi-region probes are enabled, operators will pick
-                    regions here.{' '}
-                    <a className="text-primary hover:underline" href="/locations">
-                      View probe locations
-                    </a>
-                    .
-                  </p>
-                </>
-              ) : (
-                <Select
-                  defaultValue={currentLocation ?? locationField.locations[0]?.locationId ?? ''}
-                  name="probeLocation"
-                >
-                  {locationField.locations.map((loc) => (
-                    <option key={loc.locationId} value={loc.locationId}>
-                      {loc.locationId.toUpperCase()} · {loc.displayName}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </div>
             <label className="grid gap-2 text-sm text-muted-foreground">
               <span className="font-semibold text-foreground">Expected status codes</span>
               <Input

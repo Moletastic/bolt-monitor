@@ -23,9 +23,7 @@ import {
   updateNotificationChannel,
   deleteNotificationChannel,
   testNotificationChannel,
-  listProbeLocations,
 } from '@/lib/api'
-import { getMonitorLocationField } from '@/lib/probe-locations'
 import { parseJson, runServerAction } from '@/lib/io/server-action'
 import { err, isErr, ok, type Result } from '@/lib/result'
 import { actionErr, actionOk, type ActionState } from '@/lib/action-state'
@@ -41,25 +39,6 @@ import type {
   UpdateServicePayload,
   UpdateMonitorPayload,
 } from '@/lib/types'
-
-async function resolveProbeLocation(formData: FormData): Promise<Result<string, string>> {
-  const submitted = String(formData.get('probeLocation') ?? '').trim()
-  if (submitted) {
-    return ok(submitted)
-  }
-  const locationsResult = await runServerAction(() => listProbeLocations())
-  if (isErr(locationsResult)) {
-    return err(messageFor(locationsResult.error))
-  }
-  const field = getMonitorLocationField(locationsResult.value)
-  if (field.kind === 'single-fixed') {
-    return ok(field.location.locationId)
-  }
-  if (field.kind === 'multi' && field.locations.length > 0) {
-    return ok(field.locations[0].locationId)
-  }
-  return err('No enabled probe locations are available in the catalog.')
-}
 
 function parseHeaders(raw: string): Record<string, string> {
   const headers: Record<string, string> = {}
@@ -182,17 +161,10 @@ export async function createMonitorAction(formData: FormData) {
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}/monitors/new`)
 
-  const probeResult = await resolveProbeLocation(formData)
-  if (isErr(probeResult)) {
-    redirect(appendError(returnTo, probeResult.error))
-  }
-  const probeLocation = probeResult.value
-
   const payload: CreateMonitorPayload = {
     name: String(formData.get('name') ?? '').trim(),
     type: 'http',
     intervalSeconds: Number(formData.get('intervalSeconds') ?? '60'),
-    probeLocations: [probeLocation],
     enabled: formData.get('enabled') === 'on',
     http: buildHttpConfiguration(formData),
   }
@@ -214,16 +186,9 @@ export async function updateMonitorAction(formData: FormData) {
   const monitorId = String(formData.get('monitorId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}/monitors/${monitorId}`)
 
-  const probeResult = await resolveProbeLocation(formData)
-  if (isErr(probeResult)) {
-    redirect(appendError(returnTo, probeResult.error))
-  }
-  const probeLocation = probeResult.value
-
   const payload: UpdateMonitorPayload = {
     name: String(formData.get('name') ?? '').trim(),
     intervalSeconds: Number(formData.get('intervalSeconds') ?? '60'),
-    probeLocations: [probeLocation],
     http: buildHttpConfiguration(formData),
   }
 

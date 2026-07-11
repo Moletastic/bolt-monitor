@@ -17,8 +17,7 @@ http:
     data: |-
       {
         "name": "Homepage Updated",
-        "intervalSeconds": 120,
-        "probeLocations": ["iad"]
+        "intervalSeconds": 120
       }
 
 runtime:

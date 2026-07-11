@@ -97,7 +97,6 @@ export interface MonitorStatus {
   consecutiveSuccesses: number
   lastCheckedAt: string
   lastDurationMs: number
-  lastProbeLocationId: string
   lastError?: string
   lastOutcome: string
 }
@@ -109,7 +108,6 @@ export interface Monitor {
   name: string
   type: MonitorType
   intervalSeconds: number
-  probeLocations: string[]
   enabled: boolean
   failureThreshold: number
   recoveryThreshold: number
@@ -125,11 +123,9 @@ export interface MonitorSummary {
   type: MonitorType
   enabled: boolean
   intervalSeconds: number
-  probeLocations: string[]
   currentStatus?: string
   lastCheckedAt?: string
   lastDurationMs?: number
-  lastProbeLocationId?: string
   lastError?: string
   updatedAt?: string
 }
@@ -177,7 +173,6 @@ export interface ServiceCardMetrics {
 export interface CheckRun {
   runId: string
   type: string
-  probeLocationId: string
   trigger: string
   startedAt: string
   finishedAt: string
@@ -216,7 +211,6 @@ export interface CreateMonitorPayload {
   name: string
   type: MonitorType
   intervalSeconds: number
-  probeLocations: string[]
   enabled: boolean
   http: HttpConfiguration
 }
@@ -224,7 +218,6 @@ export interface CreateMonitorPayload {
 export interface UpdateMonitorPayload {
   name?: string
   intervalSeconds?: number
-  probeLocations?: string[]
   http?: HttpConfiguration
 }
 
@@ -291,16 +284,6 @@ export interface SchedulerConfigResponse {
 export interface UpdateSchedulerConfigPayload {
   recurringEnabled: boolean
   stopControlMode?: string
-}
-
-export interface ProbeLocation {
-  locationId: string
-  displayName: string
-  enabled: boolean
-}
-
-export interface ProbeLocationListResponse {
-  probeLocations: ProbeLocation[]
 }
 
 export interface AuditEvent {

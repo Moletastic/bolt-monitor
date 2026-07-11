@@ -14,7 +14,6 @@ servers:
     description: Example deployed API host. Replace with your deployed API URL.
 tags:
   - name: Health
-  - name: Probe Locations
   - name: Monitors
   - name: Incidents
   - name: Admin
@@ -35,25 +34,6 @@ paths:
                 healthy:
                   value:
                     ok: true
-  /api/v1/probe-locations:
-    get:
-      tags: [Probe Locations]
-      summary: List selectable probe locations
-      operationId: listProbeLocations
-      responses:
-        '200':
-          description: Enabled probe locations ordered for operator-facing display
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProbeLocationListResponse'
-              examples:
-                defaultCatalog:
-                  value:
-                    probeLocations:
-                      - locationId: iad
-                        displayName: US East
-                        enabled: true
   /api/v1/monitors:
     get:
       tags: [Monitors]
@@ -75,8 +55,6 @@ paths:
                         name: Homepage
                         type: http
                         intervalSeconds: 60
-                        probeLocations:
-                          - iad
                         enabled: true
                         http:
                           target: https://example.com
@@ -91,7 +69,6 @@ paths:
                           currentStatus: UP
                           lastCheckedAt: '2026-05-17T22:00:00Z'
                           lastDurationMs: 1000
-                          lastProbeLocationId: IAD
                           lastOutcome: success
     post:
       tags: [Monitors]
@@ -109,8 +86,6 @@ paths:
                   name: Homepage
                   type: http
                   intervalSeconds: 60
-                  probeLocations:
-                    - iad
                   enabled: true
                   http:
                     target: https://example.com
@@ -136,8 +111,6 @@ paths:
                     name: Homepage
                     type: http
                     intervalSeconds: 60
-                    probeLocations:
-                      - iad
                     enabled: true
                     http:
                       target: https://example.com
@@ -158,9 +131,6 @@ paths:
                 invalidBody:
                   value:
                     error: invalid json body
-                invalidProbeLocation:
-                  value:
-                    error: probeLocations contains unknown or disabled location "dub"
         '500':
           $ref: '#/components/responses/InternalServerError'
   /api/v1/monitors/{id}:
@@ -185,8 +155,6 @@ paths:
                     name: Homepage
                     type: http
                     intervalSeconds: 60
-                    probeLocations:
-                      - iad
                     enabled: true
                     http:
                       target: https://example.com
@@ -196,7 +164,6 @@ paths:
                       currentStatus: UP
                       lastCheckedAt: '2026-05-17T22:00:00Z'
                       lastDurationMs: 1000
-                      lastProbeLocationId: IAD
                       lastOutcome: success
         '404':
           description: Monitor not found
@@ -225,8 +192,6 @@ paths:
                 value:
                   name: Homepage EU
                   intervalSeconds: 120
-                  probeLocations:
-                    - iad
       responses:
         '200':
           description: Monitor updated
@@ -320,7 +285,6 @@ paths:
                     currentStatus: UP
                     lastCheckedAt: '2026-05-17T22:00:00Z'
                     lastDurationMs: 1000
-                    lastProbeLocationId: IAD
                     lastOutcome: success
         '404':
           description: Monitor status not found
@@ -354,7 +318,6 @@ paths:
                     runs:
                       - runId: RUN_1
                         type: http
-                        probeLocationId: IAD
                         trigger: manual
                         startedAt: '2026-05-17T22:00:00Z'
                         finishedAt: '2026-05-17T22:00:01Z'
@@ -682,7 +645,7 @@ components:
     CreateMonitorRequest:
       type: object
       additionalProperties: false
-      required: [name, type, intervalSeconds, probeLocations, enabled, http]
+      required: [name, type, intervalSeconds, enabled, http]
       properties:
         name:
           type: string
@@ -692,11 +655,6 @@ components:
         intervalSeconds:
           type: integer
           minimum: 1
-        probeLocations:
-          type: array
-          minItems: 1
-          items:
-            type: string
         enabled:
           type: boolean
         http:
@@ -705,8 +663,6 @@ components:
         name: Homepage
         type: http
         intervalSeconds: 60
-        probeLocations:
-          - iad
         enabled: true
         http:
           target: https://example.com
@@ -721,18 +677,11 @@ components:
         intervalSeconds:
           type: integer
           minimum: 1
-        probeLocations:
-          type: array
-          minItems: 1
-          items:
-            type: string
         http:
           $ref: '#/components/schemas/HTTPConfiguration'
       example:
         name: Homepage EU
         intervalSeconds: 120
-        probeLocations:
-          - iad
     MonitorStatus:
       type: object
       additionalProperties: false
@@ -740,7 +689,6 @@ components:
         - currentStatus
         - lastCheckedAt
         - lastDurationMs
-        - lastProbeLocationId
         - lastOutcome
       properties:
         currentStatus:
@@ -751,8 +699,6 @@ components:
           format: date-time
         lastDurationMs:
           type: integer
-        lastProbeLocationId:
-          type: string
         lastError:
           type: string
         lastOutcome:
@@ -761,7 +707,6 @@ components:
         currentStatus: UP
         lastCheckedAt: '2026-05-17T22:00:00Z'
         lastDurationMs: 1000
-        lastProbeLocationId: IAD
         lastOutcome: success
     Monitor:
       type: object
@@ -772,7 +717,6 @@ components:
         - name
         - type
         - intervalSeconds
-        - probeLocations
         - enabled
       properties:
         monitorId:
@@ -786,10 +730,6 @@ components:
           enum: [http]
         intervalSeconds:
           type: integer
-        probeLocations:
-          type: array
-          items:
-            type: string
         enabled:
           type: boolean
         http:
@@ -806,8 +746,6 @@ components:
         name: Homepage
         type: http
         intervalSeconds: 60
-        probeLocations:
-          - iad
         enabled: true
         http:
           target: https://example.com
@@ -817,7 +755,6 @@ components:
           currentStatus: UP
           lastCheckedAt: '2026-05-17T22:00:00Z'
           lastDurationMs: 1000
-          lastProbeLocationId: IAD
           lastOutcome: success
     MonitorListResponse:
       type: object
@@ -830,42 +767,12 @@ components:
             $ref: '#/components/schemas/Monitor'
       example:
         monitors: []
-    ProbeLocation:
-      type: object
-      additionalProperties: false
-      required: [locationId, displayName, enabled]
-      properties:
-        locationId:
-          type: string
-        displayName:
-          type: string
-        enabled:
-          type: boolean
-      example:
-        locationId: iad
-        displayName: US East
-        enabled: true
-    ProbeLocationListResponse:
-      type: object
-      additionalProperties: false
-      required: [probeLocations]
-      properties:
-        probeLocations:
-          type: array
-          items:
-            $ref: '#/components/schemas/ProbeLocation'
-      example:
-        probeLocations:
-          - locationId: iad
-            displayName: US East
-            enabled: true
     CheckRun:
       type: object
       additionalProperties: false
       required:
         - runId
         - type
-        - probeLocationId
         - trigger
         - startedAt
         - finishedAt
@@ -875,8 +782,6 @@ components:
         runId:
           type: string
         type:
-          type: string
-        probeLocationId:
           type: string
         trigger:
           type: string
@@ -897,7 +802,6 @@ components:
       example:
         runId: RUN_1
         type: http
-        probeLocationId: IAD
         trigger: manual
         startedAt: '2026-05-17T22:00:00Z'
         finishedAt: '2026-05-17T22:00:01Z'

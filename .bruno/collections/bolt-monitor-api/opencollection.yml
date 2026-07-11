@@ -13,7 +13,6 @@ docs: |-
   ## Current endpoints
 
   - `GET /api/health`
-  - `GET /api/v1/probe-locations`
   - `POST /api/v1/monitors`
   - `GET /api/v1/monitors`
   - `GET /api/v1/monitors/{id}`
@@ -35,10 +34,9 @@ docs: |-
   ## Defaults
 
   - default tenant: `default`
-  - valid probe location for now: `iad`
   - runtime vars captured by requests: `monitorId`, `runId`, `incidentId`
 
-  Dashboard create/edit flows should populate probe-location pickers from `GET /api/v1/probe-locations`.
+  Monitor execution location is not operator-configurable.
 
   ## Example create payload
 
@@ -47,7 +45,6 @@ docs: |-
     "name": "Homepage",
     "type": "http",
     "intervalSeconds": 60,
-    "probeLocations": ["iad"],
     "enabled": true,
     "http": {
       "target": "https://example.com",

@@ -9,7 +9,18 @@ The system SHALL store a source-controlled OpenAPI document that describes the c
 
 #### Scenario: OpenAPI contract covers current API routes
 - **WHEN** a developer reads the OpenAPI document
-- **THEN** it describes the current health, probe-location, monitor CRUD, monitor status, and monitor run-history endpoints
+- **THEN** it describes the current health, monitor CRUD, monitor status, and monitor run-history endpoints
+
+### Requirement: System documents monitor API without probe-location contracts
+System SHALL document the monitor API according to the single-execution-environment product contract.
+
+#### Scenario: API documentation shows monitor payloads
+- **WHEN** OpenAPI examples or schemas describe monitor create, update, read, status, runs, or manual-run responses
+- **THEN** they do not include `probeLocations`, `probeLocationId`, `lastProbeLocationId`, or hard-coded location examples such as `iad`
+
+#### Scenario: API documentation lists monitor API paths
+- **WHEN** OpenAPI paths are rendered
+- **THEN** probe-location catalog endpoints are not documented as supported product APIs
 
 ### Requirement: System provides local Swagger UI for interactive API documentation
 The system SHALL provide a local Swagger UI workflow that renders the checked-in OpenAPI document for interactive API exploration.

@@ -28,7 +28,6 @@ import {
   getMonitorRuns,
   getMonitorStatus,
   getService,
-  listProbeLocations,
 } from '@/lib/api'
 import {
   deleteMonitorAction,
@@ -41,7 +40,6 @@ import {
   formatDuration,
   formatMonitorCadence,
   formatOutcome,
-  formatProbeLocations,
 } from '@/lib/utils'
 
 function RunsTab({ runs }: { runs: Awaited<ReturnType<typeof getMonitorRuns>> }) {
@@ -61,7 +59,6 @@ function RunsTab({ runs }: { runs: Awaited<ReturnType<typeof getMonitorRuns>> })
                   <TableHead>Started</TableHead>
                   <TableHead>Outcome</TableHead>
                   <TableHead>Duration</TableHead>
-                  <TableHead>Probe</TableHead>
                   <TableHead>Trigger</TableHead>
                   <TableHead>Status code</TableHead>
                 </TableRow>
@@ -76,7 +73,6 @@ function RunsTab({ runs }: { runs: Awaited<ReturnType<typeof getMonitorRuns>> })
                       <StatusChip status={run.outcome} />
                     </TableCell>
                     <TableCell className="font-mono">{formatDuration(run.durationMs)}</TableCell>
-                    <TableCell>{run.probeLocationId.toUpperCase()}</TableCell>
                     <TableCell>{run.trigger}</TableCell>
                     <TableCell>{run.statusCode ?? 'n/a'}</TableCell>
                   </TableRow>
@@ -177,7 +173,7 @@ function AuditTab({ events }: { events: Awaited<ReturnType<typeof getMonitorAudi
 }
 
 function getMonitorTarget(monitor: Awaited<ReturnType<typeof getMonitor>>) {
-  return monitor.http?.target ?? formatProbeLocations(monitor.probeLocations)
+  return monitor.http?.target ?? monitor.type.toUpperCase()
 }
 
 function getServiceMonitorCount(service: Awaited<ReturnType<typeof getService>>) {
@@ -224,14 +220,12 @@ export default async function ServiceMonitorDetailPage({
     throw error
   }
 
-  const [statusResult, runsResult, incidentsResult, eventsResult, probeLocationsResult] =
-    await Promise.all([
-      loadSection(() => getMonitorStatus(serviceId, monitorId)),
-      loadSection(() => getMonitorRuns(serviceId, monitorId)),
-      loadSection(() => getMonitorIncidents(serviceId, monitorId)),
-      loadSection(() => getMonitorAudit(serviceId, monitorId)),
-      loadSection(() => listProbeLocations()),
-    ])
+  const [statusResult, runsResult, incidentsResult, eventsResult] = await Promise.all([
+    loadSection(() => getMonitorStatus(serviceId, monitorId)),
+    loadSection(() => getMonitorRuns(serviceId, monitorId)),
+    loadSection(() => getMonitorIncidents(serviceId, monitorId)),
+    loadSection(() => getMonitorAudit(serviceId, monitorId)),
+  ])
 
   const monitorDeleteBlocked =
     service.lifecycleState === 'active' && getServiceMonitorCount(service) <= 1
@@ -240,7 +234,6 @@ export default async function ServiceMonitorDetailPage({
   const runs = runsResult.data ?? []
   const incidents = incidentsResult.data ?? []
   const events = eventsResult.data ?? []
-  const probeLocations = probeLocationsResult.data ?? []
 
   return (
     <AppShell
@@ -327,14 +320,6 @@ export default async function ServiceMonitorDetailPage({
                       </p>
                       <p className="mt-2 font-mono text-xl font-semibold text-foreground">
                         {formatDuration(status.lastDurationMs)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-surface-low p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                        Probe
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">
-                        {status.lastProbeLocationId ?? formatProbeLocations(monitor.probeLocations)}
                       </p>
                     </div>
                     <div className="rounded-lg border border-border bg-surface-low p-4">
@@ -489,7 +474,6 @@ export default async function ServiceMonitorDetailPage({
           <div className="space-y-6">
             <MonitorForm
               error={query.error}
-              locations={probeLocations}
               monitor={{ ...monitor, status }}
               serviceId={serviceId}
             />

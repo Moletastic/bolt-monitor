@@ -9,7 +9,7 @@
 - `infra/` is the deployable SST app. This repo does not use CDK commands.
 - `infra/stacks/bootstrap.ts` is the real wiring point for AWS resources and API routes.
 - `services/api-health` is the simple Go Lambda behind `GET /api/health`.
-- `services/monitor-api` is the Go Lambda for monitor CRUD, status, runs, and `GET /api/v1/probe-locations`.
+- `services/monitor-api` is the Go Lambda for monitor CRUD, status, runs, incidents, and admin config.
 - `shared/` holds the canonical Go domain modules; `go.work` wires them together for local multi-module development.
 - `apps/dashboard` is a Next 15 App Router app that talks to the monitor API through server-side fetches and server actions.
 
@@ -63,7 +63,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/) format.
 
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
 
-Example: `feat(monitor-api): add endpoint to list probe locations`
+Example: `feat(monitor-api): add monitor audit endpoint`
 
 ## Response envelope
 
@@ -109,9 +109,8 @@ Adding a new endpoint? Return one of the three constructors above and the parser
 - Use explicit SST stage `staging` for normal local dev and deploy workflows to avoid recreating stray stage-specific resources.
 - `services/monitor-api` requires `TABLE_NAME`; the SST stack injects it for the Lambda.
 - The monitor API currently uses a single built-in tenant ID, `DEFAULT`.
-- The default probe location catalog is still hard-coded to one enabled location, `iad` / `US East`.
 - Route steps reference channels by `channelId`; configure channels under Integrations -> Channels.
-- The dashboard reads its enabled probe locations through `GET /api/v1/probe-locations`; do not introduce new hard-coded probe-location identifiers in dashboard actions or forms. The monitor form renders a non-interactive region chip when only one location is enabled.
+- Monitor execution location is not operator-configurable; do not add dashboard region/probe-location pickers or hard-coded location identifiers.
 - `apps/dashboard` requires `NEXT_PUBLIC_MONITOR_API_BASE_URL`; without it, server-rendered pages fail with an `ApiError`.
 - Dashboard bootstrap assumptions (retained here for developer reference, removed from operator UI):
   - Single tenant context.

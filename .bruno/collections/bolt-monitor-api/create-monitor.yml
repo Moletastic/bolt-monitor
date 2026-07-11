@@ -19,7 +19,6 @@ http:
         "name": "Homepage",
         "type": "http",
         "intervalSeconds": 60,
-        "probeLocations": ["iad"],
         "enabled": true,
         "http": {
           "target": "https://example.com",

@@ -4,8 +4,7 @@ import { AppShell } from '@/components/app-shell'
 import { EmptyState } from '@/components/empty-state'
 import { MonitorForm } from '@/components/monitor-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ApiError, getService, listProbeLocations } from '@/lib/api'
-import { getMonitorLocationField } from '@/lib/probe-locations'
+import { ApiError, getService } from '@/lib/api'
 
 export default async function NewServiceMonitorPage({
   params,
@@ -18,8 +17,7 @@ export default async function NewServiceMonitorPage({
   const query = await searchParams
 
   try {
-    const [service, locations] = await Promise.all([getService(serviceId), listProbeLocations()])
-    const field = getMonitorLocationField(locations)
+    const service = await getService(serviceId)
 
     return (
       <AppShell
@@ -31,7 +29,7 @@ export default async function NewServiceMonitorPage({
         currentPath={`/services/${serviceId}/monitors/new`}
       >
         <div className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
-          <MonitorForm error={query.error} locations={locations} serviceId={service.serviceId} />
+          <MonitorForm error={query.error} serviceId={service.serviceId} />
           <Card>
             <CardHeader>
               <CardTitle>Create flow notes</CardTitle>
@@ -44,20 +42,7 @@ export default async function NewServiceMonitorPage({
                 Monitor icon stays frontend-derived from monitor protocol or type rather than
                 persisted icon metadata.
               </p>
-              {field.kind === 'single-fixed' ? (
-                <p>
-                  Probe region is pinned to{' '}
-                  <span className="font-semibold text-foreground">
-                    {field.location.locationId.toUpperCase()} · {field.location.displayName}
-                  </span>{' '}
-                  based on the current enabled catalog. Multi-region probes are not available yet.
-                </p>
-              ) : (
-                <p>
-                  Operator selects probe region from {field.locations.length} enabled catalog
-                  entries.
-                </p>
-              )}
+              <p>Monitor payloads are submitted without execution-location selection.</p>
             </CardContent>
           </Card>
         </div>

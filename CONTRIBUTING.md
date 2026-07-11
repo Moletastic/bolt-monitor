@@ -27,7 +27,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 ### Examples
 
 ```
-feat(monitor-api): add endpoint to list probe locations
+feat(monitor-api): add monitor audit endpoint
 fix(dashboard): correct timezone display in incident list
 docs(readme): update deployment instructions
 ci: add golangci-lint configuration

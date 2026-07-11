@@ -208,7 +208,7 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 - Dashboard uses server-side fetches; if `NEXT_PUBLIC_MONITOR_API_BASE_URL` is unset, page rendering fails fast.
 - Use explicit stage `staging` for both local dev and deploy workflows to avoid accidental extra SST stages.
 - SST deploys the dashboard as a standalone Next.js site and outputs `dashboardUrl` with the generated CloudFront hostname.
-- Probe location support exists at API level, but full runtime discovery is not yet wired through dashboard UX.
+- Monitor execution location is not operator-configurable in the dashboard.
 - AWS commands run through SST inherit profile behavior from `infra/sst.config.ts`.
 
 ## 🔐 JavaScript Dependency Install Policy

@@ -147,7 +147,6 @@ export function AlertHistoryTab({
                   <TableHead>Finished</TableHead>
                   <TableHead>Outcome</TableHead>
                   <TableHead>Duration</TableHead>
-                  <TableHead>Probe</TableHead>
                   <TableHead>Trigger</TableHead>
                   <TableHead>Incident markers</TableHead>
                 </TableRow>
@@ -164,7 +163,6 @@ export function AlertHistoryTab({
                         <StatusChip status={run.outcome} />
                       </TableCell>
                       <TableCell className="font-mono">{formatDuration(run.durationMs)}</TableCell>
-                      <TableCell>{run.probeLocationId.toUpperCase()}</TableCell>
                       <TableCell>{run.trigger}</TableCell>
                       <TableCell>
                         {markers.length === 0 ? (
