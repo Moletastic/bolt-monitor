@@ -35,12 +35,7 @@ import {
   toggleMonitorStateAction,
   triggerManualRunAction,
 } from '@/lib/actions'
-import {
-  formatDateTime,
-  formatDuration,
-  formatMonitorCadence,
-  formatOutcome,
-} from '@/lib/utils'
+import { formatDateTime, formatDuration, formatMonitorCadence, formatOutcome } from '@/lib/utils'
 
 function RunsTab({ runs }: { runs: Awaited<ReturnType<typeof getMonitorRuns>> }) {
   return (
