@@ -23,8 +23,9 @@ System SHALL distinguish append-only run history from mutable current status sta
 - **THEN** it can read raw run history separately from latest status snapshot
 
 ### Requirement: System defines retention for raw run history
-System SHALL define raw run retention expectations for high-volume `CheckRun` records.
+System SHALL define raw run retention expectations for high-volume `CheckRun` records and persist TTL metadata that DynamoDB can use to delete expired raw run items.
 
 #### Scenario: Raw runs accumulate over time
 - **WHEN** system persists ongoing execution results
-- **THEN** raw run items include documented TTL or retention handling
+- **THEN** raw run items include numeric Unix epoch-second TTL metadata set to the configured raw-run retention window
+- **AND** the TTL metadata is compatible with the primary table's DynamoDB Time to Live configuration

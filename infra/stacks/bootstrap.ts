@@ -23,6 +23,7 @@ export function createBootstrapStack() {
         rangeKey: 'GSI2SK',
       },
     },
+    ttl: 'TTL',
   })
 
   const executionQueueDLQ = new sst.aws.Queue('ExecutionQueueDLQ', {

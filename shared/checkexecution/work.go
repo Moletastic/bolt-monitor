@@ -9,6 +9,8 @@ const (
 	ExecutionWorkInProgress ExecutionWorkStatus = "in_progress"
 	ExecutionWorkCompleted  ExecutionWorkStatus = "completed"
 	ExecutionWorkSkipped    ExecutionWorkStatus = "skipped"
+
+	DefaultExecutionWorkRetentionDays = 7
 )
 
 type ExecutionWork struct {

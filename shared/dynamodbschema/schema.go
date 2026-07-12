@@ -135,13 +135,14 @@ func AuditChangeItem(auditID, fieldPath string) Item {
 	return Item{PK: AuditPK(auditID), SK: "CHANGE#" + normalizeToken(fieldPath), EntityType: EntityAuditChange, AuditID: normalizeField(auditID)}
 }
 
-func ExecutionWorkItem(tenantID, requestedAt, runID, probeLocationID string) Item {
+func ExecutionWorkItem(tenantID, requestedAt, runID, probeLocationID string, ttl int64) Item {
 	return Item{
 		PK:         TenantPK(tenantID),
 		SK:         fmt.Sprintf("RUN_REQUEST#%s#%s#%s", requestedAt, normalizeToken(runID), normalizeToken(probeLocationID)),
 		EntityType: EntityExecutionWork,
 		TenantID:   normalizeField(tenantID),
 		RunID:      normalizeField(runID),
+		TTL:        ttl,
 	}
 }
 

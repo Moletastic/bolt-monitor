@@ -25,9 +25,11 @@ func sampleResult() checkexecution.ExecutionResult {
 }
 
 func TestNewCheckRunSetsTTL(t *testing.T) {
-	run := NewCheckRun(sampleResult(), time.Date(2026, 5, 17, 22, 0, 1, 0, time.UTC))
-	if run.TTL == 0 {
-		t.Fatal("TTL should be set")
+	now := time.Date(2026, 5, 17, 22, 0, 1, 0, time.UTC)
+	run := NewCheckRun(sampleResult(), now)
+	expectedTTL := now.Add(DefaultCheckRunRetentionDays * 24 * time.Hour).Unix()
+	if run.TTL != expectedTTL {
+		t.Fatalf("TTL = %d, want %d", run.TTL, expectedTTL)
 	}
 	if run.MonitorID != "public-http" {
 		t.Fatalf("MonitorID = %q, want public-http", run.MonitorID)

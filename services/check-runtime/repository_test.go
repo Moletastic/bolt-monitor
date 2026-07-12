@@ -73,6 +73,14 @@ func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
 	if got := sharedaws.ToString(client.transactInput.TransactItems[0].Put.TableName); got != "table-name" {
 		t.Fatalf("table name = %q, want table-name", got)
 	}
+	var workRecord dynamodbrecord.ExecutionWorkItemRecord
+	if err := sharedaws.UnmarshalMap(client.transactInput.TransactItems[0].Put.Item, &workRecord); err != nil {
+		t.Fatalf("UnmarshalMap returned error: %v", err)
+	}
+	expectedTTL := work.RequestedAt.Add(checkexecution.DefaultExecutionWorkRetentionDays * 24 * time.Hour).Unix()
+	if workRecord.TTL != expectedTTL {
+		t.Fatalf("work TTL = %d, want %d", workRecord.TTL, expectedTTL)
+	}
 }
 
 func TestIncidentRecordsForResultOpensIncidentOnFirstFailure(t *testing.T) {

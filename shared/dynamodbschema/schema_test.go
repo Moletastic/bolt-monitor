@@ -35,6 +35,16 @@ func TestCheckRunItemCarriesTTL(t *testing.T) {
 	}
 }
 
+func TestExecutionWorkItemCarriesTTL(t *testing.T) {
+	item := ExecutionWorkItem("default", "2026-05-16T10:00:00Z", "run_123", "iad", 1779559200)
+	if item.TTL != 1779559200 {
+		t.Fatalf("TTL = %d, want %d", item.TTL, 1779559200)
+	}
+	if item.PK != "TENANT#DEFAULT" {
+		t.Fatalf("PK = %q, want tenant key", item.PK)
+	}
+}
+
 func TestAccessPatternsCoversCoreReads(t *testing.T) {
 	patterns := AccessPatterns()
 	if len(patterns) < 10 {
