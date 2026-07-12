@@ -33,6 +33,23 @@ docs(readme): update deployment instructions
 ci: add golangci-lint configuration
 ```
 
+## Local Git Hooks
+
+Install repository hooks after cloning or after pulling hook changes:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run hooks:install
+```
+
+The pre-commit hook formats staged dashboard and infrastructure files through
+Makefile targets and restages fixed files before the commit continues. The
+commit-msg hook validates Conventional Commits through the existing commitlint
+configuration.
+
+Hooks are local guardrails, not a CI replacement. Bypass with Git's `--no-verify`
+only for exceptional cases, then run the relevant validation before opening a PR.
+
 ## Pull Request Workflow
 
 1. Create a feature branch from `main`

@@ -3,7 +3,8 @@
 	format-go-check vet-go ci-go \
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra \
-	format-dashboard format-infra \
+	format-dashboard format-dashboard-files format-infra format-infra-files \
+	commitlint \
 	build-go build-dashboard build-all \
 	deploy-infra deploy-infra-print \
 	bootstrap clean
@@ -56,8 +57,39 @@ check-infra:
 format-dashboard:
 	cd apps/dashboard && pnpm run format
 
+format-dashboard-files:
+	@if [ -n "$(FILES)" ]; then \
+		files=""; \
+		for file in $(FILES); do \
+			case "$$file" in \
+				/*|apps/dashboard/*) files="$$files $(CURDIR)/$$file" ;; \
+				*) files="$$files $(CURDIR)/apps/dashboard/$$file" ;; \
+			esac; \
+		done; \
+		pnpm --dir apps/dashboard exec prettier --write $$files; \
+	fi
+
 format-infra:
 	cd infra && pnpm run format
+
+format-infra-files:
+	@if [ -n "$(FILES)" ]; then \
+		files=""; \
+		for file in $(FILES); do \
+			case "$$file" in \
+				/*|infra/*) files="$$files $(CURDIR)/$$file" ;; \
+				*) files="$$files $(CURDIR)/infra/$$file" ;; \
+			esac; \
+		done; \
+		pnpm --dir infra exec prettier --write $$files; \
+	fi
+
+commitlint:
+	@if [ -z "$(COMMIT_MSG_FILE)" ]; then \
+		pnpm exec commitlint --edit; \
+	else \
+		pnpm exec commitlint --edit "$(COMMIT_MSG_FILE)"; \
+	fi
 
 build-go: bootstrap
 	GOOS=linux GOARCH=arm64 go build -o services/api-health/handler ./services/api-health
