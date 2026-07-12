@@ -3,12 +3,12 @@ pre-commit:
     - name: format dashboard
       root: "apps/dashboard/"
       glob: "*.{css,js,jsx,json,md,mdx,ts,tsx}"
-      run: make -C ../.. format-dashboard-files FILES="{staged_files}"
+      run: pnpm exec prettier --write "{staged_files}"
       stage_fixed: true
     - name: format infra
       root: "infra/"
       glob: "*.{css,js,jsx,json,md,mdx,ts,tsx,yaml,yml}"
-      run: make -C .. format-infra-files FILES="{staged_files}"
+      run: pnpm exec prettier --write "{staged_files}"
       stage_fixed: true
 
 commit-msg:

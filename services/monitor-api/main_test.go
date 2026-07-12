@@ -770,6 +770,29 @@ func TestCreateMonitorUnderService(t *testing.T) {
 	}
 }
 
+func TestCreateMonitorDefaultsMissingProbeLocations(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleDraft}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services/auth/monitors", PathParameters: map[string]string{"serviceId": "auth"}, Body: `{"name":"Homepage","type":"http","intervalSeconds":60,"enabled":true,"http":{"target":"https://example.com","method":"GET","headers":{"Content-Type":"application/json"},"timeoutMs":5000,"expectedStatusCodes":[200]}}`, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d body=%s", response.StatusCode, http.StatusCreated, response.Body)
+	}
+	var created monitorconfig.Monitor
+	for _, m := range repo.monitors {
+		created = m
+		break
+	}
+	if len(created.ProbeLocations) != 1 || created.ProbeLocations[0] != "iad" {
+		t.Fatalf("probeLocations = %#v, want [iad]", created.ProbeLocations)
+	}
+}
+
 func TestDeleteLastMonitorFromActiveServiceConflicts(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive}

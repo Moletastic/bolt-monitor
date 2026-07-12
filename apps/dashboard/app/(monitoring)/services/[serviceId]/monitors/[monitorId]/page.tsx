@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import { DeleteResourceForm } from '@/components/delete-resource-form'
 import { EmptyState } from '@/components/empty-state'
-import { MonitorForm } from '@/components/monitor-form'
 import { MonitorProtocolBadge } from '@/components/monitor-protocol-badge'
 import { QueryFeedbackBanner } from '@/components/query-feedback-banner'
 import { SamePageActionForm } from '@/components/same-page-action-form'
@@ -467,11 +466,6 @@ export default async function ServiceMonitorDetailPage({
               ))}
           </div>
           <div className="space-y-6">
-            <MonitorForm
-              error={query.error}
-              monitor={{ ...monitor, status }}
-              serviceId={serviceId}
-            />
             <Card className="border-status-down/30">
               <CardHeader>
                 <CardTitle>Delete monitor</CardTitle>

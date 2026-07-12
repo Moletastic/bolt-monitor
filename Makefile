@@ -59,14 +59,14 @@ format-dashboard:
 
 format-dashboard-files:
 	@if [ -n "$(FILES)" ]; then \
-		files=""; \
-		for file in $(FILES); do \
+		set --; \
+		for file in $(foreach file,$(FILES),'$(file)'); do \
 			case "$$file" in \
-				/*|apps/dashboard/*) files="$$files $(CURDIR)/$$file" ;; \
-				*) files="$$files $(CURDIR)/apps/dashboard/$$file" ;; \
+				/*|apps/dashboard/*) set -- "$$@" "$(CURDIR)/$$file" ;; \
+				*) set -- "$$@" "$(CURDIR)/apps/dashboard/$$file" ;; \
 			esac; \
 		done; \
-		pnpm --dir apps/dashboard exec prettier --write $$files; \
+		pnpm --dir apps/dashboard exec prettier --write "$$@"; \
 	fi
 
 format-infra:
@@ -74,14 +74,14 @@ format-infra:
 
 format-infra-files:
 	@if [ -n "$(FILES)" ]; then \
-		files=""; \
-		for file in $(FILES); do \
+		set --; \
+		for file in $(foreach file,$(FILES),'$(file)'); do \
 			case "$$file" in \
-				/*|infra/*) files="$$files $(CURDIR)/$$file" ;; \
-				*) files="$$files $(CURDIR)/infra/$$file" ;; \
+				/*|infra/*) set -- "$$@" "$(CURDIR)/$$file" ;; \
+				*) set -- "$$@" "$(CURDIR)/infra/$$file" ;; \
 			esac; \
 		done; \
-		pnpm --dir infra exec prettier --write $$files; \
+		pnpm --dir infra exec prettier --write "$$@"; \
 	fi
 
 commitlint:

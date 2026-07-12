@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import { EmptyState } from '@/components/empty-state'
 import { MonitorForm } from '@/components/monitor-form'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ApiError, getService } from '@/lib/api'
 
 export default async function NewServiceMonitorPage({
@@ -28,23 +27,8 @@ export default async function NewServiceMonitorPage({
         ]}
         currentPath={`/services/${serviceId}/monitors/new`}
       >
-        <div className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
+        <div className="grid gap-6">
           <MonitorForm error={query.error} serviceId={service.serviceId} />
-          <Card>
-            <CardHeader>
-              <CardTitle>Create flow notes</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm text-muted-foreground">
-              <p>
-                New monitor will be created under {service.name} using nested service-monitor APIs.
-              </p>
-              <p>
-                Monitor icon stays frontend-derived from monitor protocol or type rather than
-                persisted icon metadata.
-              </p>
-              <p>Monitor payloads are submitted without execution-location selection.</p>
-            </CardContent>
-          </Card>
         </div>
       </AppShell>
     )

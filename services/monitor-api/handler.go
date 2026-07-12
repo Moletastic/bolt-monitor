@@ -371,6 +371,9 @@ func (h monitorHandler) createMonitor(ctx context.Context, serviceID string, req
 	if err := json.Unmarshal([]byte(request.Body), &payload); err != nil {
 		return respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 	}
+	if len(payload.ProbeLocations) == 0 {
+		payload.ProbeLocations = defaultSelectableProbeLocations(h.catalog)
+	}
 	var targetURL string
 	if payload.HTTP != nil {
 		targetURL = payload.HTTP.Target
@@ -389,6 +392,15 @@ func (h monitorHandler) createMonitor(ctx context.Context, serviceID string, req
 	}
 	location := fmt.Sprintf("/api/v1/services/%s/monitors/%s", serviceID, created.MonitorID)
 	return envelopeResponseWithLocation(http.StatusCreated, response.Ok(toMonitorResponse(created, toUnknownStatusResponse())), location)
+}
+
+func defaultSelectableProbeLocations(catalog probelocationcatalog.Catalog) []string {
+	for _, location := range catalog.Locations {
+		if location.Enabled {
+			return []string{location.LocationID}
+		}
+	}
+	return nil
 }
 
 func (h monitorHandler) listMonitors(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
