@@ -29,8 +29,8 @@ const (
 )
 
 const (
-	GSIOpenIncidents  = "gsi1"
-	GSIServiceRollups = "gsi2"
+	GSIOpenIncidents   = "gsi1"
+	GSIServiceRollups  = "gsi2"
 	GSIAuditByResource = "AuditByResourceIndex"
 
 	DefaultCheckRunRetentionDays = 30

@@ -699,8 +699,8 @@ func (r *dynamoMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenan
 			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.MonitorPK(tenantID, serviceID, monitorID)},
 			":prefix": &sharedaws.AttributeValueMemberS{Value: "RUN#"},
 		},
-		ScanIndexForward: sharedaws.Bool(false),
-		Limit:            sharedaws.Int32(limit),
+		ScanIndexForward:  sharedaws.Bool(false),
+		Limit:             sharedaws.Int32(limit),
 		ExclusiveStartKey: startKey,
 	})
 	if err != nil {
@@ -961,9 +961,9 @@ func (r *dynamoMonitorRepository) ListMonitorIncidentsPage(ctx context.Context, 
 			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.MonitorPK(tenantID, serviceID, monitorID)},
 			":prefix": &sharedaws.AttributeValueMemberS{Value: "INCIDENT#"},
 		},
-		ScanIndexForward:    sharedaws.Bool(false),
-		Limit:               sharedaws.Int32(limit),
-		ExclusiveStartKey:   startKey,
+		ScanIndexForward:  sharedaws.Bool(false),
+		Limit:             sharedaws.Int32(limit),
+		ExclusiveStartKey: startKey,
 	})
 	if err != nil {
 		return historyPage[dynamodbrecord.IncidentRecord]{}, err
