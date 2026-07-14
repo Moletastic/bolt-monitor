@@ -71,3 +71,11 @@ func OkPaginated[T any](data T, page, size, total int) Envelope[T] {
 		Pagination: &Pagination{Page: page, Size: size, Total: total, Items: data},
 	}
 }
+
+func OkCursorPaginated[T any](data T, size int, nextCursor string) Envelope[T] {
+	return Envelope[T]{
+		Status:     StatusSuccess,
+		Data:       &data,
+		Pagination: &Pagination{Size: size, NextCursor: nextCursor},
+	}
+}

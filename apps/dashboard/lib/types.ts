@@ -207,6 +207,11 @@ export interface MonitorRunsResponse {
   runs: CheckRun[]
 }
 
+export interface MonitorHistoryPage<T> {
+  items: T[]
+  nextCursor?: string
+}
+
 export interface CreateMonitorPayload {
   name: string
   type: MonitorType

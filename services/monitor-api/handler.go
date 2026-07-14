@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"bolt-monitor/shared/api/response"
+	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/dynamodbrecord"
+	"bolt-monitor/shared/dynamodbschema"
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/monitorconfig"
@@ -24,6 +26,7 @@ import (
 const (
 	defaultServiceIncidentsLimit = int32(5)
 	maxServiceIncidentsLimit     = int32(50)
+	historyPageSize              = int32(20)
 )
 
 type monitorRepository interface {
@@ -43,6 +46,7 @@ type monitorRepository interface {
 	ReactivateService(context.Context, string, string) (monitorconfig.Service, error)
 	GetMonitorStatus(context.Context, string, string, string) (resultstatus.MonitorStatus, bool, error)
 	ListMonitorRuns(context.Context, string, string, string, int32) ([]resultstatus.CheckRun, error)
+	ListMonitorRunsPage(context.Context, string, string, string, int32, map[string]sharedaws.AttributeValue) (historyPage[resultstatus.CheckRun], error)
 	GetServiceCardMetrics(context.Context, string, string) (serviceCardMetricsResponse, error)
 	CreateManualRun(context.Context, monitorconfig.Monitor, time.Time) (manualRunRequestRecord, error)
 	RecordExecutionResult(ctx context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error
@@ -50,13 +54,16 @@ type monitorRepository interface {
 	GetIncident(context.Context, string, string) (dynamodbrecord.IncidentRecord, bool, error)
 	ListIncidentActivities(context.Context, string, string) ([]dynamodbrecord.IncidentActivityRecord, error)
 	ListMonitorIncidents(context.Context, string, string, string) ([]dynamodbrecord.IncidentRecord, error)
+	ListMonitorIncidentsPage(context.Context, string, string, string, int32, map[string]sharedaws.AttributeValue) (historyPage[dynamodbrecord.IncidentRecord], error)
 	ListServiceIncidents(context.Context, string, string, int32) ([]dynamodbrecord.IncidentRecord, error)
 	AcknowledgeIncident(context.Context, string, string, time.Time) (dynamodbrecord.IncidentRecord, bool, error)
 	ResolveIncident(context.Context, string, string, time.Time) (dynamodbrecord.IncidentRecord, bool, error)
 	GetSchedulerConfig(context.Context, string) (dynamodbrecord.SchedulerConfigRecord, error)
 	UpdateSchedulerConfig(context.Context, string, checkexecution.SchedulerConfig, time.Time) (dynamodbrecord.SchedulerConfigRecord, error)
 	ListMonitorAuditEvents(context.Context, string, string, string) ([]auditEventView, error)
+	ListMonitorAuditEventsPage(context.Context, string, string, string, int32, map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error)
 	ListServiceAuditEvents(context.Context, string, string) ([]auditEventView, error)
+	ListServiceAuditEventsPage(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error)
 	CreateEscalationPolicy(context.Context, escalation.EscalationPolicy) (escalation.EscalationPolicy, error)
 	ListEscalationPolicies(context.Context, string) ([]escalation.EscalationPolicy, error)
 	GetEscalationPolicy(context.Context, string, string) (*escalation.EscalationPolicy, error)
@@ -160,7 +167,7 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	case method == http.MethodGet && serviceID != "" && path == "/api/v1/services/"+serviceID+"/escalation-policy":
 		return h.getServiceEscalationPolicy(ctx, serviceID)
 	case method == http.MethodGet && serviceID != "" && strings.HasSuffix(path, "/audit") && !isMonitorAuditPath(path):
-		return h.getServiceAudit(ctx, serviceID)
+		return h.getServiceAudit(ctx, serviceID, request)
 	case method == http.MethodPatch && serviceID != "" && path == "/api/v1/services/"+serviceID:
 		return h.updateService(ctx, serviceID, request)
 	case method == http.MethodDelete && serviceID != "" && path == "/api/v1/services/"+serviceID:
@@ -186,15 +193,15 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	case method == http.MethodGet && strings.HasSuffix(path, "/status") && serviceID != "" && monitorID != "":
 		return h.getMonitorStatus(ctx, serviceID, monitorID)
 	case method == http.MethodGet && strings.HasSuffix(path, "/runs") && serviceID != "" && monitorID != "":
-		return h.getMonitorRuns(ctx, serviceID, monitorID)
+		return h.getMonitorRuns(ctx, serviceID, monitorID, request)
 	case method == http.MethodPost && strings.HasSuffix(path, "/run") && serviceID != "" && monitorID != "":
 		return h.runMonitor(ctx, serviceID, monitorID)
 	case method == http.MethodGet && strings.HasSuffix(path, "/incidents") && serviceID != "" && monitorID == "":
 		return h.getServiceIncidents(ctx, serviceID, request)
 	case method == http.MethodGet && strings.HasSuffix(path, "/incidents") && serviceID != "" && monitorID != "":
-		return h.getMonitorIncidents(ctx, serviceID, monitorID)
+		return h.getMonitorIncidents(ctx, serviceID, monitorID, request)
 	case method == http.MethodGet && strings.HasSuffix(path, "/audit") && serviceID != "" && monitorID != "":
-		return h.getMonitorAudit(ctx, serviceID, monitorID)
+		return h.getMonitorAudit(ctx, serviceID, monitorID, request)
 	case method == http.MethodPost && strings.HasSuffix(path, "/archive") && serviceID != "":
 		return h.archiveService(ctx, serviceID)
 	case method == http.MethodPost && strings.HasSuffix(path, "/reactivate") && serviceID != "":
@@ -222,6 +229,17 @@ func (h monitorHandler) searchResources(ctx context.Context, request events.APIG
 		return respondAPIGateway(err)
 	}
 	return envelopeResponse(http.StatusOK, response.Ok(searchResponse{Results: results}))
+}
+
+func historyStartKey(request events.APIGatewayV2HTTPRequest, resource, resourceKeyName string) (map[string]sharedaws.AttributeValue, error) {
+	key, err := decodeHistoryCursor(strings.TrimSpace(request.QueryStringParameters["cursor"]), resource, resourceKeyName)
+	if err != nil {
+		return nil, sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{
+			"field":  "cursor",
+			"reason": "must be a valid cursor for this resource",
+		})
+	}
+	return key, nil
 }
 
 func (h monitorHandler) createService(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -558,16 +576,25 @@ func (h monitorHandler) getMonitorStatus(ctx context.Context, serviceID, monitor
 	return envelopeResponse(http.StatusOK, response.Ok(*toStatusResponse(status)))
 }
 
-func (h monitorHandler) getMonitorRuns(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
-	runs, err := h.repo.ListMonitorRuns(ctx, h.tenantID, serviceID, monitorID, 20)
+func (h monitorHandler) getMonitorRuns(ctx context.Context, serviceID, monitorID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	resource := dynamodbschema.MonitorPK(h.tenantID, serviceID, monitorID)
+	startKey, err := historyStartKey(request, resource, "PK")
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	payload := monitorRunsResponse{Runs: make([]checkRunResponse, 0, len(runs))}
-	for _, run := range runs {
+	page, err := h.repo.ListMonitorRunsPage(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	payload := monitorRunsResponse{Runs: make([]checkRunResponse, 0, len(page.Items))}
+	for _, run := range page.Items {
 		payload.Runs = append(payload.Runs, toRunResponse(run))
 	}
-	return envelopeResponse(http.StatusOK, response.OkPaginated(payload, 1, len(payload.Runs), len(payload.Runs)))
+	nextCursor, err := encodeHistoryCursor(resource, page.NextKey)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	return envelopeResponse(http.StatusOK, response.OkCursorPaginated(payload, len(payload.Runs), nextCursor))
 }
 
 func (h monitorHandler) runMonitor(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
@@ -672,21 +699,30 @@ func (h monitorHandler) getIncidentActivities(ctx context.Context, incidentID st
 	return envelopeResponse(http.StatusOK, response.Ok(payload))
 }
 
-func (h monitorHandler) getMonitorIncidents(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
+func (h monitorHandler) getMonitorIncidents(ctx context.Context, serviceID, monitorID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	if _, found, err := h.repo.GetMonitor(ctx, h.tenantID, serviceID, monitorID); err != nil {
 		return respondAPIGateway(err)
 	} else if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
 	}
-	incidents, err := h.repo.ListMonitorIncidents(ctx, h.tenantID, serviceID, monitorID)
+	resource := dynamodbschema.MonitorPK(h.tenantID, serviceID, monitorID)
+	startKey, err := historyStartKey(request, resource, "PK")
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	payload := listIncidentsResponse{Incidents: make([]incidentResponse, 0, len(incidents))}
-	for _, incident := range incidents {
+	page, err := h.repo.ListMonitorIncidentsPage(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	payload := listIncidentsResponse{Incidents: make([]incidentResponse, 0, len(page.Items))}
+	for _, incident := range page.Items {
 		payload.Incidents = append(payload.Incidents, toIncidentResponse(incident))
 	}
-	return envelopeResponse(http.StatusOK, response.Ok(payload))
+	nextCursor, err := encodeHistoryCursor(resource, page.NextKey)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	return envelopeResponse(http.StatusOK, response.OkCursorPaginated(payload, len(payload.Incidents), nextCursor))
 }
 
 func (h monitorHandler) getServiceIncidents(ctx context.Context, serviceID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -763,38 +799,56 @@ func (h monitorHandler) updateSchedulerConfig(ctx context.Context, request event
 	return envelopeResponse(http.StatusOK, response.Ok(toSchedulerConfigResponse(updated)))
 }
 
-func (h monitorHandler) getMonitorAudit(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
+func (h monitorHandler) getMonitorAudit(ctx context.Context, serviceID, monitorID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	if _, found, err := h.repo.GetMonitor(ctx, h.tenantID, serviceID, monitorID); err != nil {
 		return respondAPIGateway(err)
 	} else if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
 	}
-	eventsList, err := h.repo.ListMonitorAuditEvents(ctx, h.tenantID, serviceID, monitorID)
+	resource := dynamodbschema.AuditResourceItem(h.tenantID, serviceID, monitorID, "cursor", "cursor").GSI3PK
+	startKey, err := historyStartKey(request, resource, "GSI3PK")
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	payload := monitorAuditEventsResponse{Events: make([]auditEventResponse, 0, len(eventsList))}
-	for _, event := range eventsList {
+	page, err := h.repo.ListMonitorAuditEventsPage(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	payload := monitorAuditEventsResponse{Events: make([]auditEventResponse, 0, len(page.Items))}
+	for _, event := range page.Items {
 		payload.Events = append(payload.Events, toAuditEventResponse(event))
 	}
-	return envelopeResponse(http.StatusOK, response.Ok(payload))
+	nextCursor, err := encodeHistoryCursor(resource, page.NextKey)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	return envelopeResponse(http.StatusOK, response.OkCursorPaginated(payload, len(payload.Events), nextCursor))
 }
 
-func (h monitorHandler) getServiceAudit(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
+func (h monitorHandler) getServiceAudit(ctx context.Context, serviceID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	if _, found, err := h.repo.GetService(ctx, h.tenantID, serviceID); err != nil {
 		return respondAPIGateway(err)
 	} else if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
 	}
-	eventsList, err := h.repo.ListServiceAuditEvents(ctx, h.tenantID, serviceID)
+	resource := dynamodbschema.AuditResourceItem(h.tenantID, serviceID, "", "cursor", "cursor").GSI3PK
+	startKey, err := historyStartKey(request, resource, "GSI3PK")
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	payload := monitorAuditEventsResponse{Events: make([]auditEventResponse, 0, len(eventsList))}
-	for _, event := range eventsList {
+	page, err := h.repo.ListServiceAuditEventsPage(ctx, h.tenantID, serviceID, historyPageSize, startKey)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	payload := monitorAuditEventsResponse{Events: make([]auditEventResponse, 0, len(page.Items))}
+	for _, event := range page.Items {
 		payload.Events = append(payload.Events, toAuditEventResponse(event))
 	}
-	return envelopeResponse(http.StatusOK, response.Ok(payload))
+	nextCursor, err := encodeHistoryCursor(resource, page.NextKey)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	return envelopeResponse(http.StatusOK, response.OkCursorPaginated(payload, len(payload.Events), nextCursor))
 }
 
 func isMonitorAuditPath(path string) bool {

@@ -52,6 +52,11 @@ type dynamoMonitorRepository struct {
 	now       func() time.Time
 }
 
+type historyPage[T any] struct {
+	Items   []T
+	NextKey map[string]sharedaws.AttributeValue
+}
+
 func newDynamoMonitorRepository(client dynamoAPI, tableName string) *dynamoMonitorRepository {
 	return &dynamoMonitorRepository{client: client, tableName: tableName, now: time.Now}
 }
@@ -676,8 +681,16 @@ func (r *dynamoMonitorRepository) GetMonitorStatus(ctx context.Context, tenantID
 }
 
 func (r *dynamoMonitorRepository) ListMonitorRuns(ctx context.Context, tenantID, serviceID, monitorID string, limit int32) ([]resultstatus.CheckRun, error) {
-	if err := r.requireTableName(); err != nil {
+	page, err := r.ListMonitorRunsPage(ctx, tenantID, serviceID, monitorID, limit, nil)
+	if err != nil {
 		return nil, err
+	}
+	return page.Items, nil
+}
+
+func (r *dynamoMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, startKey map[string]sharedaws.AttributeValue) (historyPage[resultstatus.CheckRun], error) {
+	if err := r.requireTableName(); err != nil {
+		return historyPage[resultstatus.CheckRun]{}, err
 	}
 	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
 		TableName:              sharedaws.String(r.tableName),
@@ -688,23 +701,24 @@ func (r *dynamoMonitorRepository) ListMonitorRuns(ctx context.Context, tenantID,
 		},
 		ScanIndexForward: sharedaws.Bool(false),
 		Limit:            sharedaws.Int32(limit),
+		ExclusiveStartKey: startKey,
 	})
 	if err != nil {
-		return nil, err
+		return historyPage[resultstatus.CheckRun]{}, err
 	}
 	runs := make([]resultstatus.CheckRun, 0, len(out.Items))
 	for _, item := range out.Items {
 		var record resultstatus.CheckRunRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
-			return nil, err
+			return historyPage[resultstatus.CheckRun]{}, err
 		}
 		startedAt, err := time.Parse(time.RFC3339, record.StartedAt)
 		if err != nil {
-			return nil, err
+			return historyPage[resultstatus.CheckRun]{}, err
 		}
 		finishedAt, err := time.Parse(time.RFC3339, record.FinishedAt)
 		if err != nil {
-			return nil, err
+			return historyPage[resultstatus.CheckRun]{}, err
 		}
 		runs = append(runs, resultstatus.CheckRun{
 			ServiceID:       record.ServiceID,
@@ -723,8 +737,7 @@ func (r *dynamoMonitorRepository) ListMonitorRuns(ctx context.Context, tenantID,
 			TTL:             record.TTL,
 		})
 	}
-	sort.Slice(runs, func(i, j int) bool { return runs[i].StartedAt.After(runs[j].StartedAt) })
-	return runs, nil
+	return historyPage[resultstatus.CheckRun]{Items: runs, NextKey: out.LastEvaluatedKey}, nil
 }
 
 func (r *dynamoMonitorRepository) GetServiceCardMetrics(ctx context.Context, tenantID, serviceID string) (serviceCardMetricsResponse, error) {
@@ -930,26 +943,43 @@ func (r *dynamoMonitorRepository) ListIncidentActivities(ctx context.Context, te
 }
 
 func (r *dynamoMonitorRepository) ListMonitorIncidents(ctx context.Context, tenantID, serviceID, monitorID string) ([]dynamodbrecord.IncidentRecord, error) {
-	if err := r.requireTableName(); err != nil {
-		return nil, err
-	}
-	out, err := r.queryPartition(ctx, dynamodbschema.MonitorPK(tenantID, serviceID, monitorID), "INCIDENT#")
+	page, err := r.ListMonitorIncidentsPage(ctx, tenantID, serviceID, monitorID, 20, nil)
 	if err != nil {
 		return nil, err
 	}
-	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(out))
-	for _, item := range out {
+	return page.Items, nil
+}
+
+func (r *dynamoMonitorRepository) ListMonitorIncidentsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, startKey map[string]sharedaws.AttributeValue) (historyPage[dynamodbrecord.IncidentRecord], error) {
+	if err := r.requireTableName(); err != nil {
+		return historyPage[dynamodbrecord.IncidentRecord]{}, err
+	}
+	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
+		TableName:              sharedaws.String(r.tableName),
+		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.MonitorPK(tenantID, serviceID, monitorID)},
+			":prefix": &sharedaws.AttributeValueMemberS{Value: "INCIDENT#"},
+		},
+		ScanIndexForward:    sharedaws.Bool(false),
+		Limit:               sharedaws.Int32(limit),
+		ExclusiveStartKey:   startKey,
+	})
+	if err != nil {
+		return historyPage[dynamodbrecord.IncidentRecord]{}, err
+	}
+	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(out.Items))
+	for _, item := range out.Items {
 		var record dynamodbrecord.IncidentItemRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
-			return nil, err
+			return historyPage[dynamodbrecord.IncidentRecord]{}, err
 		}
 		if record.EntityType != dynamodbschema.EntityIncident {
 			continue
 		}
 		incidents = append(incidents, record.ToIncident())
 	}
-	sort.Slice(incidents, func(i, j int) bool { return incidents[i].OpenedAt > incidents[j].OpenedAt })
-	return incidents, nil
+	return historyPage[dynamodbrecord.IncidentRecord]{Items: incidents, NextKey: out.LastEvaluatedKey}, nil
 }
 
 func (r *dynamoMonitorRepository) ListServiceIncidents(ctx context.Context, tenantID, serviceID string, limit int32) ([]dynamodbrecord.IncidentRecord, error) {
@@ -1062,22 +1092,38 @@ func (r *dynamoMonitorRepository) UpdateSchedulerConfig(ctx context.Context, ten
 }
 
 func (r *dynamoMonitorRepository) ListMonitorAuditEvents(ctx context.Context, tenantID, serviceID, monitorID string) ([]auditEventView, error) {
-	if err := r.requireTableName(); err != nil {
-		return nil, err
-	}
-	out, err := r.queryPartition(ctx, dynamodbschema.TenantPK(tenantID), "AUDIT#")
+	page, err := r.ListMonitorAuditEventsPage(ctx, tenantID, serviceID, monitorID, 20, nil)
 	if err != nil {
 		return nil, err
 	}
-	resourceID := dynamodbrecord.MonitorAuditResourceID(serviceID, monitorID)
-	eventsList := make([]auditEventView, 0)
-	for _, item := range out {
+	return page.Items, nil
+}
+
+func (r *dynamoMonitorRepository) ListMonitorAuditEventsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, startKey map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error) {
+	if err := r.requireTableName(); err != nil {
+		return historyPage[auditEventView]{}, err
+	}
+	resource := dynamodbschema.AuditResourceItem(tenantID, serviceID, monitorID, "cursor", "cursor")
+	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
+		TableName:              sharedaws.String(r.tableName),
+		IndexName:              sharedaws.String(dynamodbschema.GSIAuditByResource),
+		KeyConditionExpression: sharedaws.String("GSI3PK = :pk AND begins_with(GSI3SK, :prefix)"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":pk":     &sharedaws.AttributeValueMemberS{Value: resource.GSI3PK},
+			":prefix": &sharedaws.AttributeValueMemberS{Value: "AUDIT#"},
+		},
+		ScanIndexForward:  sharedaws.Bool(false),
+		Limit:             sharedaws.Int32(limit),
+		ExclusiveStartKey: startKey,
+	})
+	if err != nil {
+		return historyPage[auditEventView]{}, err
+	}
+	eventsList := make([]auditEventView, 0, len(out.Items))
+	for _, item := range out.Items {
 		var record dynamodbrecord.AuditEventRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
-			return nil, err
-		}
-		if record.EntityType != dynamodbschema.EntityAuditEvent || record.ResourceID != resourceID {
-			continue
+			return historyPage[auditEventView]{}, err
 		}
 		eventsList = append(eventsList, auditEventView{
 			AuditID:    record.AuditID,
@@ -1089,27 +1135,42 @@ func (r *dynamoMonitorRepository) ListMonitorAuditEvents(ctx context.Context, te
 			Origin:     record.Origin,
 		})
 	}
-	sort.Slice(eventsList, func(i, j int) bool { return eventsList[i].OccurredAt > eventsList[j].OccurredAt })
-	return eventsList, nil
+	return historyPage[auditEventView]{Items: eventsList, NextKey: out.LastEvaluatedKey}, nil
 }
 
 func (r *dynamoMonitorRepository) ListServiceAuditEvents(ctx context.Context, tenantID, serviceID string) ([]auditEventView, error) {
-	if err := r.requireTableName(); err != nil {
-		return nil, err
-	}
-	out, err := r.queryPartition(ctx, dynamodbschema.TenantPK(tenantID), "AUDIT#")
+	page, err := r.ListServiceAuditEventsPage(ctx, tenantID, serviceID, 20, nil)
 	if err != nil {
 		return nil, err
 	}
-	resourceID := dynamodbrecord.MonitorAuditResourceID(serviceID, "")
-	eventsList := make([]auditEventView, 0)
-	for _, item := range out {
+	return page.Items, nil
+}
+
+func (r *dynamoMonitorRepository) ListServiceAuditEventsPage(ctx context.Context, tenantID, serviceID string, limit int32, startKey map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error) {
+	if err := r.requireTableName(); err != nil {
+		return historyPage[auditEventView]{}, err
+	}
+	resource := dynamodbschema.AuditResourceItem(tenantID, serviceID, "", "cursor", "cursor")
+	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
+		TableName:              sharedaws.String(r.tableName),
+		IndexName:              sharedaws.String(dynamodbschema.GSIAuditByResource),
+		KeyConditionExpression: sharedaws.String("GSI3PK = :pk AND begins_with(GSI3SK, :prefix)"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":pk":     &sharedaws.AttributeValueMemberS{Value: resource.GSI3PK},
+			":prefix": &sharedaws.AttributeValueMemberS{Value: "AUDIT#"},
+		},
+		ScanIndexForward:  sharedaws.Bool(false),
+		Limit:             sharedaws.Int32(limit),
+		ExclusiveStartKey: startKey,
+	})
+	if err != nil {
+		return historyPage[auditEventView]{}, err
+	}
+	eventsList := make([]auditEventView, 0, len(out.Items))
+	for _, item := range out.Items {
 		var record dynamodbrecord.AuditEventRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
-			return nil, err
-		}
-		if record.EntityType != dynamodbschema.EntityAuditEvent || record.ResourceID != resourceID {
-			continue
+			return historyPage[auditEventView]{}, err
 		}
 		eventsList = append(eventsList, auditEventView{
 			AuditID:    record.AuditID,
@@ -1121,8 +1182,7 @@ func (r *dynamoMonitorRepository) ListServiceAuditEvents(ctx context.Context, te
 			Origin:     record.Origin,
 		})
 	}
-	sort.Slice(eventsList, func(i, j int) bool { return eventsList[i].OccurredAt > eventsList[j].OccurredAt })
-	return eventsList, nil
+	return historyPage[auditEventView]{Items: eventsList, NextKey: out.LastEvaluatedKey}, nil
 }
 
 func (r *dynamoMonitorRepository) collectMonitorDeleteKeys(ctx context.Context, tenantID, serviceID, monitorID string, deleteSet *deleteKeySet) error {

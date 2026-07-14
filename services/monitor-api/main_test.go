@@ -385,6 +385,17 @@ func (r *fakeMonitorRepository) ListMonitorRuns(_ context.Context, tenantID, ser
 	return filtered, nil
 }
 
+func (r *fakeMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[resultstatus.CheckRun], error) {
+	runs, err := r.ListMonitorRuns(ctx, tenantID, serviceID, monitorID, limit)
+	if err != nil {
+		return historyPage[resultstatus.CheckRun]{}, err
+	}
+	if int64(len(runs)) > int64(limit) {
+		runs = runs[:limit]
+	}
+	return historyPage[resultstatus.CheckRun]{Items: runs}, nil
+}
+
 func (r *fakeMonitorRepository) GetServiceCardMetrics(_ context.Context, tenantID, serviceID string) (serviceCardMetricsResponse, error) {
 	monitors := []monitorconfig.Monitor{}
 	statuses := map[string]resultstatus.MonitorStatus{}
@@ -451,6 +462,18 @@ func (r *fakeMonitorRepository) ListMonitorIncidents(_ context.Context, tenantID
 	return incidents, nil
 }
 
+func (r *fakeMonitorRepository) ListMonitorIncidentsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[dynamodbrecord.IncidentRecord], error) {
+	incidents, err := r.ListMonitorIncidents(ctx, tenantID, serviceID, monitorID)
+	if err != nil {
+		return historyPage[dynamodbrecord.IncidentRecord]{}, err
+	}
+	sort.Slice(incidents, func(i, j int) bool { return incidents[i].OpenedAt > incidents[j].OpenedAt })
+	if int64(len(incidents)) > int64(limit) {
+		incidents = incidents[:limit]
+	}
+	return historyPage[dynamodbrecord.IncidentRecord]{Items: incidents}, nil
+}
+
 func (r *fakeMonitorRepository) ListServiceIncidents(_ context.Context, tenantID, serviceID string, limit int32) ([]dynamodbrecord.IncidentRecord, error) {
 	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(r.incidents))
 	for _, incident := range r.incidents {
@@ -512,12 +535,34 @@ func (r *fakeMonitorRepository) ListMonitorAuditEvents(_ context.Context, tenant
 	return append([]auditEventView(nil), r.audit[monitorKey(serviceID, monitorID)]...), nil
 }
 
+func (r *fakeMonitorRepository) ListMonitorAuditEventsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error) {
+	events, err := r.ListMonitorAuditEvents(ctx, tenantID, serviceID, monitorID)
+	if err != nil {
+		return historyPage[auditEventView]{}, err
+	}
+	if int64(len(events)) > int64(limit) {
+		events = events[:limit]
+	}
+	return historyPage[auditEventView]{Items: events}, nil
+}
+
 func (r *fakeMonitorRepository) ListServiceAuditEvents(_ context.Context, tenantID, serviceID string) ([]auditEventView, error) {
 	service, ok := r.services[serviceKey(serviceID)]
 	if !ok || service.TenantID != tenantID {
 		return nil, nil
 	}
 	return append([]auditEventView(nil), r.audit[serviceKey(serviceID)]...), nil
+}
+
+func (r *fakeMonitorRepository) ListServiceAuditEventsPage(ctx context.Context, tenantID, serviceID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error) {
+	events, err := r.ListServiceAuditEvents(ctx, tenantID, serviceID)
+	if err != nil {
+		return historyPage[auditEventView]{}, err
+	}
+	if int64(len(events)) > int64(limit) {
+		events = events[:limit]
+	}
+	return historyPage[auditEventView]{Items: events}, nil
 }
 
 func (r *fakeMonitorRepository) CreateEscalationPolicy(_ context.Context, policy escalation.EscalationPolicy) (escalation.EscalationPolicy, error) {

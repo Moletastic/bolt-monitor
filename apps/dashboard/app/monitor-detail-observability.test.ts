@@ -18,6 +18,10 @@ const actionsMenuSource = readFileSync(
   join(process.cwd(), 'components/monitor-detail-actions-menu.tsx'),
   'utf8'
 )
+const evidenceTabsSource = readFileSync(
+  join(process.cwd(), 'components/monitor-evidence-tabs.tsx'),
+  'utf8'
+)
 
 describe('monitor detail observability layout guards', () => {
   it('keeps compact mobile action controls accessible', () => {
@@ -63,12 +67,10 @@ describe('monitor detail observability layout guards', () => {
   })
 
   it('adds icon-backed evidence tabs', () => {
-    expect(pageSource).toContain("iconName: 'history'")
-    expect(pageSource).toContain("iconName: 'incidents'")
-    expect(pageSource).toContain("iconName: 'audit'")
-    expect(pageSource).toContain('Runs')
-    expect(pageSource).toContain('Incidents')
-    expect(pageSource).toContain('Audit')
+    expect(evidenceTabsSource).toContain("'runs'")
+    expect(evidenceTabsSource).toContain("'incidents'")
+    expect(evidenceTabsSource).toContain("'audit'")
+    expect(evidenceTabsSource).toContain('role="tablist"')
   })
 
   it('defaults the mobile indicator picker to current state', () => {

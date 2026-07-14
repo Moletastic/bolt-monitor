@@ -8,6 +8,8 @@ export function createBootstrapStack() {
       GSI1SK: 'string',
       GSI2PK: 'string',
       GSI2SK: 'string',
+      GSI3PK: 'string',
+      GSI3SK: 'string',
     },
     primaryIndex: {
       hashKey: 'PK',
@@ -21,6 +23,10 @@ export function createBootstrapStack() {
       StatusByTenantIndex: {
         hashKey: 'GSI2PK',
         rangeKey: 'GSI2SK',
+      },
+      AuditByResourceIndex: {
+        hashKey: 'GSI3PK',
+        rangeKey: 'GSI3SK',
       },
     },
     ttl: 'TTL',

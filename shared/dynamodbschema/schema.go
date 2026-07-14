@@ -31,6 +31,7 @@ const (
 const (
 	GSIOpenIncidents  = "gsi1"
 	GSIServiceRollups = "gsi2"
+	GSIAuditByResource = "AuditByResourceIndex"
 
 	DefaultCheckRunRetentionDays = 30
 )
@@ -44,6 +45,8 @@ type Item struct {
 	GSI1SK string `json:"gsi1sk,omitempty"`
 	GSI2PK string `json:"gsi2pk,omitempty"`
 	GSI2SK string `json:"gsi2sk,omitempty"`
+	GSI3PK string `json:"gsi3pk,omitempty"`
+	GSI3SK string `json:"gsi3sk,omitempty"`
 
 	TenantID   string `json:"tenantId,omitempty"`
 	ServiceID  string `json:"serviceId,omitempty"`
@@ -129,6 +132,13 @@ func IncidentItem(tenantID, serviceID, monitorID, incidentID, openedAt, statusPr
 
 func AuditEventItem(tenantID, auditID, timestamp string) Item {
 	return Item{PK: TenantPK(tenantID), SK: fmt.Sprintf("AUDIT#%s#%s", timestamp, normalizeToken(auditID)), EntityType: EntityAuditEvent, TenantID: normalizeField(tenantID), AuditID: normalizeField(auditID)}
+}
+
+func AuditResourceItem(tenantID, serviceID, monitorID, auditID, timestamp string) Item {
+	return Item{
+		GSI3PK: fmt.Sprintf("AUDIT_RESOURCE#%s#%s#%s", normalizeToken(tenantID), normalizeToken(serviceID), normalizeToken(monitorID)),
+		GSI3SK: fmt.Sprintf("AUDIT#%s#%s", timestamp, normalizeToken(auditID)),
+	}
 }
 
 func AuditChangeItem(auditID, fieldPath string) Item {

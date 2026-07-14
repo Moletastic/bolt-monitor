@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { AppShell } from '@/components/app-shell'
 import { EmptyState } from '@/components/empty-state'
 import { MonitorDetailActionsMenu } from '@/components/monitor-detail-actions-menu'
+import { MonitorEvidenceTabs } from '@/components/monitor-evidence-tabs'
 import {
   MobileMonitorIndicatorPicker,
   MonitorIndicatorCard,
@@ -26,26 +27,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tabs } from '@/components/ui/tabs'
-import {
-  ApiError,
-  getMonitor,
-  getMonitorAudit,
-  getMonitorIncidents,
-  getMonitorRuns,
-  getMonitorStatus,
-  getService,
-} from '@/lib/api'
+import { ApiError, getMonitor, getMonitorRuns, getMonitorStatus, getService } from '@/lib/api'
 import { triggerManualRunAction } from '@/lib/actions'
 import { buildMonitorChartPoints, buildMonitorIndicators } from '@/lib/monitor-detail-metrics'
-import type { Monitor } from '@/lib/types'
+import type { AuditEvent, CheckRun, Incident, Monitor } from '@/lib/types'
 import { formatDateTime, formatDuration, formatMonitorCadence } from '@/lib/utils'
 
-type Runs = Awaited<ReturnType<typeof getMonitorRuns>>
-type Incidents = Awaited<ReturnType<typeof getMonitorIncidents>>
-type AuditEvents = Awaited<ReturnType<typeof getMonitorAudit>>
-
-function RunsTab({ runs }: { runs: Runs }) {
+/* Legacy server-rendered evidence tables moved to MonitorEvidenceTabs. */
+// Retained temporarily for visual parity reference while client evidence tabs evolve.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function LegacyRunsTab({ runs }: { runs: CheckRun[] }) {
   return (
     <Card>
       <CardHeader>
@@ -114,7 +105,8 @@ function RunsTab({ runs }: { runs: Runs }) {
   )
 }
 
-function IncidentsTab({ incidents }: { incidents: Incidents }) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function LegacyIncidentsTab({ incidents }: { incidents: Incident[] }) {
   return (
     <Card>
       <CardHeader>
@@ -175,7 +167,8 @@ function IncidentsTab({ incidents }: { incidents: Incidents }) {
   )
 }
 
-function AuditTab({ events }: { events: AuditEvents }) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function LegacyAuditTab({ events }: { events: AuditEvent[] }) {
   return (
     <Card>
       <CardHeader>
@@ -303,20 +296,16 @@ export default async function ServiceMonitorDetailPage({
     throw error
   }
 
-  const [statusResult, runsResult, incidentsResult, eventsResult] = await Promise.all([
+  const [statusResult, runsResult] = await Promise.all([
     loadSection(() => getMonitorStatus(serviceId, monitorId)),
     loadSection(() => getMonitorRuns(serviceId, monitorId)),
-    loadSection(() => getMonitorIncidents(serviceId, monitorId)),
-    loadSection(() => getMonitorAudit(serviceId, monitorId)),
   ])
 
   const monitorDeleteBlocked =
     service.lifecycleState === 'active' && getServiceMonitorCount(service) <= 1
 
   const status = statusResult.data
-  const runs = runsResult.data ?? []
-  const incidents = incidentsResult.data ?? []
-  const events = eventsResult.data ?? []
+  const runs = runsResult.data?.items ?? []
   const indicators = buildMonitorIndicators(status, runs)
   const chartPoints = buildMonitorChartPoints(runs)
   const returnTo = `/services/${serviceId}/monitors/${monitor.monitorId}`
@@ -469,48 +458,13 @@ export default async function ServiceMonitorDetailPage({
           </Card>
         </section>
 
-        <section className="grid gap-6">
-          <div className="space-y-4">
-            <Tabs
-              basePath={returnTo}
-              tabs={[
-                {
-                  iconName: 'history',
-                  label: 'Runs',
-                  href: `${returnTo}?tab=runs`,
-                },
-                {
-                  iconName: 'incidents',
-                  label: 'Incidents',
-                  href: `${returnTo}?tab=incidents`,
-                },
-                {
-                  iconName: 'audit',
-                  label: 'Audit',
-                  href: `${returnTo}?tab=audit`,
-                },
-              ]}
-            />
-            {activeTab === 'runs' &&
-              (runsResult.data ? (
-                <RunsTab runs={runs} />
-              ) : (
-                <UnavailableCard message={runsResult.error} title="Recent runs unavailable" />
-              ))}
-            {activeTab === 'incidents' &&
-              (incidentsResult.data ? (
-                <IncidentsTab incidents={incidents} />
-              ) : (
-                <UnavailableCard message={incidentsResult.error} title="Incidents unavailable" />
-              ))}
-            {activeTab === 'audit' &&
-              (eventsResult.data ? (
-                <AuditTab events={events} />
-              ) : (
-                <UnavailableCard message={eventsResult.error} title="Audit log unavailable" />
-              ))}
-          </div>
-        </section>
+        <MonitorEvidenceTabs
+          activeTab={activeTab}
+          initialRuns={runs}
+          initialRunsCursor={runsResult.data?.nextCursor}
+          monitorId={monitorId}
+          serviceId={serviceId}
+        />
       </div>
     </AppShell>
   )

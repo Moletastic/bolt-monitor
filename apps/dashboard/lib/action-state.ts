@@ -17,7 +17,7 @@ export function actionOk<T>(data: T, message?: string): ActionState<T> {
   return { status: 'success', data, message }
 }
 
-export function actionErr(error: ApiError): ActionState {
+export function actionErr<T = undefined>(error: ApiError): ActionState<T> {
   const message = error.message && error.message !== error.code ? messageFor(error) : undefined
   return {
     status: 'error',

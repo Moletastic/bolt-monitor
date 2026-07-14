@@ -25,6 +25,23 @@ func TestIncidentItemIncludesOpenIncidentGSI(t *testing.T) {
 	}
 }
 
+func TestAuditResourceItemIncludesMonitorScopeAndTimeOrder(t *testing.T) {
+	item := AuditResourceItem("default", "auth", "public-http", "aud_123", "2026-05-16T10:00:00Z")
+	if item.GSI3PK != "AUDIT_RESOURCE#DEFAULT#AUTH#PUBLIC-HTTP" {
+		t.Fatalf("GSI3PK = %q", item.GSI3PK)
+	}
+	if item.GSI3SK != "AUDIT#2026-05-16T10:00:00Z#AUD_123" {
+		t.Fatalf("GSI3SK = %q", item.GSI3SK)
+	}
+}
+
+func TestAuditResourceItemKeepsServiceScopeDistinct(t *testing.T) {
+	item := AuditResourceItem("default", "auth", "", "aud_123", "2026-05-16T10:00:00Z")
+	if item.GSI3PK != "AUDIT_RESOURCE#DEFAULT#AUTH#" {
+		t.Fatalf("GSI3PK = %q", item.GSI3PK)
+	}
+}
+
 func TestCheckRunItemCarriesTTL(t *testing.T) {
 	item := CheckRunItem("default", "auth", "public-http", "2026-05-16T10:00:00Z", "run_123", 1780000000)
 	if item.TTL != 1780000000 {

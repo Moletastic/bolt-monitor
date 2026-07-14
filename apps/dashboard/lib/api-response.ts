@@ -3,12 +3,19 @@ export interface ApiReason {
   details: Record<string, unknown>
 }
 
-export interface ApiPagination<T = unknown> {
+export interface OffsetPagination<T = unknown> {
   page: number
   size: number
   total: number
   items: T[]
 }
+
+export interface CursorPagination {
+  size: number
+  nextCursor?: string
+}
+
+export type ApiPagination<T = unknown> = OffsetPagination<T> | CursorPagination
 
 export interface ApiResponse<T = unknown> {
   status: 'success' | 'error'
@@ -35,6 +42,12 @@ export function isError<T>(
   return response.status === Status.Error && response.reason !== undefined
 }
 
+export function isCursorPagination(
+  pagination: ApiPagination | undefined
+): pagination is CursorPagination {
+  return pagination !== undefined && !('page' in pagination)
+}
+
 export function ok<T>(data: T, message?: string): ApiResponse<T> {
   return message !== undefined
     ? { status: Status.Success, data, message }
@@ -57,5 +70,13 @@ export function okPaginated<T>(data: T, page: number, size: number, total: numbe
     status: Status.Success,
     data,
     pagination: { page, size, total, items: data as unknown[] },
+  }
+}
+
+export function okCursorPaginated<T>(data: T, size: number, nextCursor?: string): ApiResponse<T> {
+  return {
+    status: Status.Success,
+    data,
+    pagination: { size, ...(nextCursor ? { nextCursor } : {}) },
   }
 }

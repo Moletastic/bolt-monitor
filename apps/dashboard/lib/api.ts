@@ -3,6 +3,7 @@ import {
   type CreateMonitorPayload,
   type ListServicesResponse,
   type Monitor,
+  type CheckRun,
   type MonitorRunsResponse,
   type MonitorStatus,
   type Service,
@@ -25,8 +26,9 @@ import {
   type UpdateNotificationChannelPayload,
   type GlobalSearchResponse,
   type GlobalSearchResourceType,
+  type AuditEvent,
 } from '@/lib/types'
-import { type ApiResponse, isError, Status } from '@/lib/api-response'
+import { type ApiResponse, isCursorPagination, isError, Status } from '@/lib/api-response'
 import { ApiError, ApiErrorCode, fromEnvelope, type ApiReasonPayload } from '@/lib/errors'
 
 export { ApiError }
@@ -78,6 +80,29 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return unwrap(parsed as ApiResponse<T>, response.status)
+}
+
+async function cursorPageRequest<T, U>(
+  path: string,
+  select: (data: T) => U[]
+): Promise<{ items: U[]; nextCursor?: string }> {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const text = await response.text()
+  const parsed = text ? (JSON.parse(text) as ApiResponse<T>) : undefined
+  if (!response.ok) {
+    const reason = parsed && isError(parsed) ? parsed.reason : undefined
+    throw reason
+      ? attachMessage(fromEnvelope(reason, response.status), parsed?.message)
+      : new ApiError(ApiErrorCode.Internal, response.status, {}, parsed?.message)
+  }
+  const data = unwrap(parsed as ApiResponse<T>, response.status)
+  if (!isCursorPagination(parsed?.pagination)) {
+    throw new ApiError(ApiErrorCode.Internal, response.status, {})
+  }
+  return { items: select(data), nextCursor: parsed.pagination.nextCursor }
 }
 
 async function apiRequestVoid(path: string, init?: RequestInit): Promise<void> {
@@ -162,8 +187,13 @@ export async function listMonitorRuns(serviceId: string, monitorId: string) {
   return response.runs
 }
 
-export async function getMonitorRuns(serviceId: string, monitorId: string) {
-  return listMonitorRuns(serviceId, monitorId)
+export async function getMonitorRuns(serviceId: string, monitorId: string, cursor?: string) {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  const page = await cursorPageRequest<MonitorRunsResponse, CheckRun>(
+    `/api/v1/services/${serviceId}/monitors/${monitorId}/runs${query}`,
+    (response) => response.runs
+  )
+  return { items: page.items, nextCursor: page.nextCursor }
 }
 
 export async function createMonitor(serviceId: string, payload: CreateMonitorPayload) {
@@ -253,11 +283,13 @@ export async function updateSchedulerConfig(payload: {
   })
 }
 
-export async function getMonitorIncidents(serviceId: string, monitorId: string) {
-  const response = await apiRequest<IncidentListResponse>(
-    `/api/v1/services/${serviceId}/monitors/${monitorId}/incidents`
+export async function getMonitorIncidents(serviceId: string, monitorId: string, cursor?: string) {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  const page = await cursorPageRequest<IncidentListResponse, Incident>(
+    `/api/v1/services/${serviceId}/monitors/${monitorId}/incidents${query}`,
+    (response) => response.incidents
   )
-  return response.incidents
+  return { items: page.items, nextCursor: page.nextCursor }
 }
 
 export async function listServiceIncidents(serviceId: string, limit?: number) {
@@ -276,8 +308,13 @@ export async function listMonitorAuditEvents(serviceId: string, monitorId: strin
   return response.events
 }
 
-export async function getMonitorAudit(serviceId: string, monitorId: string) {
-  return listMonitorAuditEvents(serviceId, monitorId)
+export async function getMonitorAudit(serviceId: string, monitorId: string, cursor?: string) {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  const page = await cursorPageRequest<MonitorAuditResponse, AuditEvent>(
+    `/api/v1/services/${serviceId}/monitors/${monitorId}/audit${query}`,
+    (response) => response.events
+  )
+  return { items: page.items, nextCursor: page.nextCursor }
 }
 
 export async function listServiceAuditEvents(serviceId: string) {

@@ -14,11 +14,11 @@ All Lambda handlers SHALL continue to return a JSON body of the form:
   "data": <T> | null,
   "reason": { "code": string, "details": Record<string, unknown> } | null,
   "message": string | null,
-  "pagination": { "page": number, "size": number, "total": number, "items": unknown[] } | null
+  "pagination": { "page": number, "size": number, "total": number, "items": unknown[] } | { "size": number, "nextCursor": string } | null
 }
 ```
 
-Optional fields SHALL be omitted from the JSON output when not applicable rather than emitted as `null`. The envelope struct, `Ok` / `Err` / `OkPaginated` constructors, and `MarshalJSON` behavior in `shared/api/response` are unchanged.
+Optional fields SHALL be omitted from JSON output when not applicable rather than emitted as `null`. The envelope struct, `Ok` / `Err` / `OkPaginated` constructors, and `MarshalJSON` behavior in `shared/api/response` SHALL remain the common response mechanism; cursor-paginated responses SHALL use a dedicated constructor.
 
 #### Scenario: Handler error sites route through shared/errors.Respond
 - **WHEN** a handler produces an error response
@@ -42,7 +42,17 @@ On failure, the envelope SHALL include `reason.code` as a stable, machine-readab
 
 ### Requirement: Pagination object
 
-When an endpoint returns a paginated collection, the envelope SHALL include `pagination: { page, size, total, items }`. `items` SHALL be the items on the current page. `page` SHALL be 1-indexed. Endpoints returning a single resource SHALL omit `pagination`.
+When an endpoint returns an offset-paginated collection, envelope SHALL include `pagination: { page, size, total, items }`. `items` SHALL be current page items and `page` SHALL be 1-indexed. When an endpoint returns a cursor-paginated collection, envelope SHALL include `pagination: { size, nextCursor? }`; `nextCursor` SHALL be omitted when no following page exists, and `page`, `total`, and `items` SHALL be omitted. Endpoints returning a single resource SHALL omit `pagination`.
+
+#### Scenario: Cursor-paginated collection has more records
+- **WHEN** a handler returns a cursor page with a continuation key
+- **THEN** response includes `pagination.size` and opaque `pagination.nextCursor`
+- **AND** response omits page-number and total-count fields
+
+#### Scenario: Cursor-paginated collection is final page
+- **WHEN** a handler returns a cursor page with no continuation key
+- **THEN** response includes `pagination.size`
+- **AND** response omits `pagination.nextCursor`
 
 ### Requirement: Go envelope is a generic struct
 

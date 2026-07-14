@@ -28,10 +28,14 @@ describe('api response envelope', () => {
   it('okPaginated() sets pagination metadata and items', () => {
     const envelope = okPaginated([{ id: 1 }, { id: 2 }], 1, 2, 2)
     expect(envelope.pagination).toBeDefined()
-    expect(envelope.pagination?.page).toBe(1)
+    expect(envelope.pagination && 'page' in envelope.pagination && envelope.pagination.page).toBe(1)
     expect(envelope.pagination?.size).toBe(2)
-    expect(envelope.pagination?.total).toBe(2)
-    expect(envelope.pagination?.items).toHaveLength(2)
+    expect(envelope.pagination && 'total' in envelope.pagination && envelope.pagination.total).toBe(
+      2
+    )
+    expect(
+      envelope.pagination && 'items' in envelope.pagination && envelope.pagination.items
+    ).toHaveLength(2)
   })
 
   it('isSuccess narrows the data field', () => {

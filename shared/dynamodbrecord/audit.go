@@ -19,10 +19,13 @@ type AuditEventRecord struct {
 	Timestamp  string `dynamodbav:"Timestamp"`
 	Actor      string `dynamodbav:"Actor,omitempty"`
 	Origin     string `dynamodbav:"Origin,omitempty"`
+	GSI3PK     string `dynamodbav:"GSI3PK,omitempty"`
+	GSI3SK     string `dynamodbav:"GSI3SK,omitempty"`
 }
 
 func NewAuditEventRecord(now time.Time, auditID, tenantID, action, serviceID, monitorID string) AuditEventRecord {
 	item := dynamodbschema.AuditEventItem(tenantID, auditID, now.UTC().Format(time.RFC3339))
+	resourceItem := dynamodbschema.AuditResourceItem(tenantID, serviceID, monitorID, auditID, now.UTC().Format(time.RFC3339))
 	return AuditEventRecord{
 		PK:         item.PK,
 		SK:         item.SK,
@@ -35,6 +38,8 @@ func NewAuditEventRecord(now time.Time, auditID, tenantID, action, serviceID, mo
 		ResourceID: monitorAuditResourceID(serviceID, monitorID),
 		Timestamp:  now.UTC().Format(time.RFC3339),
 		Origin:     "system",
+		GSI3PK:     resourceItem.GSI3PK,
+		GSI3SK:     resourceItem.GSI3SK,
 	}
 }
 

@@ -23,6 +23,9 @@ import {
   updateNotificationChannel,
   deleteNotificationChannel,
   testNotificationChannel,
+  getMonitorRuns,
+  getMonitorIncidents,
+  getMonitorAudit,
 } from '@/lib/api'
 import { parseJson, runServerAction } from '@/lib/io/server-action'
 import { err, isErr, ok, type Result } from '@/lib/result'
@@ -36,9 +39,45 @@ import type {
   EscalationChannelType,
   BusinessHoursConfig,
   HttpConfiguration,
+  CheckRun,
+  Incident,
+  AuditEvent,
+  MonitorHistoryPage,
   UpdateServicePayload,
   UpdateMonitorPayload,
 } from '@/lib/types'
+
+export type MonitorHistoryKind = 'runs' | 'incidents' | 'audit'
+export type MonitorHistoryActionData = {
+  kind: MonitorHistoryKind
+  page: MonitorHistoryPage<CheckRun | Incident | AuditEvent>
+}
+
+export async function loadMonitorHistoryPageAction(
+  _previousState: ActionState<MonitorHistoryActionData>,
+  formData: FormData
+): Promise<ActionState<MonitorHistoryActionData>> {
+  const serviceId = String(formData.get('serviceId') ?? '').trim()
+  const monitorId = String(formData.get('monitorId') ?? '').trim()
+  const cursor = String(formData.get('cursor') ?? '').trim() || undefined
+  const kind = String(formData.get('kind') ?? '') as MonitorHistoryKind
+
+  const result = await runServerAction(async () => {
+    switch (kind) {
+      case 'runs':
+        return { kind, page: await getMonitorRuns(serviceId, monitorId, cursor) }
+      case 'incidents':
+        return { kind, page: await getMonitorIncidents(serviceId, monitorId, cursor) }
+      case 'audit':
+        return { kind, page: await getMonitorAudit(serviceId, monitorId, cursor) }
+      default:
+        throw new Error('Unknown monitor history kind.')
+    }
+  })
+  return isErr(result)
+    ? actionErr<MonitorHistoryActionData>(result.error)
+    : actionOk<MonitorHistoryActionData>(result.value)
+}
 
 function parseHeaders(raw: string): Record<string, string> {
   const headers: Record<string, string> = {}
