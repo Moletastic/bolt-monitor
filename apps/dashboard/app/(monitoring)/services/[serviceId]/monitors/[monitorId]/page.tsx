@@ -1,14 +1,22 @@
 import { notFound } from 'next/navigation'
+import { Pencil } from 'lucide-react'
+import Link from 'next/link'
+import type { ReactNode } from 'react'
 
 import { AppShell } from '@/components/app-shell'
-import { DeleteResourceForm } from '@/components/delete-resource-form'
 import { EmptyState } from '@/components/empty-state'
+import { MonitorDetailActionsMenu } from '@/components/monitor-detail-actions-menu'
+import {
+  MobileMonitorIndicatorPicker,
+  MonitorIndicatorCard,
+} from '@/components/monitor-indicator-picker'
 import { MonitorProtocolBadge } from '@/components/monitor-protocol-badge'
+import { MonitorRunTimelineChart } from '@/components/monitor-run-timeline-chart'
 import { QueryFeedbackBanner } from '@/components/query-feedback-banner'
-import { SamePageActionForm } from '@/components/same-page-action-form'
 import { StatusChip } from '@/components/status-chip'
 import { SubmitButton } from '@/components/submit-button'
 import { UnavailableCard } from '@/components/unavailable-card'
+import { buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -28,15 +36,16 @@ import {
   getMonitorStatus,
   getService,
 } from '@/lib/api'
-import {
-  deleteMonitorAction,
-  toggleMaintenanceModeAction,
-  toggleMonitorStateAction,
-  triggerManualRunAction,
-} from '@/lib/actions'
-import { formatDateTime, formatDuration, formatMonitorCadence, formatOutcome } from '@/lib/utils'
+import { triggerManualRunAction } from '@/lib/actions'
+import { buildMonitorChartPoints, buildMonitorIndicators } from '@/lib/monitor-detail-metrics'
+import type { Monitor } from '@/lib/types'
+import { formatDateTime, formatDuration, formatMonitorCadence } from '@/lib/utils'
 
-function RunsTab({ runs }: { runs: Awaited<ReturnType<typeof getMonitorRuns>> }) {
+type Runs = Awaited<ReturnType<typeof getMonitorRuns>>
+type Incidents = Awaited<ReturnType<typeof getMonitorIncidents>>
+type AuditEvents = Awaited<ReturnType<typeof getMonitorAudit>>
+
+function RunsTab({ runs }: { runs: Runs }) {
   return (
     <Card>
       <CardHeader>
@@ -46,45 +55,66 @@ function RunsTab({ runs }: { runs: Awaited<ReturnType<typeof getMonitorRuns>> })
         {runs.length === 0 ? (
           <EmptyState description="No run history returned yet." title="No runs yet" />
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Started</TableHead>
-                  <TableHead>Outcome</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Trigger</TableHead>
-                  <TableHead>Status code</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {runs.map((run) => (
-                  <TableRow key={run.runId}>
-                    <TableCell className="font-mono text-xs">
-                      {formatDateTime(run.startedAt)}
-                    </TableCell>
-                    <TableCell>
-                      <StatusChip status={run.outcome} />
-                    </TableCell>
-                    <TableCell className="font-mono">{formatDuration(run.durationMs)}</TableCell>
-                    <TableCell>{run.trigger}</TableCell>
-                    <TableCell>{run.statusCode ?? 'n/a'}</TableCell>
+          <>
+            <div className="grid gap-3 md:hidden">
+              {runs.map((run) => (
+                <div className="rounded-lg border border-border bg-surface-low p-4" key={run.runId}>
+                  <div className="flex items-start justify-between gap-3">
+                    <StatusChip status={run.outcome} />
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {run.statusCode ?? 'n/a'}
+                    </span>
+                  </div>
+                  <p className="mt-3 font-mono text-sm text-foreground">
+                    {formatDateTime(run.startedAt)}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {formatDuration(run.durationMs)} · {run.trigger}
+                  </p>
+                  {run.error && (
+                    <p className="mt-2 break-words font-mono text-xs text-status-down">
+                      {run.error}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Started</TableHead>
+                    <TableHead>Outcome</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Trigger</TableHead>
+                    <TableHead>Status code</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {runs.map((run) => (
+                    <TableRow key={run.runId}>
+                      <TableCell className="font-mono text-xs">
+                        {formatDateTime(run.startedAt)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusChip status={run.outcome} />
+                      </TableCell>
+                      <TableCell className="font-mono">{formatDuration(run.durationMs)}</TableCell>
+                      <TableCell>{run.trigger}</TableCell>
+                      <TableCell>{run.statusCode ?? 'n/a'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
   )
 }
 
-function IncidentsTab({
-  incidents,
-}: {
-  incidents: Awaited<ReturnType<typeof getMonitorIncidents>>
-}) {
+function IncidentsTab({ incidents }: { incidents: Incidents }) {
   return (
     <Card>
       <CardHeader>
@@ -94,39 +124,58 @@ function IncidentsTab({
         {incidents.length === 0 ? (
           <EmptyState description="No incidents recorded for this monitor." title="No incidents" />
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Opened</TableHead>
-                  <TableHead>Summary</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Origin</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {incidents.map((incident) => (
-                  <TableRow key={incident.incidentId}>
-                    <TableCell className="font-mono text-xs">
-                      {formatDateTime(incident.openedAt)}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate">{incident.summary}</TableCell>
-                    <TableCell>
-                      <StatusChip status={incident.status} />
-                    </TableCell>
-                    <TableCell>{incident.origin ?? '—'}</TableCell>
+          <>
+            <div className="grid gap-3 md:hidden">
+              {incidents.map((incident) => (
+                <div
+                  className="rounded-lg border border-border bg-surface-low p-4"
+                  key={incident.incidentId}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <StatusChip status={incident.status} />
+                    <span className="text-xs text-muted-foreground">{incident.origin ?? '—'}</span>
+                  </div>
+                  <p className="mt-3 font-medium text-foreground">{incident.summary}</p>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">
+                    {formatDateTime(incident.openedAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Opened</TableHead>
+                    <TableHead>Summary</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Origin</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {incidents.map((incident) => (
+                    <TableRow key={incident.incidentId}>
+                      <TableCell className="font-mono text-xs">
+                        {formatDateTime(incident.openedAt)}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate">{incident.summary}</TableCell>
+                      <TableCell>
+                        <StatusChip status={incident.status} />
+                      </TableCell>
+                      <TableCell>{incident.origin ?? '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
   )
 }
 
-function AuditTab({ events }: { events: Awaited<ReturnType<typeof getMonitorAudit>> }) {
+function AuditTab({ events }: { events: AuditEvents }) {
   return (
     <Card>
       <CardHeader>
@@ -136,42 +185,82 @@ function AuditTab({ events }: { events: Awaited<ReturnType<typeof getMonitorAudi
         {events.length === 0 ? (
           <EmptyState description="No audit events recorded yet." title="No events" />
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>When</TableHead>
-                  <TableHead>Event</TableHead>
-                  <TableHead>Actor</TableHead>
-                  <TableHead>Origin</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {events.map((event) => (
-                  <TableRow key={event.auditId}>
-                    <TableCell className="font-mono text-xs">
-                      {formatDateTime(event.occurredAt)}
-                    </TableCell>
-                    <TableCell className="font-medium">{event.eventType}</TableCell>
-                    <TableCell>{event.actor ?? '—'}</TableCell>
-                    <TableCell>{event.origin ?? '—'}</TableCell>
+          <>
+            <div className="grid gap-3 md:hidden">
+              {events.map((event) => (
+                <div
+                  className="rounded-lg border border-border bg-surface-low p-4"
+                  key={event.auditId}
+                >
+                  <p className="font-medium text-foreground">{event.eventType}</p>
+                  <p className="mt-2 font-mono text-xs text-muted-foreground">
+                    {formatDateTime(event.occurredAt)}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {event.actor ?? '—'} · {event.origin ?? '—'}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Event</TableHead>
+                    <TableHead>Actor</TableHead>
+                    <TableHead>Origin</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {events.map((event) => (
+                    <TableRow key={event.auditId}>
+                      <TableCell className="font-mono text-xs">
+                        {formatDateTime(event.occurredAt)}
+                      </TableCell>
+                      <TableCell className="font-medium">{event.eventType}</TableCell>
+                      <TableCell>{event.actor ?? '—'}</TableCell>
+                      <TableCell>{event.origin ?? '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
   )
 }
 
-function getMonitorTarget(monitor: Awaited<ReturnType<typeof getMonitor>>) {
-  return monitor.http?.target ?? monitor.type.toUpperCase()
+function getMonitorTarget(monitor: Monitor) {
+  return monitor.http?.target ?? String(monitor.type ?? 'monitor').toUpperCase()
 }
 
 function getServiceMonitorCount(service: Awaited<ReturnType<typeof getService>>) {
   return service.monitorCount ?? service.monitors?.length ?? 0
+}
+
+function getStatusDotClass(status?: string) {
+  switch (status?.toUpperCase()) {
+    case 'UP':
+      return 'bg-status-up shadow-[0_0_0_4px_hsl(var(--status-up)/0.12)]'
+    case 'DOWN':
+      return 'bg-status-down shadow-[0_0_0_4px_hsl(var(--status-down)/0.12)]'
+    case 'DEGRADED':
+    case 'RECOVERING':
+      return 'bg-status-warn shadow-[0_0_0_4px_hsl(var(--status-warn)/0.12)]'
+    default:
+      return 'bg-status-unknown shadow-[0_0_0_4px_hsl(var(--status-unknown)/0.12)]'
+  }
+}
+
+function MetricBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-md border border-border bg-surface-low px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+      {children}
+    </span>
+  )
 }
 
 type LoadResult<T> = { data: T; error?: never } | { data?: never; error: string }
@@ -228,6 +317,9 @@ export default async function ServiceMonitorDetailPage({
   const runs = runsResult.data ?? []
   const incidents = incidentsResult.data ?? []
   const events = eventsResult.data ?? []
+  const indicators = buildMonitorIndicators(status, runs)
+  const chartPoints = buildMonitorChartPoints(runs)
+  const returnTo = `/services/${serviceId}/monitors/${monitor.monitorId}`
 
   return (
     <AppShell
@@ -240,209 +332,162 @@ export default async function ServiceMonitorDetailPage({
     >
       <h1 className="sr-only">{monitor.name}</h1>
       <div className="grid gap-6">
-        <section className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Current status</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {status ? (
-                <>
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div className="flex items-start gap-4">
-                      <MonitorProtocolBadge type={monitor.type} />
-                      <div>
-                        <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-muted-foreground">
-                          {monitor.type.toUpperCase()} monitor
-                        </p>
-                        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-                          {monitor.name}
-                        </h2>
-                        <p className="mt-2 max-w-2xl break-all font-mono text-sm text-muted-foreground">
-                          {monitor.http?.method ?? monitor.type.toUpperCase()}{' '}
-                          {getMonitorTarget(monitor)}
-                        </p>
-                      </div>
-                    </div>
-                    <StatusChip status={status.currentStatus} />
-                    {status.currentStatus === 'DEGRADED' && (
-                      <p className="text-sm text-status-warn">
-                        {status.consecutiveFailures}/{monitor.failureThreshold} failures until
-                        incident
-                      </p>
-                    )}
-                    {status.currentStatus === 'RECOVERING' && (
-                      <p className="text-sm text-status-warn">
-                        {status.consecutiveSuccesses}/{monitor.recoveryThreshold} successes until
-                        recovery
-                      </p>
-                    )}
-                  </div>
-                  {(query.created || query.updated || query.error || query.run) && (
-                    <QueryFeedbackBanner
-                      message={
-                        query.error ||
-                        (query.run
-                          ? 'Manual run triggered.'
-                          : query.created
-                            ? 'Monitor created.'
-                            : 'Monitor updated.')
-                      }
-                      tone={query.error ? 'error' : 'success'}
-                    />
-                  )}
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-lg border border-border bg-surface-low p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                        Last outcome
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">
-                        {formatOutcome(status.lastOutcome)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-surface-low p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                        Last check
-                      </p>
-                      <p className="mt-2 font-mono text-xl font-semibold text-foreground">
-                        {formatDateTime(status.lastCheckedAt)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-surface-low p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                        Duration
-                      </p>
-                      <p className="mt-2 font-mono text-xl font-semibold text-foreground">
-                        {formatDuration(status.lastDurationMs)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-surface-low p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                        Cadence
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">
-                        {formatMonitorCadence(monitor.intervalSeconds)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-surface-low p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                        Enabled
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">
-                        {monitor.enabled ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                  </div>
-                  {status.lastError && (
-                    <div className="rounded-lg border border-status-down/30 bg-status-down/10 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-status-down">
-                        Latest error
-                      </p>
-                      <p className="mt-2 break-words font-mono text-sm text-status-down">
-                        {status.lastError}
-                      </p>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <UnavailableCard message={statusResult.error} title="Status unavailable" />
-              )}
-              <div className="flex justify-end gap-3">
+        <Card>
+          <CardContent className="space-y-5 pt-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 space-y-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span
+                    aria-label={`Status indicator for ${status?.currentStatus ?? 'UNKNOWN'}`}
+                    className={`h-3 w-3 flex-shrink-0 rounded-full ${getStatusDotClass(status?.currentStatus)}`}
+                    role="img"
+                  />
+                  <h2 className="min-w-0 truncate text-3xl font-semibold tracking-tight text-foreground">
+                    {monitor.name}
+                  </h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <MonitorProtocolBadge type={monitor.type} />
+                  <span className="font-mono text-sm font-semibold text-foreground">
+                    {monitor.http?.method ?? String(monitor.type ?? 'monitor').toUpperCase()}
+                  </span>
+                  <span className="break-all font-mono text-sm text-muted-foreground">
+                    {getMonitorTarget(monitor)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <MetricBadge>{formatMonitorCadence(monitor.intervalSeconds ?? 0)}</MetricBadge>
+                  <MetricBadge>{formatDuration(monitor.http?.timeoutMs ?? 0)} timeout</MetricBadge>
+                </div>
+                {status?.currentStatus === 'DEGRADED' && (
+                  <p className="text-sm text-status-warn">
+                    {status.consecutiveFailures}/{monitor.failureThreshold} failures until incident
+                  </p>
+                )}
+                {status?.currentStatus === 'RECOVERING' && (
+                  <p className="text-sm text-status-warn">
+                    {status.consecutiveSuccesses}/{monitor.recoveryThreshold} successes until
+                    recovery
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-2 self-stretch lg:self-start">
                 {monitor.enabled && status && (
-                  <form action={triggerManualRunAction}>
+                  <form action={triggerManualRunAction} className="min-w-0 flex-1 lg:flex-none">
                     <input name="serviceId" type="hidden" value={serviceId} />
                     <input name="monitorId" type="hidden" value={monitor.monitorId} />
-                    <input
-                      name="returnTo"
-                      type="hidden"
-                      value={`/services/${serviceId}/monitors/${monitor.monitorId}`}
-                    />
-                    <SubmitButton type="submit" variant="secondary">
+                    <input name="returnTo" type="hidden" value={returnTo} />
+                    <SubmitButton
+                      className="w-full gap-2 border-primary text-primary hover:bg-primary/10 lg:w-auto"
+                      iconName="play"
+                      pendingLabel="Running..."
+                      type="submit"
+                      variant="outline"
+                    >
                       Run now
                     </SubmitButton>
                   </form>
                 )}
-                <SamePageActionForm
-                  action={toggleMonitorStateAction}
-                  buttonLabel={monitor.enabled ? 'Disable monitor' : 'Enable monitor'}
-                  pendingLabel={monitor.enabled ? 'Disabling monitor...' : 'Enabling monitor...'}
-                  variant={monitor.enabled ? 'outline' : 'default'}
+                <Link
+                  aria-label="Edit monitor"
+                  className={buttonVariants({
+                    variant: 'outline',
+                    className: 'gap-2 px-3 lg:px-4',
+                  })}
+                  href={`${returnTo}/edit`}
                 >
-                  <input name="serviceId" type="hidden" value={serviceId} />
-                  <input name="monitorId" type="hidden" value={monitor.monitorId} />
-                  <input name="enabled" type="hidden" value={monitor.enabled ? 'false' : 'true'} />
-                  <input
-                    name="returnTo"
-                    type="hidden"
-                    value={`/services/${serviceId}/monitors/${monitor.monitorId}`}
-                  />
-                </SamePageActionForm>
-                <form action={toggleMaintenanceModeAction}>
-                  <input name="serviceId" type="hidden" value={serviceId} />
-                  <input name="monitorId" type="hidden" value={monitor.monitorId} />
-                  <input
-                    name="enabled"
-                    type="hidden"
-                    value={status?.currentStatus === 'MAINTENANCE' ? 'false' : 'true'}
-                  />
-                  <input
-                    name="returnTo"
-                    type="hidden"
-                    value={`/services/${serviceId}/monitors/${monitor.monitorId}`}
-                  />
-                  <SubmitButton variant="outline">
-                    {status?.currentStatus === 'MAINTENANCE'
-                      ? 'Exit maintenance'
-                      : 'Enter maintenance'}
-                  </SubmitButton>
-                </form>
+                  <Pencil aria-hidden="true" className="h-4 w-4" />
+                  <span className="hidden lg:inline">Edit</span>
+                </Link>
+                <MonitorDetailActionsMenu
+                  deleteDisabled={monitorDeleteBlocked}
+                  deleteDisabledReason="This is the only monitor on an active service. Disable or archive the service before permanently deleting this monitor."
+                  enabled={monitor.enabled}
+                  inMaintenance={status?.currentStatus === 'MAINTENANCE'}
+                  monitorId={monitor.monitorId}
+                  monitorName={monitor.name}
+                  returnTo={returnTo}
+                  serviceId={serviceId}
+                />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            {(query.created || query.updated || query.error || query.run) && (
+              <QueryFeedbackBanner
+                message={
+                  query.error ||
+                  (query.run
+                    ? 'Manual run triggered.'
+                    : query.created
+                      ? 'Monitor created.'
+                      : 'Monitor updated.')
+                }
+                tone={query.error ? 'error' : 'success'}
+              />
+            )}
+            {statusResult.error && (
+              <UnavailableCard message={statusResult.error} title="Status unavailable" />
+            )}
+            {status?.lastError && (
+              <div className="rounded-lg border border-status-down/30 bg-status-down/10 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-status-down">
+                  Latest error
+                </p>
+                <p className="mt-2 break-words font-mono text-sm text-status-down">
+                  {status.lastError}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="hidden gap-4 md:grid md:grid-cols-2 xl:grid-cols-4">
+          {indicators.map((indicator) => (
+            <MonitorIndicatorCard indicator={indicator} key={indicator.key} />
+          ))}
+        </div>
+        <MobileMonitorIndicatorPicker indicators={indicators} />
+
+        <section>
           <Card>
             <CardHeader>
-              <CardTitle>Configuration</CardTitle>
+              <CardTitle>Run timeline</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="rounded-lg border border-border bg-surface-low p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                  Type
-                </p>
-                <p className="mt-2 font-semibold text-foreground">{monitor.type.toUpperCase()}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-surface-low p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                  Target
-                </p>
-                <p className="mt-2 break-all font-mono text-foreground">
-                  {getMonitorTarget(monitor)}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-surface-low p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-                  Interval / Timeout
-                </p>
-                <p className="mt-2 text-foreground">
-                  {formatMonitorCadence(monitor.intervalSeconds)} · {monitor.http?.timeoutMs ?? 0}
-                  ms timeout
-                </p>
-              </div>
+            <CardContent>
+              {runsResult.data ? (
+                chartPoints.length === 0 ? (
+                  <EmptyState
+                    description="No recent run datapoints returned yet."
+                    title="No chart data"
+                  />
+                ) : (
+                  <MonitorRunTimelineChart indicators={indicators} points={chartPoints} />
+                )
+              ) : (
+                <UnavailableCard message={runsResult.error} title="Performance unavailable" />
+              )}
             </CardContent>
           </Card>
         </section>
-        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+
+        <section className="grid gap-6">
           <div className="space-y-4">
             <Tabs
-              basePath={`/services/${serviceId}/monitors/${monitorId}`}
+              basePath={returnTo}
               tabs={[
-                { label: 'Runs', href: `/services/${serviceId}/monitors/${monitorId}?tab=runs` },
                 {
-                  label: 'Incidents',
-                  href: `/services/${serviceId}/monitors/${monitorId}?tab=incidents`,
+                  iconName: 'history',
+                  label: 'Runs',
+                  href: `${returnTo}?tab=runs`,
                 },
                 {
+                  iconName: 'incidents',
+                  label: 'Incidents',
+                  href: `${returnTo}?tab=incidents`,
+                },
+                {
+                  iconName: 'audit',
                   label: 'Audit',
-                  href: `/services/${serviceId}/monitors/${monitorId}?tab=audit`,
+                  href: `${returnTo}?tab=audit`,
                 },
               ]}
             />
@@ -464,39 +509,6 @@ export default async function ServiceMonitorDetailPage({
               ) : (
                 <UnavailableCard message={eventsResult.error} title="Audit log unavailable" />
               ))}
-          </div>
-          <div className="space-y-6">
-            <Card className="border-status-down/30">
-              <CardHeader>
-                <CardTitle>Delete monitor</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Permanently deletes this monitor configuration from active management views. Use
-                  disable when you only need to pause checks and preserve the monitor.
-                </p>
-                {monitorDeleteBlocked ? (
-                  <p className="rounded-md border border-status-warn/30 bg-status-warn/10 px-3 py-2 text-sm text-status-warn">
-                    This is the only monitor on an active service. Disable or archive the service
-                    before permanently deleting this monitor.
-                  </p>
-                ) : null}
-                <DeleteResourceForm
-                  action={deleteMonitorAction}
-                  confirmMessage={`Permanently delete ${monitor.name}? This cannot be undone.`}
-                  disabled={monitorDeleteBlocked}
-                  label="Delete monitor"
-                >
-                  <input name="serviceId" type="hidden" value={serviceId} />
-                  <input name="monitorId" type="hidden" value={monitor.monitorId} />
-                  <input
-                    name="returnTo"
-                    type="hidden"
-                    value={`/services/${serviceId}/monitors/${monitor.monitorId}`}
-                  />
-                </DeleteResourceForm>
-              </CardContent>
-            </Card>
           </div>
         </section>
       </div>

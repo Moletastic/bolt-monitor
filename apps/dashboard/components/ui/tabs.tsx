@@ -1,13 +1,21 @@
 'use client'
 
+import { History, ScrollText, ShieldAlert } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
 import { cn } from '@/lib/utils'
 
+const icons = {
+  history: History,
+  incidents: ShieldAlert,
+  audit: ScrollText,
+}
+
 interface Tab {
   label: string
   href: string
+  iconName?: keyof typeof icons
 }
 
 interface TabsProps {
@@ -25,6 +33,7 @@ export function Tabs({ tabs, className }: TabsProps) {
       {tabs.map((tab) => {
         const tabValue = tab.href.split('tab=')[1]
         const isActive = currentTab === tabValue
+        const Icon = tab.iconName ? icons[tab.iconName] : undefined
         return (
           <Link
             aria-selected={isActive}
@@ -36,6 +45,7 @@ export function Tabs({ tabs, className }: TabsProps) {
               isActive ? 'text-foreground' : 'text-muted-foreground'
             )}
           >
+            {Icon && <Icon aria-hidden="true" className="mr-2 inline h-4 w-4" />}
             {tab.label}
             {isActive && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-foreground" />}
           </Link>
