@@ -1,6 +1,15 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { Server, AlertTriangle, Settings, LayoutDashboard, Bell, RadioTower } from 'lucide-react'
+import {
+  Server,
+  AlertTriangle,
+  Settings,
+  LayoutDashboard,
+  Bell,
+  RadioTower,
+  Github,
+  ExternalLink,
+} from 'lucide-react'
 
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/breadcrumbs'
 import { GlobalSearch } from '@/components/global-search'
@@ -82,7 +91,19 @@ export function AppShell({
                 )
               })}
             </nav>
-            <div className="mt-auto" />
+            <div className="mt-auto border-t border-border pt-4">
+              <a
+                aria-label="View source on GitHub (opens in a new tab)"
+                className="flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground"
+                href="https://github.com/Moletastic/bolt-monitor"
+                rel="noreferrer"
+                target="_blank"
+              >
+                <Github className="h-4 w-4" />
+                <span>View source on GitHub</span>
+                <ExternalLink aria-hidden="true" className="ml-auto h-3.5 w-3.5" />
+              </a>
+            </div>
           </div>
         </aside>
         <div className="flex-1">
