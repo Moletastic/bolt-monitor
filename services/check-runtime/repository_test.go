@@ -56,10 +56,10 @@ func (f *fakeDynamoClient) Scan(context.Context, *sharedaws.DynamoDBScanInput) (
 func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
 	client := &fakeDynamoClient{}
 	repo := newDynamoRuntimeRepository(client, "table-name")
-	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
-	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", ProbeLocationID: "iad", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkInProgress}
+	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkInProgress}
 	statusCode := 200
-	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, RunID: "RUN_1", Type: "http", ProbeLocationID: "iad", Trigger: checkexecution.TriggerTypeManual, StartedAt: time.Date(2026, 5, 22, 12, 0, 1, 0, time.UTC), FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC), DurationMs: 1000, Outcome: checkexecution.OutcomeSuccess, StatusCode: &statusCode}
+	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, RunID: "RUN_1", Type: "http", Trigger: checkexecution.TriggerTypeManual, StartedAt: time.Date(2026, 5, 22, 12, 0, 1, 0, time.UTC), FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC), DurationMs: 1000, Outcome: checkexecution.OutcomeSuccess, StatusCode: &statusCode}
 
 	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, result); err != nil {
 		t.Fatalf("RecordExecutionResult returned error: %v", err)
@@ -86,7 +86,7 @@ func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
 func TestIncidentRecordsForResultOpensIncidentOnFirstFailure(t *testing.T) {
 	repo := newDynamoRuntimeRepository(&fakeDynamoClient{}, "table-name")
 	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", FailureThreshold: 1, RecoveryThreshold: 1}
-	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, ProbeLocationID: "iad", Outcome: checkexecution.OutcomeFailure, Error: "boom", FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
+	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Outcome: checkexecution.OutcomeFailure, Error: "boom", FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
 	currentStatus := resultstatus.MonitorStatus{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, CurrentStatus: "UP", ConsecutiveFailures: 0, ConsecutiveSuccesses: 0}
 	thresholdConfig := resultstatus.ThresholdConfig{FailureThreshold: 1, RecoveryThreshold: 1}
 
@@ -110,7 +110,7 @@ func TestIncidentRecordsForResultUpdatesExistingOpenIncident(t *testing.T) {
 	repo := newDynamoRuntimeRepository(&fakeDynamoClient{}, "table-name")
 	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", FailureThreshold: 1, RecoveryThreshold: 1}
 	current := dynamodbrecord.IncidentRecord{IncidentID: "INC_1", ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Summary: "old", Status: incidentStatusOpen, OpenedAt: "2026-05-22T11:59:00Z", UpdatedAt: "2026-05-22T11:59:00Z", Origin: "system"}
-	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, ProbeLocationID: "iad", Outcome: checkexecution.OutcomeFailure, Error: "still bad", FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
+	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Outcome: checkexecution.OutcomeFailure, Error: "still bad", FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
 	currentStatus := resultstatus.MonitorStatus{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, CurrentStatus: "DOWN", ConsecutiveFailures: 1, ConsecutiveSuccesses: 0}
 	thresholdConfig := resultstatus.ThresholdConfig{FailureThreshold: 1, RecoveryThreshold: 1}
 
@@ -137,7 +137,7 @@ func TestIncidentRecordsForResultResolvesOpenIncidentOnSuccess(t *testing.T) {
 	repo := newDynamoRuntimeRepository(&fakeDynamoClient{}, "table-name")
 	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", FailureThreshold: 1, RecoveryThreshold: 1}
 	current := dynamodbrecord.IncidentRecord{IncidentID: "INC_1", ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Summary: "old", Status: incidentStatusOpen, OpenedAt: "2026-05-22T11:59:00Z", UpdatedAt: "2026-05-22T11:59:00Z", Origin: "system"}
-	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, ProbeLocationID: "iad", Outcome: checkexecution.OutcomeSuccess, FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
+	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Outcome: checkexecution.OutcomeSuccess, FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
 	currentStatus := resultstatus.MonitorStatus{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, CurrentStatus: "RECOVERING", ConsecutiveFailures: 0, ConsecutiveSuccesses: 1}
 	thresholdConfig := resultstatus.ThresholdConfig{FailureThreshold: 1, RecoveryThreshold: 1}
 

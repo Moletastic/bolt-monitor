@@ -42,12 +42,16 @@ System SHALL allow clients to explicitly enable and disable monitors through HTT
 - **WHEN** client calls enable operation for existing monitor
 - **THEN** system persists enabled lifecycle state for that monitor
 
-### Requirement: System validates monitor CRUD payloads against shared contracts
-System SHALL validate monitor CRUD payloads against canonical monitor and probe-location contracts.
+### Requirement: System validates monitor CRUD payloads against canonical monitor contracts
+System SHALL validate monitor CRUD payloads against the canonical monitor contract.
 
-#### Scenario: Client submits invalid probe-location selection
-- **WHEN** client submits monitor payload with unknown or disabled probe location
-- **THEN** system rejects request without persisting monitor changes
+#### Scenario: Client submits valid monitor payload
+- **WHEN** client submits a monitor create or update payload with valid name, type, cadence, enabled state, thresholds, and HTTP configuration
+- **THEN** system accepts the payload without requiring probe-location selection
+
+#### Scenario: Client submits obsolete probe-location selection
+- **WHEN** client submits monitor payload fields for probe-location or region selection
+- **THEN** system does not treat those fields as part of the accepted monitor contract
 
 ### Requirement: System writes audit records for monitor mutations
 System SHALL write audit records for monitor create, update, enable, and disable operations.

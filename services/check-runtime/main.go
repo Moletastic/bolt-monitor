@@ -35,7 +35,6 @@ func main() {
 		awsSQSClient,
 		os.Getenv("EXECUTION_QUEUE_URL"),
 		escalationQueueURL,
-		defaultProbeLocationCatalog(),
 		defaultTenantID,
 		os.Getenv("RUNTIME_MODE"),
 	)

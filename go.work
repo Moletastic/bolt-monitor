@@ -15,7 +15,6 @@ use (
 	./shared/escalation
 	./shared/monitorconfig
 	./shared/notifications
-	./shared/probelocationcatalog
 	./shared/resultstatus
 	./shared/rules
 )

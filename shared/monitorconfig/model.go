@@ -133,7 +133,6 @@ type Monitor struct {
 	Name              string             `json:"name"`
 	Type              MonitorType        `json:"type"`
 	IntervalSeconds   int                `json:"intervalSeconds"`
-	ProbeLocations    []string           `json:"probeLocations"`
 	Enabled           bool               `json:"enabled"`
 	FailureThreshold  int                `json:"failureThreshold"`
 	RecoveryThreshold int                `json:"recoveryThreshold"`
@@ -141,20 +140,18 @@ type Monitor struct {
 }
 
 type MonitorSummary struct {
-	TenantID            string      `json:"tenantId"`
-	ServiceID           string      `json:"serviceId"`
-	MonitorID           string      `json:"monitorId"`
-	Name                string      `json:"name"`
-	Type                MonitorType `json:"type"`
-	Enabled             bool        `json:"enabled"`
-	IntervalSeconds     int         `json:"intervalSeconds"`
-	ProbeLocations      []string    `json:"probeLocations"`
-	CurrentStatus       string      `json:"currentStatus,omitempty"`
-	LastCheckedAt       string      `json:"lastCheckedAt,omitempty"`
-	LastDurationMs      int64       `json:"lastDurationMs,omitempty"`
-	LastProbeLocationID string      `json:"lastProbeLocationId,omitempty"`
-	LastError           string      `json:"lastError,omitempty"`
-	UpdatedAt           string      `json:"updatedAt,omitempty"`
+	TenantID        string      `json:"tenantId"`
+	ServiceID       string      `json:"serviceId"`
+	MonitorID       string      `json:"monitorId"`
+	Name            string      `json:"name"`
+	Type            MonitorType `json:"type"`
+	Enabled         bool        `json:"enabled"`
+	IntervalSeconds int         `json:"intervalSeconds"`
+	CurrentStatus   string      `json:"currentStatus,omitempty"`
+	LastCheckedAt   string      `json:"lastCheckedAt,omitempty"`
+	LastDurationMs  int64       `json:"lastDurationMs,omitempty"`
+	LastError       string      `json:"lastError,omitempty"`
+	UpdatedAt       string      `json:"updatedAt,omitempty"`
 }
 
 type HTTPConfiguration struct {
@@ -178,7 +175,6 @@ type CreateMonitorRequest struct {
 	Name              string             `json:"name"`
 	Type              MonitorType        `json:"type"`
 	IntervalSeconds   int                `json:"intervalSeconds"`
-	ProbeLocations    []string           `json:"probeLocations"`
 	Enabled           bool               `json:"enabled"`
 	FailureThreshold  int                `json:"failureThreshold"`
 	RecoveryThreshold int                `json:"recoveryThreshold"`
@@ -195,15 +191,10 @@ type Record struct {
 	Name              string             `json:"name"`
 	Type              MonitorType        `json:"type"`
 	IntervalSeconds   int                `json:"intervalSeconds"`
-	ProbeLocations    []string           `json:"probeLocations"`
 	Enabled           bool               `json:"enabled"`
 	FailureThreshold  int                `json:"failureThreshold"`
 	RecoveryThreshold int                `json:"recoveryThreshold"`
 	HTTP              *HTTPConfiguration `json:"http,omitempty"`
-}
-
-type ProbeLocationCatalog interface {
-	IsSelectableLocation(locationID string) bool
 }
 
 func SupportedServiceCategories() []ServiceCategory {
@@ -247,7 +238,6 @@ func (r CreateMonitorRequest) ToMonitor(serviceID, tenantID, monitorID string) (
 		Name:              strings.TrimSpace(r.Name),
 		Type:              r.Type,
 		IntervalSeconds:   r.IntervalSeconds,
-		ProbeLocations:    cloneStrings(r.ProbeLocations),
 		Enabled:           r.Enabled,
 		FailureThreshold:  failureThreshold,
 		RecoveryThreshold: recoveryThreshold,
@@ -311,12 +301,6 @@ func (m Monitor) Validate() error {
 		}
 		return nil
 	}))
-	builder.Add(rules.Field("probeLocations", func(monitor Monitor) error {
-		if len(monitor.ProbeLocations) == 0 {
-			return validationError("must contain at least one probe location")
-		}
-		return nil
-	}))
 	builder.Add(rules.Field("failureThreshold", func(monitor Monitor) error {
 		if monitor.FailureThreshold < 1 {
 			return validationError("must be at least 1")
@@ -376,21 +360,6 @@ func AllowedIntervalSeconds() []int {
 	return values
 }
 
-func (m Monitor) ValidateWithCatalog(catalog ProbeLocationCatalog) error {
-	if err := m.Validate(); err != nil {
-		return err
-	}
-	if catalog == nil {
-		return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{"field": "probeLocations", "reason": "catalog is required"})
-	}
-	for _, locationID := range m.ProbeLocations {
-		if !catalog.IsSelectableLocation(locationID) {
-			return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{"field": "probeLocations", "reason": fmt.Sprintf("contains unknown or disabled location %q", locationID)})
-		}
-	}
-	return nil
-}
-
 func (h HTTPConfiguration) Validate() error {
 	if strings.TrimSpace(h.Target) == "" {
 		return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{"field": "http.target", "reason": "required"})
@@ -433,7 +402,6 @@ func (m Monitor) ToRecord() (Record, error) {
 		Name:              m.Name,
 		Type:              m.Type,
 		IntervalSeconds:   m.IntervalSeconds,
-		ProbeLocations:    cloneStrings(m.ProbeLocations),
 		Enabled:           m.Enabled,
 		FailureThreshold:  m.FailureThreshold,
 		RecoveryThreshold: m.RecoveryThreshold,
@@ -449,7 +417,6 @@ func MonitorFromRecord(record Record) (Monitor, error) {
 		Name:              strings.TrimSpace(record.Name),
 		Type:              record.Type,
 		IntervalSeconds:   record.IntervalSeconds,
-		ProbeLocations:    cloneStrings(record.ProbeLocations),
 		Enabled:           record.Enabled,
 		FailureThreshold:  record.FailureThreshold,
 		RecoveryThreshold: record.RecoveryThreshold,
@@ -470,22 +437,6 @@ func validHTTPMethod(method string) bool {
 		upper == http.MethodPatch ||
 		upper == http.MethodDelete ||
 		upper == http.MethodOptions
-}
-
-func cloneStrings(input []string) []string {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(input))
-	for _, value := range input {
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			continue
-		}
-		out = append(out, trimmed)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func cloneHTTPConfiguration(input *HTTPConfiguration) *HTTPConfiguration {

@@ -815,7 +815,7 @@ func TestCreateMonitorUnderService(t *testing.T) {
 	}
 }
 
-func TestCreateMonitorDefaultsMissingProbeLocations(t *testing.T) {
+func TestCreateMonitorDoesNotRequireProbeLocations(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleDraft}
 	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
@@ -828,20 +828,12 @@ func TestCreateMonitorDefaultsMissingProbeLocations(t *testing.T) {
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("status = %d, want %d body=%s", response.StatusCode, http.StatusCreated, response.Body)
 	}
-	var created monitorconfig.Monitor
-	for _, m := range repo.monitors {
-		created = m
-		break
-	}
-	if len(created.ProbeLocations) != 1 || created.ProbeLocations[0] != "iad" {
-		t.Fatalf("probeLocations = %#v, want [iad]", created.ProbeLocations)
-	}
 }
 
 func TestDeleteLastMonitorFromActiveServiceConflicts(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive}
-	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
+	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
 	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
 	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services/auth/monitors/public-http", PathParameters: map[string]string{"serviceId": "auth", "monitorId": "public-http"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodDelete}}}
 
@@ -857,7 +849,7 @@ func TestDeleteLastMonitorFromActiveServiceConflicts(t *testing.T) {
 func TestDeleteDraftService(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleDraft}
-	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: false, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
+	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: false, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
 	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
 	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services/auth", PathParameters: map[string]string{"serviceId": "auth"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodDelete}}}
 
@@ -907,8 +899,8 @@ func TestDeleteMissingService(t *testing.T) {
 func TestDeleteMonitor(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive, MonitorCount: 2, EnabledCount: 2}
-	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
-	repo.monitors[monitorKey("auth", "admin-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", Name: "Admin", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://admin.example.com", Method: "GET", TimeoutMs: 5000}}
+	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
+	repo.monitors[monitorKey("auth", "admin-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", Name: "Admin", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://admin.example.com", Method: "GET", TimeoutMs: 5000}}
 	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
 	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services/auth/monitors/public-http", PathParameters: map[string]string{"serviceId": "auth", "monitorId": "public-http"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodDelete}}}
 
@@ -953,7 +945,6 @@ func TestUpdateMonitorDefaultsLegacyThresholds(t *testing.T) {
 		Name:            "Homepage",
 		Type:            monitorconfig.MonitorTypeHTTP,
 		IntervalSeconds: 60,
-		ProbeLocations:  []string{"iad"},
 		Enabled:         true,
 		HTTP:            &monitorconfig.HTTPConfiguration{Target: "https://old.example.com", Method: "GET", TimeoutMs: 5000},
 	}
@@ -981,7 +972,7 @@ func TestUpdateMonitorDefaultsLegacyThresholds(t *testing.T) {
 func TestGetServiceIncludesNestedMonitors(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive, MonitorCount: 1, EnabledCount: 1, RollupStatus: rollupUp}
-	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
+	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
 	repo.statuses[monitorKey("auth", "public-http")] = resultstatus.MonitorStatus{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", CurrentStatus: "UP", LastCheckedAt: time.Date(2026, 5, 25, 1, 0, 0, 0, time.UTC), LastOutcome: checkexecution.OutcomeSuccess}
 	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
 	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services/auth", PathParameters: map[string]string{"serviceId": "auth"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}}}
@@ -1011,8 +1002,8 @@ func TestGetServiceIncludesNestedMonitors(t *testing.T) {
 func TestListServicesIncludesRecentCardMetrics(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.services[serviceKey("auth")] = monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive, MonitorCount: 2, EnabledCount: 2, RollupStatus: rollupUp}
-	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true}
-	repo.monitors[monitorKey("auth", "admin-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", Name: "Admin", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true}
+	repo.monitors[monitorKey("auth", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true}
+	repo.monitors[monitorKey("auth", "admin-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", Name: "Admin", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true}
 	repo.statuses[monitorKey("auth", "public-http")] = resultstatus.MonitorStatus{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", CurrentStatus: "UP", LastCheckedAt: time.Date(2026, 5, 25, 1, 0, 0, 0, time.UTC), LastOutcome: checkexecution.OutcomeSuccess}
 	repo.statuses[monitorKey("auth", "admin-http")] = resultstatus.MonitorStatus{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", CurrentStatus: "DOWN", LastCheckedAt: time.Date(2026, 5, 25, 1, 1, 0, 0, time.UTC), LastOutcome: checkexecution.OutcomeError}
 	repo.runs[monitorKey("auth", "public-http")] = []resultstatus.CheckRun{
@@ -1080,7 +1071,7 @@ func TestListServicesCardMetricsEmptyStates(t *testing.T) {
 			name:      "monitors no runs",
 			serviceID: "waiting",
 			configure: func(repo *fakeMonitorRepository) {
-				repo.monitors[monitorKey("waiting", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "waiting", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true}
+				repo.monitors[monitorKey("waiting", "public-http")] = monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "waiting", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true}
 			},
 			wantedState: serviceCardMetricStateNoData,
 		},
@@ -1481,7 +1472,7 @@ func TestGetEscalationPolicyMigratesLegacyInlineChannelsOnce(t *testing.T) {
 }
 
 func TestCreateMonitorWritesServiceMonitorRefKeys(t *testing.T) {
-	monitor := monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
+	monitor := monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
 	client := &fakeDynamoClient{}
 	repo := newDynamoMonitorRepository(client, "table-name")
 	repo.now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
@@ -1513,7 +1504,7 @@ func TestDeleteServiceDeletesActiveConfigAndWritesAudit(t *testing.T) {
 	repo := newDynamoMonitorRepository(client, "table-name")
 	repo.now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
 	service := monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleArchived, CreatedAt: "2026-05-25T00:00:00Z", UpdatedAt: "2026-05-25T00:00:00Z"}
-	monitor := monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: false, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
+	monitor := monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: false, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
 	addRecord(t, client.items, dynamodbrecord.NewServiceItemRecord(service))
 	addRecord(t, client.items, dynamodbrecord.NewServiceRefItemRecord(service))
 	addRecord(t, client.items, dynamodbrecord.NewServiceStatusItemRecord(service, "2026-05-25T00:00:00Z"))
@@ -1551,8 +1542,8 @@ func TestDeleteMonitorDeletesConfigRecalculatesServiceAndWritesAudit(t *testing.
 	repo := newDynamoMonitorRepository(client, "table-name")
 	repo.now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
 	service := monitorconfig.Service{TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth", LifecycleState: monitorconfig.ServiceLifecycleActive, CreatedAt: "2026-05-25T00:00:00Z", UpdatedAt: "2026-05-25T00:00:00Z"}
-	deletedMonitor := monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
-	remainingMonitor := monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", Name: "Admin", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: false, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://admin.example.com", Method: "GET", TimeoutMs: 5000}}
+	deletedMonitor := monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000}}
+	remainingMonitor := monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "admin-http", Name: "Admin", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: false, HTTP: &monitorconfig.HTTPConfiguration{Target: "https://admin.example.com", Method: "GET", TimeoutMs: 5000}}
 	addRecord(t, client.items, dynamodbrecord.NewServiceItemRecord(service))
 	addRecord(t, client.items, dynamodbrecord.NewServiceStatusItemRecord(service, "2026-05-25T00:00:00Z"))
 	addRecord(t, client.items, dynamodbrecord.NewMonitorItemRecord(deletedMonitor))

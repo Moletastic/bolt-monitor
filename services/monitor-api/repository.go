@@ -668,15 +668,14 @@ func (r *dynamoMonitorRepository) GetMonitorStatus(ctx context.Context, tenantID
 		return resultstatus.MonitorStatus{}, false, err
 	}
 	return resultstatus.MonitorStatus{
-		ServiceID:           record.ServiceID,
-		MonitorID:           record.MonitorID,
-		TenantID:            record.TenantID,
-		CurrentStatus:       record.CurrentStatus,
-		LastCheckedAt:       lastCheckedAt,
-		LastDurationMs:      record.LastDurationMs,
-		LastProbeLocationID: record.LastProbeLocationID,
-		LastError:           record.LastError,
-		LastOutcome:         checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, rollupUnknown))),
+		ServiceID:      record.ServiceID,
+		MonitorID:      record.MonitorID,
+		TenantID:       record.TenantID,
+		CurrentStatus:  record.CurrentStatus,
+		LastCheckedAt:  lastCheckedAt,
+		LastDurationMs: record.LastDurationMs,
+		LastError:      record.LastError,
+		LastOutcome:    checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, rollupUnknown))),
 	}, true, nil
 }
 
@@ -721,20 +720,19 @@ func (r *dynamoMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenan
 			return historyPage[resultstatus.CheckRun]{}, err
 		}
 		runs = append(runs, resultstatus.CheckRun{
-			ServiceID:       record.ServiceID,
-			MonitorID:       record.MonitorID,
-			TenantID:        record.TenantID,
-			RunID:           record.RunID,
-			Type:            record.Type,
-			ProbeLocationID: record.ProbeLocationID,
-			Trigger:         checkexecution.TriggerType(strings.ToLower(record.Trigger)),
-			StartedAt:       startedAt,
-			FinishedAt:      finishedAt,
-			DurationMs:      record.DurationMs,
-			Outcome:         checkexecution.Outcome(strings.ToLower(record.Outcome)),
-			StatusCode:      record.StatusCode,
-			Error:           record.Error,
-			TTL:             record.TTL,
+			ServiceID:  record.ServiceID,
+			MonitorID:  record.MonitorID,
+			TenantID:   record.TenantID,
+			RunID:      record.RunID,
+			Type:       record.Type,
+			Trigger:    checkexecution.TriggerType(strings.ToLower(record.Trigger)),
+			StartedAt:  startedAt,
+			FinishedAt: finishedAt,
+			DurationMs: record.DurationMs,
+			Outcome:    checkexecution.Outcome(strings.ToLower(record.Outcome)),
+			StatusCode: record.StatusCode,
+			Error:      record.Error,
+			TTL:        record.TTL,
 		})
 	}
 	return historyPage[resultstatus.CheckRun]{Items: runs, NextKey: out.LastEvaluatedKey}, nil
@@ -770,15 +768,11 @@ func (r *dynamoMonitorRepository) CreateManualRun(ctx context.Context, monitor m
 	}
 	acceptedAt := now.UTC().Format(time.RFC3339)
 	runID := newRunID(now)
-	works := dynamodbrecord.NewExecutionWorkItemRecords(monitor, checkexecution.TriggerTypeManual, runID, acceptedAt)
+	work := dynamodbrecord.NewExecutionWorkItemRecord(monitor.TenantID, monitor.ServiceID, monitor.MonitorID, runID, checkexecution.TriggerTypeManual, acceptedAt, checkexecution.ExecutionWorkPending, nil, nil, "")
 	auditID := newAuditID(now)
 	auditEvent := dynamodbrecord.NewAuditEventRecord(now, auditID, monitor.TenantID, "MONITOR_RUN_REQUESTED", monitor.ServiceID, monitor.MonitorID)
 	change := dynamodbrecord.NewAuditChangeRecord(auditEvent.AuditID, "run", "", runID)
-	records := make([]any, 0, len(works)+2)
-	for _, work := range works {
-		records = append(records, work)
-	}
-	records = append(records, auditEvent, change)
+	records := []any{work, auditEvent, change}
 	items, err := marshalPutItems(r.tableName, records...)
 	if err != nil {
 		return manualRunRequestRecord{}, err
@@ -1372,15 +1366,14 @@ func (r *dynamoMonitorRepository) requireTableName() error {
 
 func newDefaultMonitorStatusRecord(monitor monitorconfig.Monitor, now string) resultstatus.MonitorStatusRecord {
 	status := resultstatus.MonitorStatus{
-		ServiceID:           monitor.ServiceID,
-		MonitorID:           monitor.MonitorID,
-		TenantID:            monitor.TenantID,
-		CurrentStatus:       strings.ToUpper(rollupUnknown),
-		LastCheckedAt:       mustParseTime(now),
-		LastDurationMs:      0,
-		LastProbeLocationID: "",
-		LastError:           "",
-		LastOutcome:         checkexecution.Outcome(rollupUnknown),
+		ServiceID:      monitor.ServiceID,
+		MonitorID:      monitor.MonitorID,
+		TenantID:       monitor.TenantID,
+		CurrentStatus:  strings.ToUpper(rollupUnknown),
+		LastCheckedAt:  mustParseTime(now),
+		LastDurationMs: 0,
+		LastError:      "",
+		LastOutcome:    checkexecution.Outcome(rollupUnknown),
 	}
 	return status.ToRecord()
 }
@@ -1388,15 +1381,14 @@ func newDefaultMonitorStatusRecord(monitor monitorconfig.Monitor, now string) re
 func monitorStatusRecordToDomain(record resultstatus.MonitorStatusRecord) resultstatus.MonitorStatus {
 	lastCheckedAt, _ := time.Parse(time.RFC3339, firstNonEmpty(record.LastCheckedAt, record.UpdatedAt))
 	return resultstatus.MonitorStatus{
-		ServiceID:           record.ServiceID,
-		MonitorID:           record.MonitorID,
-		TenantID:            record.TenantID,
-		CurrentStatus:       record.CurrentStatus,
-		LastCheckedAt:       lastCheckedAt,
-		LastDurationMs:      record.LastDurationMs,
-		LastProbeLocationID: record.LastProbeLocationID,
-		LastError:           record.LastError,
-		LastOutcome:         checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, rollupUnknown))),
+		ServiceID:      record.ServiceID,
+		MonitorID:      record.MonitorID,
+		TenantID:       record.TenantID,
+		CurrentStatus:  record.CurrentStatus,
+		LastCheckedAt:  lastCheckedAt,
+		LastDurationMs: record.LastDurationMs,
+		LastError:      record.LastError,
+		LastOutcome:    checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, rollupUnknown))),
 	}
 }
 
@@ -1519,13 +1511,11 @@ func buildMonitorSummaries(monitors []monitorconfig.Monitor, statuses map[string
 			Type:            monitor.Type,
 			Enabled:         monitor.Enabled,
 			IntervalSeconds: monitor.IntervalSeconds,
-			ProbeLocations:  append([]string(nil), monitor.ProbeLocations...),
 		}
 		if status, ok := statuses[monitorStatusKey(monitor.ServiceID, monitor.MonitorID)]; ok {
 			summary.CurrentStatus = strings.ToLower(status.CurrentStatus)
 			summary.LastCheckedAt = status.LastCheckedAt.UTC().Format(time.RFC3339)
 			summary.LastDurationMs = status.LastDurationMs
-			summary.LastProbeLocationID = status.LastProbeLocationID
 			summary.LastError = status.LastError
 			summary.UpdatedAt = summary.LastCheckedAt
 		}

@@ -1,11 +1,12 @@
 ## Requirements
 
-### Requirement: System exposes latest monitor status through HTTP API
-System SHALL expose the latest persisted monitor status through HTTP API.
+### Requirement: System exposes current monitor status through HTTP API
+System SHALL expose the latest status snapshot for a monitor through HTTP API.
 
 #### Scenario: Client requests monitor status
 - **WHEN** client requests status for existing monitor
-- **THEN** system returns the latest status snapshot for that monitor
+- **THEN** system returns current status, last check time, duration, last outcome, and latest error when available
+- **AND** the response does not include last probe location or region identity
 
 ### Requirement: System exposes recent run history through HTTP API
 System SHALL expose recent raw execution history for a monitor through HTTP API.

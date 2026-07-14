@@ -11,7 +11,6 @@ import (
 
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/monitorconfig"
-	"bolt-monitor/shared/probelocationcatalog"
 	"bolt-monitor/shared/resultstatus"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -36,7 +35,6 @@ type runtimeHandler struct {
 	sqsClient          sqsClient
 	queueURL           string
 	escalationQueueURL string
-	catalog            probelocationcatalog.Catalog
 	tenantID           string
 	mode               string
 	now                func() time.Time
@@ -51,13 +49,12 @@ type runtimeSummary struct {
 	PendingScanned int    `json:"pendingScanned,omitempty"`
 }
 
-func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, escalationQueueURL string, catalog probelocationcatalog.Catalog, tenantID, mode string) runtimeHandler {
+func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, escalationQueueURL, tenantID, mode string) runtimeHandler {
 	return runtimeHandler{
 		repo:               repo,
 		sqsClient:          sqsClient,
 		queueURL:           queueURL,
 		escalationQueueURL: escalationQueueURL,
-		catalog:            catalog,
 		tenantID:           tenantID,
 		mode:               strings.ToLower(strings.TrimSpace(mode)),
 		now:                time.Now,
@@ -120,7 +117,7 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 		if executionMonitor.IntervalSeconds <= 0 {
 			executionMonitor.IntervalSeconds = 60
 		}
-		requests, err := checkexecution.BuildExecutionRequests([]monitorconfig.Monitor{executionMonitor}, h.catalog, checkexecution.TriggerTypeRecurring)
+		requests, err := checkexecution.BuildExecutionRequests([]monitorconfig.Monitor{executionMonitor}, checkexecution.TriggerTypeRecurring)
 		if err != nil {
 			return summary, err
 		}
@@ -183,7 +180,7 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			summary.Skipped++
 			continue
 		}
-		request, skipReason, err := buildExecutionRequest(monitor, h.catalog, work)
+		request, skipReason, err := buildExecutionRequest(monitor, work)
 		if err != nil {
 			return summary, err
 		}
@@ -213,37 +210,14 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 	return summary, nil
 }
 
-func buildExecutionRequest(monitor monitorconfig.Monitor, catalog probelocationcatalog.Catalog, work checkexecution.ExecutionWork) (checkexecution.ExecutionRequest, string, error) {
+func buildExecutionRequest(monitor monitorconfig.Monitor, work checkexecution.ExecutionWork) (checkexecution.ExecutionRequest, string, error) {
 	if err := monitor.Validate(); err != nil {
 		return checkexecution.ExecutionRequest{}, fmt.Sprintf("monitor invalid: %v", err), nil
 	}
 	if !monitor.Enabled {
 		return checkexecution.ExecutionRequest{}, "monitor disabled", nil
 	}
-	selected := false
-	for _, locationID := range monitor.ProbeLocations {
-		if strings.EqualFold(locationID, work.ProbeLocationID) {
-			selected = true
-			break
-		}
-	}
-	if !selected {
-		return checkexecution.ExecutionRequest{}, "probe location no longer selected", nil
-	}
-	for _, location := range catalog.Locations {
-		if strings.EqualFold(location.LocationID, work.ProbeLocationID) {
-			if !location.Enabled {
-				return checkexecution.ExecutionRequest{}, "probe location disabled", nil
-			}
-			return checkexecution.ExecutionRequest{
-				Monitor:       monitor,
-				ProbeLocation: location,
-				RunID:         work.RunID,
-				Trigger:       work.Trigger,
-			}, "", nil
-		}
-	}
-	return checkexecution.ExecutionRequest{}, "probe location not found", nil
+	return checkexecution.ExecutionRequest{Monitor: monitor, RunID: work.RunID, Trigger: work.Trigger}, "", nil
 }
 
 func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEvent) (runtimeSummary, error) {
@@ -255,13 +229,12 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.newHTTP(time.Duration(req.Monitor.HTTP.TimeoutMs)*time.Millisecond), req)
 		work := checkexecution.ExecutionWork{
-			TenantID:        req.Monitor.TenantID,
-			ServiceID:       req.Monitor.ServiceID,
-			MonitorID:       req.Monitor.MonitorID,
-			RunID:           req.RunID,
-			ProbeLocationID: req.ProbeLocation.LocationID,
-			Trigger:         req.Trigger,
-			RequestedAt:     h.now(),
+			TenantID:    req.Monitor.TenantID,
+			ServiceID:   req.Monitor.ServiceID,
+			MonitorID:   req.Monitor.MonitorID,
+			RunID:       req.RunID,
+			Trigger:     req.Trigger,
+			RequestedAt: h.now(),
 		}
 		transition, incidentID, err := h.repo.RecordExecutionResult(ctx, req.Monitor, work, result)
 		if err != nil {

@@ -10,7 +10,7 @@
 	bootstrap clean
 
 GO_SERVICES := api-health check-runtime escalation-runtime monitor-api
-GO_SHARED := api/response aws checkexecution dynamodb dynamodbrecord dynamodbschema errors escalation monitorconfig notifications probelocationcatalog resultstatus rules
+GO_SHARED := api/response aws checkexecution dynamodb dynamodbrecord dynamodbschema errors escalation monitorconfig notifications resultstatus rules
 GO_MODULE_DIRS := $(addprefix ./services/,$(GO_SERVICES)) $(addprefix ./shared/,$(GO_SHARED))
 
 bootstrap:

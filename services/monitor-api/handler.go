@@ -18,7 +18,6 @@ import (
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/notifications"
-	"bolt-monitor/shared/probelocationcatalog"
 	"bolt-monitor/shared/resultstatus"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -83,14 +82,19 @@ type monitorRepository interface {
 
 type monitorHandler struct {
 	repo     monitorRepository
-	catalog  probelocationcatalog.Catalog
 	tenantID string
 	now      func() time.Time
 	senders  notifications.SenderRegistry
 }
 
-func newMonitorHandler(repo monitorRepository, catalog probelocationcatalog.Catalog, tenantID string) monitorHandler {
-	return monitorHandler{repo: repo, catalog: catalog, tenantID: tenantID, now: time.Now, senders: defaultNotificationSenderRegistry()}
+func newMonitorHandler(repo monitorRepository, args ...any) monitorHandler {
+	tenantID := ""
+	for _, arg := range args {
+		if value, ok := arg.(string); ok {
+			tenantID = value
+		}
+	}
+	return monitorHandler{repo: repo, tenantID: tenantID, now: time.Now, senders: defaultNotificationSenderRegistry()}
 }
 
 func defaultNotificationSenderRegistry() notifications.SenderRegistry {
@@ -118,8 +122,6 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	switch {
 	case method == http.MethodGet && path == "/api/v1/search":
 		return h.searchResources(ctx, request)
-	case method == http.MethodGet && path == "/api/v1/probe-locations":
-		return h.listProbeLocations()
 	case method == http.MethodPost && path == "/api/v1/notification-channels":
 		return h.createNotificationChannel(ctx, request)
 	case method == http.MethodGet && path == "/api/v1/notification-channels":
@@ -389,9 +391,6 @@ func (h monitorHandler) createMonitor(ctx context.Context, serviceID string, req
 	if err := json.Unmarshal([]byte(request.Body), &payload); err != nil {
 		return respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 	}
-	if len(payload.ProbeLocations) == 0 {
-		payload.ProbeLocations = defaultSelectableProbeLocations(h.catalog)
-	}
 	var targetURL string
 	if payload.HTTP != nil {
 		targetURL = payload.HTTP.Target
@@ -401,7 +400,7 @@ func (h monitorHandler) createMonitor(ctx context.Context, serviceID string, req
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	if err := monitor.ValidateWithCatalog(h.catalog); err != nil {
+	if err := monitor.Validate(); err != nil {
 		return respondAPIGateway(err)
 	}
 	created, err := h.repo.CreateMonitor(ctx, monitor)
@@ -410,15 +409,6 @@ func (h monitorHandler) createMonitor(ctx context.Context, serviceID string, req
 	}
 	location := fmt.Sprintf("/api/v1/services/%s/monitors/%s", serviceID, created.MonitorID)
 	return envelopeResponseWithLocation(http.StatusCreated, response.Ok(toMonitorResponse(created, toUnknownStatusResponse())), location)
-}
-
-func defaultSelectableProbeLocations(catalog probelocationcatalog.Catalog) []string {
-	for _, location := range catalog.Locations {
-		if location.Enabled {
-			return []string{location.LocationID}
-		}
-	}
-	return nil
 }
 
 func (h monitorHandler) listMonitors(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
@@ -484,9 +474,6 @@ func (h monitorHandler) updateMonitor(ctx context.Context, serviceID, monitorID 
 	if payload.IntervalSeconds != nil {
 		updated.IntervalSeconds = *payload.IntervalSeconds
 	}
-	if payload.ProbeLocations != nil {
-		updated.ProbeLocations = append([]string(nil), payload.ProbeLocations...)
-	}
 	if payload.FailureThreshold != nil {
 		updated.FailureThreshold = *payload.FailureThreshold
 	}
@@ -502,7 +489,7 @@ func (h monitorHandler) updateMonitor(ctx context.Context, serviceID, monitorID 
 	if payload.HTTP != nil {
 		updated.HTTP = dynamodbrecord.CloneHTTPConfiguration(payload.HTTP)
 	}
-	if err := updated.ValidateWithCatalog(h.catalog); err != nil {
+	if err := updated.Validate(); err != nil {
 		return respondAPIGateway(err)
 	}
 	stored, err := h.repo.UpdateMonitor(ctx, updated)
@@ -610,19 +597,10 @@ func (h monitorHandler) runMonitor(ctx context.Context, serviceID, monitorID str
 	}
 	now := h.now()
 	runID := newRunID(now)
-	probeLocationID := monitor.ProbeLocations[0]
-	var probeLocation probelocationcatalog.Location
-	for _, loc := range h.catalog.Locations {
-		if loc.LocationID == probeLocationID {
-			probeLocation = loc
-			break
-		}
-	}
 	request := checkexecution.ExecutionRequest{
-		Monitor:       monitor,
-		ProbeLocation: probeLocation,
-		RunID:         runID,
-		Trigger:       checkexecution.TriggerTypeManual,
+		Monitor: monitor,
+		RunID:   runID,
+		Trigger: checkexecution.TriggerTypeManual,
 	}
 	httpClient := &http.Client{
 		Timeout: time.Duration(monitor.HTTP.TimeoutMs) * time.Millisecond,
@@ -853,17 +831,6 @@ func (h monitorHandler) getServiceAudit(ctx context.Context, serviceID string, r
 
 func isMonitorAuditPath(path string) bool {
 	return strings.Contains(path, "/monitors/")
-}
-
-func (h monitorHandler) listProbeLocations() (events.APIGatewayV2HTTPResponse, error) {
-	payload := listProbeLocationsResponse{ProbeLocations: make([]probeLocationResponse, 0, len(h.catalog.Locations))}
-	for _, location := range h.catalog.Locations {
-		if !location.Enabled {
-			continue
-		}
-		payload.ProbeLocations = append(payload.ProbeLocations, probeLocationResponse{LocationID: location.LocationID, DisplayName: location.DisplayName, Enabled: location.Enabled})
-	}
-	return envelopeResponse(http.StatusOK, response.Ok(payload))
 }
 
 func (h monitorHandler) createNotificationChannel(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {

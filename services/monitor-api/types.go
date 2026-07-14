@@ -170,7 +170,6 @@ type monitorResponse struct {
 	Name              string                           `json:"name"`
 	Type              monitorconfig.MonitorType        `json:"type"`
 	IntervalSeconds   int                              `json:"intervalSeconds"`
-	ProbeLocations    []string                         `json:"probeLocations"`
 	Enabled           bool                             `json:"enabled"`
 	FailureThreshold  int                              `json:"failureThreshold"`
 	RecoveryThreshold int                              `json:"recoveryThreshold"`
@@ -182,20 +181,9 @@ type listMonitorsResponse struct {
 	Monitors []monitorResponse `json:"monitors"`
 }
 
-type probeLocationResponse struct {
-	LocationID  string `json:"locationId"`
-	DisplayName string `json:"displayName"`
-	Enabled     bool   `json:"enabled"`
-}
-
-type listProbeLocationsResponse struct {
-	ProbeLocations []probeLocationResponse `json:"probeLocations"`
-}
-
 type updateMonitorRequest struct {
 	Name              *string                          `json:"name,omitempty"`
 	IntervalSeconds   *int                             `json:"intervalSeconds,omitempty"`
-	ProbeLocations    []string                         `json:"probeLocations,omitempty"`
 	FailureThreshold  *int                             `json:"failureThreshold,omitempty"`
 	RecoveryThreshold *int                             `json:"recoveryThreshold,omitempty"`
 	HTTP              *monitorconfig.HTTPConfiguration `json:"http,omitempty"`
@@ -206,27 +194,25 @@ type updateMonitorRequest struct {
 // See AGENTS.md → "Response envelope" for the wire format.
 
 type monitorStatusResponse struct {
-	CurrentStatus       string `json:"currentStatus"`
-	LastCheckedAt       string `json:"lastCheckedAt"`
-	LastDurationMs      int64  `json:"lastDurationMs"`
-	LastProbeLocationID string `json:"lastProbeLocationId"`
-	LastError           string `json:"lastError,omitempty"`
-	LastOutcome         string `json:"lastOutcome"`
+	CurrentStatus  string `json:"currentStatus"`
+	LastCheckedAt  string `json:"lastCheckedAt"`
+	LastDurationMs int64  `json:"lastDurationMs"`
+	LastError      string `json:"lastError,omitempty"`
+	LastOutcome    string `json:"lastOutcome"`
 }
 
 type checkRunResponse struct {
-	RunID           string `json:"runId"`
-	ServiceID       string `json:"serviceId"`
-	MonitorID       string `json:"monitorId"`
-	Type            string `json:"type"`
-	ProbeLocationID string `json:"probeLocationId"`
-	Trigger         string `json:"trigger"`
-	StartedAt       string `json:"startedAt"`
-	FinishedAt      string `json:"finishedAt"`
-	DurationMs      int64  `json:"durationMs"`
-	Outcome         string `json:"outcome"`
-	StatusCode      *int   `json:"statusCode,omitempty"`
-	Error           string `json:"error,omitempty"`
+	RunID      string `json:"runId"`
+	ServiceID  string `json:"serviceId"`
+	MonitorID  string `json:"monitorId"`
+	Type       string `json:"type"`
+	Trigger    string `json:"trigger"`
+	StartedAt  string `json:"startedAt"`
+	FinishedAt string `json:"finishedAt"`
+	DurationMs int64  `json:"durationMs"`
+	Outcome    string `json:"outcome"`
+	StatusCode *int   `json:"statusCode,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type monitorRunsResponse struct {
@@ -234,17 +220,16 @@ type monitorRunsResponse struct {
 }
 
 type manualRunResponse struct {
-	RunID           string `json:"runId"`
-	ServiceID       string `json:"serviceId"`
-	MonitorID       string `json:"monitorId"`
-	Trigger         string `json:"trigger"`
-	Outcome         string `json:"outcome,omitempty"`
-	DurationMs      int64  `json:"durationMs,omitempty"`
-	StatusCode      *int   `json:"statusCode,omitempty"`
-	Error           string `json:"error,omitempty"`
-	ProbeLocationID string `json:"probeLocationId,omitempty"`
-	StartedAt       string `json:"startedAt,omitempty"`
-	FinishedAt      string `json:"finishedAt,omitempty"`
+	RunID      string `json:"runId"`
+	ServiceID  string `json:"serviceId"`
+	MonitorID  string `json:"monitorId"`
+	Trigger    string `json:"trigger"`
+	Outcome    string `json:"outcome,omitempty"`
+	DurationMs int64  `json:"durationMs,omitempty"`
+	StatusCode *int   `json:"statusCode,omitempty"`
+	Error      string `json:"error,omitempty"`
+	StartedAt  string `json:"startedAt,omitempty"`
+	FinishedAt string `json:"finishedAt,omitempty"`
 }
 
 type incidentResponse struct {
@@ -350,11 +335,10 @@ func toMonitorSummaryResponse(summary monitorconfig.MonitorSummary) monitorRespo
 	var status *monitorStatusResponse
 	if strings.TrimSpace(summary.CurrentStatus) != "" {
 		status = &monitorStatusResponse{
-			CurrentStatus:       summary.CurrentStatus,
-			LastCheckedAt:       summary.LastCheckedAt,
-			LastDurationMs:      summary.LastDurationMs,
-			LastProbeLocationID: summary.LastProbeLocationID,
-			LastError:           summary.LastError,
+			CurrentStatus:  summary.CurrentStatus,
+			LastCheckedAt:  summary.LastCheckedAt,
+			LastDurationMs: summary.LastDurationMs,
+			LastError:      summary.LastError,
 		}
 	}
 	return monitorResponse{
@@ -364,7 +348,6 @@ func toMonitorSummaryResponse(summary monitorconfig.MonitorSummary) monitorRespo
 		Name:            summary.Name,
 		Type:            summary.Type,
 		IntervalSeconds: summary.IntervalSeconds,
-		ProbeLocations:  append([]string(nil), summary.ProbeLocations...),
 		Enabled:         summary.Enabled,
 		Status:          status,
 	}
@@ -425,7 +408,6 @@ func toMonitorResponse(monitor monitorconfig.Monitor, status *monitorStatusRespo
 		Name:              monitor.Name,
 		Type:              monitor.Type,
 		IntervalSeconds:   monitor.IntervalSeconds,
-		ProbeLocations:    append([]string(nil), monitor.ProbeLocations...),
 		Enabled:           monitor.Enabled,
 		FailureThreshold:  monitor.FailureThreshold,
 		RecoveryThreshold: monitor.RecoveryThreshold,
@@ -436,12 +418,11 @@ func toMonitorResponse(monitor monitorconfig.Monitor, status *monitorStatusRespo
 
 func toStatusResponse(status resultstatus.MonitorStatus) *monitorStatusResponse {
 	return &monitorStatusResponse{
-		CurrentStatus:       strings.ToLower(status.CurrentStatus),
-		LastCheckedAt:       status.LastCheckedAt.UTC().Format(time.RFC3339),
-		LastDurationMs:      status.LastDurationMs,
-		LastProbeLocationID: status.LastProbeLocationID,
-		LastError:           status.LastError,
-		LastOutcome:         string(status.LastOutcome),
+		CurrentStatus:  strings.ToLower(status.CurrentStatus),
+		LastCheckedAt:  status.LastCheckedAt.UTC().Format(time.RFC3339),
+		LastDurationMs: status.LastDurationMs,
+		LastError:      status.LastError,
+		LastOutcome:    string(status.LastOutcome),
 	}
 }
 
@@ -450,22 +431,21 @@ func toUnknownStatusResponse() *monitorStatusResponse {
 }
 
 func toRunResponse(run resultstatus.CheckRun) checkRunResponse {
-	return checkRunResponse{RunID: run.RunID, ServiceID: run.ServiceID, MonitorID: run.MonitorID, Type: run.Type, ProbeLocationID: run.ProbeLocationID, Trigger: string(run.Trigger), StartedAt: run.StartedAt.UTC().Format(time.RFC3339), FinishedAt: run.FinishedAt.UTC().Format(time.RFC3339), DurationMs: run.DurationMs, Outcome: string(run.Outcome), StatusCode: run.StatusCode, Error: run.Error}
+	return checkRunResponse{RunID: run.RunID, ServiceID: run.ServiceID, MonitorID: run.MonitorID, Type: run.Type, Trigger: string(run.Trigger), StartedAt: run.StartedAt.UTC().Format(time.RFC3339), FinishedAt: run.FinishedAt.UTC().Format(time.RFC3339), DurationMs: run.DurationMs, Outcome: string(run.Outcome), StatusCode: run.StatusCode, Error: run.Error}
 }
 
 func toManualRunResponseWithResult(run manualRunRequestRecord, result checkexecution.ExecutionResult) manualRunResponse {
 	return manualRunResponse{
-		RunID:           run.RunID,
-		ServiceID:       run.ServiceID,
-		MonitorID:       run.MonitorID,
-		Trigger:         string(run.Trigger),
-		Outcome:         string(result.Outcome),
-		DurationMs:      result.DurationMs,
-		StatusCode:      result.StatusCode,
-		Error:           result.Error,
-		ProbeLocationID: result.ProbeLocationID,
-		StartedAt:       result.StartedAt.UTC().Format(time.RFC3339),
-		FinishedAt:      result.FinishedAt.UTC().Format(time.RFC3339),
+		RunID:      run.RunID,
+		ServiceID:  run.ServiceID,
+		MonitorID:  run.MonitorID,
+		Trigger:    string(run.Trigger),
+		Outcome:    string(result.Outcome),
+		DurationMs: result.DurationMs,
+		StatusCode: result.StatusCode,
+		Error:      result.Error,
+		StartedAt:  result.StartedAt.UTC().Format(time.RFC3339),
+		FinishedAt: result.FinishedAt.UTC().Format(time.RFC3339),
 	}
 }
 

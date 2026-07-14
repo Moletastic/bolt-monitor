@@ -7,14 +7,6 @@ import (
 	"bolt-monitor/shared/escalation"
 )
 
-type fakeCatalog struct {
-	selectable map[string]bool
-}
-
-func (f fakeCatalog) IsSelectableLocation(locationID string) bool {
-	return f.selectable[locationID]
-}
-
 func TestCreateServiceRequestToService(t *testing.T) {
 	service, err := (CreateServiceRequest{
 		Name:            "Auth Service",
@@ -63,7 +55,6 @@ func TestCreateMonitorRequestToMonitor(t *testing.T) {
 		Name:              "Homepage",
 		Type:              MonitorTypeHTTP,
 		IntervalSeconds:   60,
-		ProbeLocations:    []string{"iad"},
 		Enabled:           true,
 		FailureThreshold:  1,
 		RecoveryThreshold: 1,
@@ -105,7 +96,6 @@ func TestMonitorValidateRejectsMissingServiceID(t *testing.T) {
 		Name:              "Homepage",
 		Type:              MonitorTypeHTTP,
 		IntervalSeconds:   60,
-		ProbeLocations:    []string{"iad"},
 		Enabled:           true,
 		FailureThreshold:  1,
 		RecoveryThreshold: 1,
@@ -142,7 +132,6 @@ func TestMonitorToRecordRoundTrip(t *testing.T) {
 		Name:              "Homepage",
 		Type:              MonitorTypeHTTP,
 		IntervalSeconds:   60,
-		ProbeLocations:    []string{"iad"},
 		Enabled:           true,
 		FailureThreshold:  1,
 		RecoveryThreshold: 1,
@@ -174,31 +163,6 @@ func TestMonitorToRecordRoundTrip(t *testing.T) {
 	}
 	if roundTrip.HTTP == nil || roundTrip.HTTP.Target != monitor.HTTP.Target {
 		t.Fatal("HTTP target did not survive round trip")
-	}
-}
-
-func TestMonitorValidateWithCatalogRejectsUnknownProbeLocation(t *testing.T) {
-	monitor := Monitor{
-		MonitorID:         "public-http",
-		ServiceID:         "auth",
-		TenantID:          "DEFAULT",
-		Name:              "Homepage",
-		Type:              MonitorTypeHTTP,
-		IntervalSeconds:   60,
-		ProbeLocations:    []string{"iad", "unknown"},
-		Enabled:           true,
-		FailureThreshold:  1,
-		RecoveryThreshold: 1,
-		HTTP: &HTTPConfiguration{
-			Target:    "https://example.com",
-			Method:    "GET",
-			TimeoutMs: 5000,
-		},
-	}
-
-	err := monitor.ValidateWithCatalog(fakeCatalog{selectable: map[string]bool{"iad": true}})
-	if err == nil {
-		t.Fatal("ValidateWithCatalog returned nil error, want unknown location failure")
 	}
 }
 
@@ -252,7 +216,6 @@ func validTestMonitor() Monitor {
 		Name:              "Homepage",
 		Type:              MonitorTypeHTTP,
 		IntervalSeconds:   60,
-		ProbeLocations:    []string{"iad"},
 		Enabled:           true,
 		FailureThreshold:  1,
 		RecoveryThreshold: 1,

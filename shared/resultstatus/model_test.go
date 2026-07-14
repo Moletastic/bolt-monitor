@@ -10,17 +10,16 @@ import (
 func sampleResult() checkexecution.ExecutionResult {
 	statusCode := 200
 	return checkexecution.ExecutionResult{
-		ServiceID:       "auth",
-		MonitorID:       "public-http",
-		TenantID:        "DEFAULT",
-		Type:            "http",
-		ProbeLocationID: "iad",
-		Trigger:         checkexecution.TriggerTypeManual,
-		StartedAt:       time.Date(2026, 5, 17, 22, 0, 0, 0, time.UTC),
-		FinishedAt:      time.Date(2026, 5, 17, 22, 0, 1, 0, time.UTC),
-		DurationMs:      1000,
-		Outcome:         checkexecution.OutcomeSuccess,
-		StatusCode:      &statusCode,
+		ServiceID:  "auth",
+		MonitorID:  "public-http",
+		TenantID:   "DEFAULT",
+		Type:       "http",
+		Trigger:    checkexecution.TriggerTypeManual,
+		StartedAt:  time.Date(2026, 5, 17, 22, 0, 0, 0, time.UTC),
+		FinishedAt: time.Date(2026, 5, 17, 22, 0, 1, 0, time.UTC),
+		DurationMs: 1000,
+		Outcome:    checkexecution.OutcomeSuccess,
+		StatusCode: &statusCode,
 	}
 }
 

@@ -9,17 +9,7 @@ import (
 
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/monitorconfig"
-	"bolt-monitor/shared/probelocationcatalog"
 )
-
-func catalog() probelocationcatalog.Catalog {
-	return probelocationcatalog.Catalog{Locations: []probelocationcatalog.Location{{
-		LocationID:      "iad",
-		DisplayName:     "US East",
-		ExecutionTarget: "worker-us-east",
-		Enabled:         true,
-	}}}
-}
 
 func TestBuildExecutionRequestsSkipsDisabledMonitors(t *testing.T) {
 	monitors := []monitorconfig.Monitor{
@@ -30,7 +20,6 @@ func TestBuildExecutionRequestsSkipsDisabledMonitors(t *testing.T) {
 			Name:              "Enabled",
 			Type:              monitorconfig.MonitorTypeHTTP,
 			IntervalSeconds:   60,
-			ProbeLocations:    []string{"iad"},
 			Enabled:           true,
 			FailureThreshold:  1,
 			RecoveryThreshold: 1,
@@ -43,7 +32,6 @@ func TestBuildExecutionRequestsSkipsDisabledMonitors(t *testing.T) {
 			Name:              "Disabled",
 			Type:              monitorconfig.MonitorTypeHTTP,
 			IntervalSeconds:   60,
-			ProbeLocations:    []string{"iad"},
 			Enabled:           false,
 			FailureThreshold:  1,
 			RecoveryThreshold: 1,
@@ -51,7 +39,7 @@ func TestBuildExecutionRequestsSkipsDisabledMonitors(t *testing.T) {
 		},
 	}
 
-	requests, err := BuildExecutionRequests(monitors, catalog(), TriggerTypeRecurring)
+	requests, err := BuildExecutionRequests(monitors, TriggerTypeRecurring)
 	if err != nil {
 		t.Fatalf("BuildExecutionRequests returned error: %v", err)
 	}
@@ -96,7 +84,6 @@ func TestExecuteHTTPReturnsNormalizedResult(t *testing.T) {
 			Name:            "Homepage",
 			Type:            monitorconfig.MonitorTypeHTTP,
 			IntervalSeconds: 60,
-			ProbeLocations:  []string{"iad"},
 			Enabled:         true,
 			HTTP: &monitorconfig.HTTPConfiguration{
 				Target:              server.URL,
@@ -105,8 +92,7 @@ func TestExecuteHTTPReturnsNormalizedResult(t *testing.T) {
 				ExpectedStatusCodes: []int{200},
 			},
 		},
-		ProbeLocation: catalog().Locations[0],
-		Trigger:       TriggerTypeManual,
+		Trigger: TriggerTypeManual,
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -116,9 +102,6 @@ func TestExecuteHTTPReturnsNormalizedResult(t *testing.T) {
 	}
 	if result.StatusCode == nil || *result.StatusCode != 200 {
 		t.Fatal("status code missing or incorrect")
-	}
-	if result.ProbeLocationID != "iad" {
-		t.Fatalf("ProbeLocationID = %q, want iad", result.ProbeLocationID)
 	}
 }
 
@@ -138,7 +121,6 @@ func TestExecuteHTTPSucceedsWhenExpectedBodyMatches(t *testing.T) {
 			Name:            "Homepage",
 			Type:            monitorconfig.MonitorTypeHTTP,
 			IntervalSeconds: 60,
-			ProbeLocations:  []string{"iad"},
 			Enabled:         true,
 			HTTP: &monitorconfig.HTTPConfiguration{
 				Target:               server.URL,
@@ -148,8 +130,7 @@ func TestExecuteHTTPSucceedsWhenExpectedBodyMatches(t *testing.T) {
 				ExpectedBodyContains: &expected,
 			},
 		},
-		ProbeLocation: catalog().Locations[0],
-		Trigger:       TriggerTypeManual,
+		Trigger: TriggerTypeManual,
 	}
 
 	result := ExecuteHTTP(context.Background(), &http.Client{Timeout: 5 * time.Second}, request)
@@ -177,7 +158,6 @@ func TestExecuteHTTPFailsWhenExpectedBodyMissing(t *testing.T) {
 			Name:            "Homepage",
 			Type:            monitorconfig.MonitorTypeHTTP,
 			IntervalSeconds: 60,
-			ProbeLocations:  []string{"iad"},
 			Enabled:         true,
 			HTTP: &monitorconfig.HTTPConfiguration{
 				Target:               server.URL,
@@ -187,8 +167,7 @@ func TestExecuteHTTPFailsWhenExpectedBodyMissing(t *testing.T) {
 				ExpectedBodyContains: &expected,
 			},
 		},
-		ProbeLocation: catalog().Locations[0],
-		Trigger:       TriggerTypeManual,
+		Trigger: TriggerTypeManual,
 	}
 
 	result := ExecuteHTTP(context.Background(), &http.Client{Timeout: 5 * time.Second}, request)
@@ -216,7 +195,6 @@ func TestExecuteHTTPFailsStatusBeforeBodyMatch(t *testing.T) {
 			Name:            "Homepage",
 			Type:            monitorconfig.MonitorTypeHTTP,
 			IntervalSeconds: 60,
-			ProbeLocations:  []string{"iad"},
 			Enabled:         true,
 			HTTP: &monitorconfig.HTTPConfiguration{
 				Target:               server.URL,
@@ -226,8 +204,7 @@ func TestExecuteHTTPFailsStatusBeforeBodyMatch(t *testing.T) {
 				ExpectedBodyContains: &expected,
 			},
 		},
-		ProbeLocation: catalog().Locations[0],
-		Trigger:       TriggerTypeManual,
+		Trigger: TriggerTypeManual,
 	}
 
 	result := ExecuteHTTP(context.Background(), &http.Client{Timeout: 5 * time.Second}, request)

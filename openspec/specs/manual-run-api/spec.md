@@ -5,8 +5,9 @@ System SHALL allow an operator to request an on-demand run for an existing monit
 
 #### Scenario: Operator triggers monitor run
 - **WHEN** operator calls `POST /api/v1/monitors/{id}/run` for existing monitor
-- **THEN** system accepts the manual run command for that monitor
-- **AND** returns a stable run identifier that can be correlated with downstream run history
+- **THEN** system executes one check attempt in the system execution environment
+- **AND** the response includes a stable run identifier, trigger, timing, duration, outcome, status code when available, and error when available
+- **AND** the response does not include probe-location or region identity
 
 ### Requirement: Manual run command only targets runnable monitors
 System SHALL reject manual run commands for monitors that do not exist or are not runnable.

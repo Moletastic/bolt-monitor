@@ -14,15 +14,14 @@ const (
 )
 
 type ExecutionWork struct {
-	TenantID        string              `json:"tenantId"`
-	ServiceID       string              `json:"serviceId"`
-	MonitorID       string              `json:"monitorId"`
-	RunID           string              `json:"runId"`
-	ProbeLocationID string              `json:"probeLocationId"`
-	Trigger         TriggerType         `json:"trigger"`
-	RequestedAt     time.Time           `json:"requestedAt"`
-	Status          ExecutionWorkStatus `json:"status"`
-	StartedAt       *time.Time          `json:"startedAt,omitempty"`
-	CompletedAt     *time.Time          `json:"completedAt,omitempty"`
-	LastError       string              `json:"lastError,omitempty"`
+	TenantID    string              `json:"tenantId"`
+	ServiceID   string              `json:"serviceId"`
+	MonitorID   string              `json:"monitorId"`
+	RunID       string              `json:"runId"`
+	Trigger     TriggerType         `json:"trigger"`
+	RequestedAt time.Time           `json:"requestedAt"`
+	Status      ExecutionWorkStatus `json:"status"`
+	StartedAt   *time.Time          `json:"startedAt,omitempty"`
+	CompletedAt *time.Time          `json:"completedAt,omitempty"`
+	LastError   string              `json:"lastError,omitempty"`
 }

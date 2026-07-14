@@ -7,19 +7,21 @@ System SHALL execute enabled monitors through a defined execution pipeline.
 - **WHEN** execution pipeline evaluates runnable monitors
 - **THEN** it selects monitors whose lifecycle state is enabled
 
-### Requirement: System routes checks through selected probe locations
-System SHALL route monitor executions through the monitor's selected probe locations.
+### Requirement: System builds execution work for due monitors
+System SHALL create execution work for each enabled monitor that is due to run.
 
-#### Scenario: Monitor execution begins
-- **WHEN** system executes a monitor
-- **THEN** it uses the monitor's valid selected probe-location identifiers to determine execution location targets
+#### Scenario: Enabled monitor is due
+- **WHEN** a monitor is enabled and due for execution
+- **THEN** system creates one work item for that monitor and run
+- **AND** the work item does not include probe-location routing state
 
 ### Requirement: System emits normalized execution result
 System SHALL emit a normalized execution result shape for downstream result and status processing.
 
 #### Scenario: Check finishes
 - **WHEN** a healthcheck execution completes
-- **THEN** system produces normalized result data describing monitor identity, location, timing, outcome, and protocol-specific details needed downstream
+- **THEN** system produces normalized result data describing monitor identity, timing, outcome, and protocol-specific details needed downstream
+- **AND** the result does not include probe-location or region identity
 
 ### Requirement: Disabled monitors must not execute
 System SHALL prevent disabled monitors from periodic or manual scheduling paths that are meant for active monitoring.

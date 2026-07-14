@@ -15,7 +15,6 @@ type MonitorItemRecord struct {
 	Name              string                           `dynamodbav:"Name"`
 	Type              monitorconfig.MonitorType        `dynamodbav:"Type"`
 	IntervalSeconds   int                              `dynamodbav:"IntervalSeconds"`
-	ProbeLocations    []string                         `dynamodbav:"ProbeLocations"`
 	Enabled           bool                             `dynamodbav:"Enabled"`
 	FailureThreshold  int                              `dynamodbav:"FailureThreshold"`
 	RecoveryThreshold int                              `dynamodbav:"RecoveryThreshold"`
@@ -34,7 +33,6 @@ func NewMonitorItemRecord(monitor monitorconfig.Monitor) MonitorItemRecord {
 		Name:              monitor.Name,
 		Type:              monitor.Type,
 		IntervalSeconds:   monitor.IntervalSeconds,
-		ProbeLocations:    append([]string(nil), monitor.ProbeLocations...),
 		Enabled:           monitor.Enabled,
 		FailureThreshold:  monitor.FailureThreshold,
 		RecoveryThreshold: monitor.RecoveryThreshold,
@@ -66,7 +64,6 @@ func (r MonitorItemRecord) ToMonitor() monitorconfig.Monitor {
 		Name:              r.Name,
 		Type:              r.Type,
 		IntervalSeconds:   r.IntervalSeconds,
-		ProbeLocations:    append([]string(nil), r.ProbeLocations...),
 		Enabled:           r.Enabled,
 		FailureThreshold:  failureThreshold,
 		RecoveryThreshold: recoveryThreshold,

@@ -18,7 +18,7 @@ func main() {
 	}
 
 	repo := newDynamoMonitorRepository(dynamoClient, os.Getenv("TABLE_NAME"))
-	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	handler := newMonitorHandler(repo, defaultTenantID)
 
 	lambda.Start(handler.handleRequest)
 }

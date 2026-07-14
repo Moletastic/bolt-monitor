@@ -146,7 +146,7 @@ func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, 
 		if strings.TrimSpace(runID) == "" {
 			runID = newRunID(now)
 		}
-		records = append(records, dynamodbrecord.NewExecutionWorkItemRecord(request.Monitor.TenantID, request.Monitor.ServiceID, request.Monitor.MonitorID, runID, request.ProbeLocation.LocationID, request.Trigger, acceptedAt, checkexecution.ExecutionWorkPending, nil, nil, ""))
+		records = append(records, dynamodbrecord.NewExecutionWorkItemRecord(request.Monitor.TenantID, request.Monitor.ServiceID, request.Monitor.MonitorID, runID, request.Trigger, acceptedAt, checkexecution.ExecutionWorkPending, nil, nil, ""))
 	}
 	items, err := marshalItems(r.tableName, records...)
 	if err != nil {
@@ -386,7 +386,7 @@ func (r *dynamoRuntimeRepository) getMonitorStatus(ctx context.Context, tenantID
 	if err != nil {
 		return resultstatus.MonitorStatus{}, false, err
 	}
-	return resultstatus.MonitorStatus{ServiceID: record.ServiceID, MonitorID: record.MonitorID, TenantID: record.TenantID, CurrentStatus: record.CurrentStatus, ConsecutiveFailures: record.ConsecutiveFailures, ConsecutiveSuccesses: record.ConsecutiveSuccesses, LastCheckedAt: lastCheckedAt, LastDurationMs: record.LastDurationMs, LastProbeLocationID: record.LastProbeLocationID, LastError: record.LastError, LastOutcome: checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, "unknown")))}, true, nil
+	return resultstatus.MonitorStatus{ServiceID: record.ServiceID, MonitorID: record.MonitorID, TenantID: record.TenantID, CurrentStatus: record.CurrentStatus, ConsecutiveFailures: record.ConsecutiveFailures, ConsecutiveSuccesses: record.ConsecutiveSuccesses, LastCheckedAt: lastCheckedAt, LastDurationMs: record.LastDurationMs, LastError: record.LastError, LastOutcome: checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, "unknown")))}, true, nil
 }
 
 func (r *dynamoRuntimeRepository) GetMonitorStatus(ctx context.Context, tenantID, serviceID, monitorID string) (resultstatus.MonitorStatus, bool, error) {
@@ -443,7 +443,6 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 	newStatus := currentStatus
 	newStatus.LastCheckedAt = result.FinishedAt.UTC()
 	newStatus.LastDurationMs = result.DurationMs
-	newStatus.LastProbeLocationID = strings.ToUpper(result.ProbeLocationID)
 	newStatus.LastError = result.Error
 	newStatus.LastOutcome = result.Outcome
 
@@ -612,7 +611,7 @@ func buildIncidentRecords(incident dynamodbrecord.IncidentRecord, action, change
 }
 
 func incidentSummary(monitor monitorconfig.Monitor, result checkexecution.ExecutionResult) string {
-	summary := fmt.Sprintf("%s failed from %s", monitor.Name, strings.ToUpper(result.ProbeLocationID))
+	summary := fmt.Sprintf("%s failed", monitor.Name)
 	if result.Outcome == checkexecution.OutcomeSuccess {
 		return summary
 	}

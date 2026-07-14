@@ -10,7 +10,6 @@ import (
 
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/monitorconfig"
-	"bolt-monitor/shared/probelocationcatalog"
 )
 
 type TriggerType string
@@ -37,26 +36,24 @@ const (
 )
 
 type ExecutionRequest struct {
-	Monitor       monitorconfig.Monitor         `json:"monitor"`
-	ProbeLocation probelocationcatalog.Location `json:"probeLocation"`
-	RunID         string                        `json:"runId,omitempty"`
-	Trigger       TriggerType                   `json:"trigger"`
+	Monitor monitorconfig.Monitor `json:"monitor"`
+	RunID   string                `json:"runId,omitempty"`
+	Trigger TriggerType           `json:"trigger"`
 }
 
 type ExecutionResult struct {
-	ServiceID       string      `json:"serviceId"`
-	MonitorID       string      `json:"monitorId"`
-	TenantID        string      `json:"tenantId"`
-	RunID           string      `json:"runId,omitempty"`
-	Type            string      `json:"type"`
-	ProbeLocationID string      `json:"probeLocationId"`
-	Trigger         TriggerType `json:"trigger"`
-	StartedAt       time.Time   `json:"startedAt"`
-	FinishedAt      time.Time   `json:"finishedAt"`
-	DurationMs      int64       `json:"durationMs"`
-	Outcome         Outcome     `json:"outcome"`
-	StatusCode      *int        `json:"statusCode,omitempty"`
-	Error           string      `json:"error,omitempty"`
+	ServiceID  string      `json:"serviceId"`
+	MonitorID  string      `json:"monitorId"`
+	TenantID   string      `json:"tenantId"`
+	RunID      string      `json:"runId,omitempty"`
+	Type       string      `json:"type"`
+	Trigger    TriggerType `json:"trigger"`
+	StartedAt  time.Time   `json:"startedAt"`
+	FinishedAt time.Time   `json:"finishedAt"`
+	DurationMs int64       `json:"durationMs"`
+	Outcome    Outcome     `json:"outcome"`
+	StatusCode *int        `json:"statusCode,omitempty"`
+	Error      string      `json:"error,omitempty"`
 }
 
 type SchedulerConfig struct {
@@ -74,29 +71,16 @@ func (c SchedulerConfig) Validate() error {
 	return nil
 }
 
-func BuildExecutionRequests(monitors []monitorconfig.Monitor, catalog probelocationcatalog.Catalog, trigger TriggerType) ([]ExecutionRequest, error) {
-	if err := catalog.Validate(); err != nil {
-		return nil, err
-	}
+func BuildExecutionRequests(monitors []monitorconfig.Monitor, trigger TriggerType) ([]ExecutionRequest, error) {
 	requests := make([]ExecutionRequest, 0)
 	for _, monitor := range monitors {
 		if !monitor.Enabled {
 			continue
 		}
-		if err := monitor.ValidateWithCatalog(catalog); err != nil {
+		if err := monitor.Validate(); err != nil {
 			return nil, err
 		}
-		for _, locationID := range monitor.ProbeLocations {
-			location, ok := lookupLocation(catalog, locationID)
-			if !ok {
-				return nil, fmt.Errorf("probe location %q not found in catalog", locationID)
-			}
-			requests = append(requests, ExecutionRequest{
-				Monitor:       monitor,
-				ProbeLocation: location,
-				Trigger:       trigger,
-			})
-		}
+		requests = append(requests, ExecutionRequest{Monitor: monitor, Trigger: trigger})
 	}
 	return requests, nil
 }
@@ -104,14 +88,13 @@ func BuildExecutionRequests(monitors []monitorconfig.Monitor, catalog probelocat
 func ExecuteHTTP(ctx context.Context, client *http.Client, request ExecutionRequest) ExecutionResult {
 	startedAt := time.Now().UTC()
 	result := ExecutionResult{
-		ServiceID:       request.Monitor.ServiceID,
-		MonitorID:       request.Monitor.MonitorID,
-		TenantID:        request.Monitor.TenantID,
-		RunID:           request.RunID,
-		Type:            string(request.Monitor.Type),
-		ProbeLocationID: request.ProbeLocation.LocationID,
-		Trigger:         request.Trigger,
-		StartedAt:       startedAt,
+		ServiceID: request.Monitor.ServiceID,
+		MonitorID: request.Monitor.MonitorID,
+		TenantID:  request.Monitor.TenantID,
+		RunID:     request.RunID,
+		Type:      string(request.Monitor.Type),
+		Trigger:   request.Trigger,
+		StartedAt: startedAt,
 	}
 
 	httpConfig := request.Monitor.HTTP
@@ -167,15 +150,6 @@ func classifyError(err error) Outcome {
 		return OutcomeTimeout
 	}
 	return OutcomeError
-}
-
-func lookupLocation(catalog probelocationcatalog.Catalog, locationID string) (probelocationcatalog.Location, bool) {
-	for _, location := range catalog.Locations {
-		if location.LocationID == locationID {
-			return location, true
-		}
-	}
-	return probelocationcatalog.Location{}, false
 }
 
 func containsStatus(list []int, value int) bool {

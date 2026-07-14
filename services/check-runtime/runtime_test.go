@@ -11,7 +11,6 @@ import (
 
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/monitorconfig"
-	"bolt-monitor/shared/probelocationcatalog"
 	"bolt-monitor/shared/resultstatus"
 )
 
@@ -72,7 +71,7 @@ func (r *fakeRuntimeRepository) EnqueueExecutionRequests(_ context.Context, requ
 		if runID == "" {
 			runID = newRunID(now)
 		}
-		r.works = append(r.works, checkexecution.ExecutionWork{TenantID: request.Monitor.TenantID, ServiceID: request.Monitor.ServiceID, MonitorID: request.Monitor.MonitorID, RunID: runID, ProbeLocationID: request.ProbeLocation.LocationID, Trigger: request.Trigger, RequestedAt: now.UTC(), Status: checkexecution.ExecutionWorkPending})
+		r.works = append(r.works, checkexecution.ExecutionWork{TenantID: request.Monitor.TenantID, ServiceID: request.Monitor.ServiceID, MonitorID: request.Monitor.MonitorID, RunID: runID, Trigger: request.Trigger, RequestedAt: now.UTC(), Status: checkexecution.ExecutionWorkPending})
 	}
 	return nil
 }
@@ -82,10 +81,10 @@ func (r *fakeRuntimeRepository) ListPendingExecutionWork(context.Context, string
 }
 
 func (r *fakeRuntimeRepository) ClaimExecutionWork(_ context.Context, work checkexecution.ExecutionWork, _ time.Time) (bool, error) {
-	if r.claims[work.RunID+work.ProbeLocationID] {
+	if r.claims[work.RunID] {
 		return false, nil
 	}
-	r.claims[work.RunID+work.ProbeLocationID] = true
+	r.claims[work.RunID] = true
 	return true, nil
 }
 
@@ -117,12 +116,8 @@ func (r *fakeRuntimeRepository) GetMonitorStatus(_ context.Context, _, serviceID
 	return status, ok, nil
 }
 
-func testCatalog() probelocationcatalog.Catalog {
-	return probelocationcatalog.Catalog{Locations: []probelocationcatalog.Location{{LocationID: "iad", DisplayName: "US East", ExecutionTarget: "worker-us-east", Enabled: true}}}
-}
-
 func testMonitor(target string, enabled bool) monitorconfig.Monitor {
-	return monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, ProbeLocations: []string{"iad"}, Enabled: enabled, FailureThreshold: 1, RecoveryThreshold: 1, HTTP: &monitorconfig.HTTPConfiguration{Target: target, Method: "GET", TimeoutMs: 5000, ExpectedStatusCodes: []int{200}}}
+	return monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: enabled, FailureThreshold: 1, RecoveryThreshold: 1, HTTP: &monitorconfig.HTTPConfiguration{Target: target, Method: "GET", TimeoutMs: 5000, ExpectedStatusCodes: []int{200}}}
 }
 
 func TestRunSchedulerRespectsRecurringGate(t *testing.T) {
@@ -130,7 +125,7 @@ func TestRunSchedulerRespectsRecurringGate(t *testing.T) {
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: false}
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "", "", testCatalog(), defaultTenantID, modeScheduler)
+	handler := newRuntimeHandler(repo, sqs, "", "", defaultTenantID, modeScheduler)
 	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC) }
 
 	summary, err := handler.runScheduler(context.Background())
@@ -147,7 +142,7 @@ func TestRunSchedulerEnqueuesMonitorWithNoLastExecution(t *testing.T) {
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", testCatalog(), defaultTenantID, modeScheduler)
+	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
 	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
 	handler.now = func() time.Time { return now }
 
@@ -171,7 +166,7 @@ func TestRunSchedulerEnqueuesEnabledMonitorUnderDraftService(t *testing.T) {
 		"auth": {TenantID: defaultTenantID, ServiceID: "auth", LifecycleState: monitorconfig.ServiceLifecycleDraft},
 	}
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", testCatalog(), defaultTenantID, modeScheduler)
+	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
 	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC) }
 
 	summary, err := handler.runScheduler(context.Background())
@@ -189,7 +184,7 @@ func TestRunSchedulerSkipsMonitorBeforeIntervalElapsed(t *testing.T) {
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	repo.lastExec["auth/public-http"] = time.Date(2026, 5, 22, 11, 59, 30, 0, time.UTC)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", testCatalog(), defaultTenantID, modeScheduler)
+	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
 	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC) }
 
 	summary, err := handler.runScheduler(context.Background())
@@ -207,7 +202,7 @@ func TestRunSchedulerEnqueuesMonitorAfterIntervalElapsed(t *testing.T) {
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	repo.lastExec["auth/public-http"] = time.Date(2026, 5, 22, 11, 59, 0, 0, time.UTC)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", testCatalog(), defaultTenantID, modeScheduler)
+	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
 	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC) }
 
 	summary, err := handler.runScheduler(context.Background())
@@ -227,7 +222,7 @@ func TestRunSchedulerTreatsZeroIntervalAsAlwaysDue(t *testing.T) {
 	repo.monitors["auth/public-http"] = monitor
 	repo.lastExec["auth/public-http"] = time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", testCatalog(), defaultTenantID, modeScheduler)
+	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
 	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 1, 0, time.UTC) }
 
 	summary, err := handler.runScheduler(context.Background())
@@ -242,9 +237,9 @@ func TestRunSchedulerTreatsZeroIntervalAsAlwaysDue(t *testing.T) {
 func TestRunWorkerSkipsDisabledMonitor(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", false)
-	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", ProbeLocationID: "iad", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
+	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "", "", testCatalog(), defaultTenantID, modeWorker)
+	handler := newRuntimeHandler(repo, sqs, "", "", defaultTenantID, modeWorker)
 	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 1, 0, time.UTC) }
 
 	summary, err := handler.runWorker(context.Background())
@@ -268,9 +263,9 @@ func TestRunWorkerProcessesManualRunIntoRecordedResult(t *testing.T) {
 
 	repo := newFakeRuntimeRepository()
 	repo.monitors["auth/public-http"] = testMonitor(server.URL, true)
-	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_MANUAL_1", ProbeLocationID: "iad", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
+	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_MANUAL_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "", "", testCatalog(), defaultTenantID, modeWorker)
+	handler := newRuntimeHandler(repo, sqs, "", "", defaultTenantID, modeWorker)
 
 	summary, err := handler.runWorker(context.Background())
 	if err != nil {
@@ -289,8 +284,8 @@ func TestRunWorkerProcessesManualRunIntoRecordedResult(t *testing.T) {
 
 func TestIncidentSummaryUsesErrorDetails(t *testing.T) {
 	statusCode := 503
-	summary := incidentSummary(testMonitor("https://example.com", true), checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", ProbeLocationID: "iad", Outcome: checkexecution.OutcomeFailure, StatusCode: &statusCode, Error: "unexpected status code 503"})
-	if summary == "" || summary == "Homepage failed from IAD" {
+	summary := incidentSummary(testMonitor("https://example.com", true), checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", Outcome: checkexecution.OutcomeFailure, StatusCode: &statusCode, Error: "unexpected status code 503"})
+	if summary == "" || summary == "Homepage failed" {
 		t.Fatalf("summary = %q, want detailed summary", summary)
 	}
 }
