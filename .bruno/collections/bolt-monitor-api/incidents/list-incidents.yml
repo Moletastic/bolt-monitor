@@ -1,0 +1,14 @@
+info:
+  name: List Incidents
+  type: http
+  seq: 34
+  tags:
+    - domain:incidents
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/incidents?status=open"
+docs: |-
+  Purpose: List open incidents for operator overview.
+  Setup: Select an environment with `apiUrl`.
+  Expected result: Returns incident collection.

@@ -1,0 +1,21 @@
+info:
+  name: Update Notification Channel
+  type: http
+  seq: 6
+  tags:
+    - domain:channels
+    - operation:update
+http:
+  method: PUT
+  url: "{{apiUrl}}/api/v1/notification-channels/{{channelId}}"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"name":"Primary email updated","target":"oncall@example.com"}
+docs: |-
+  Purpose: Update a notification channel.
+  Setup: Set `channelId` and provide fields to change.
+  Expected result: Returns the updated channel.

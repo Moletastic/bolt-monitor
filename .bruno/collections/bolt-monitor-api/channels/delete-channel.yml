@@ -1,0 +1,14 @@
+info:
+  name: Delete Notification Channel
+  type: http
+  seq: 7
+  tags:
+    - domain:channels
+    - operation:delete
+http:
+  method: DELETE
+  url: "{{apiUrl}}/api/v1/notification-channels/{{channelId}}"
+docs: |-
+  Purpose: Delete an unused notification channel.
+  Setup: Set `channelId`; verify no policy references it.
+  Expected result: Returns successful deletion.

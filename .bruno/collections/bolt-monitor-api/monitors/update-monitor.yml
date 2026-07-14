@@ -1,0 +1,21 @@
+info:
+  name: Update Service Monitor
+  type: http
+  seq: 23
+  tags:
+    - domain:monitors
+    - operation:update
+http:
+  method: PATCH
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"name":"Homepage Updated","intervalSeconds":120}
+docs: |-
+  Purpose: Update mutable monitor fields.
+  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Expected result: Returns the updated monitor.

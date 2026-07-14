@@ -1,0 +1,21 @@
+info:
+  name: Update Scheduler Config
+  type: http
+  seq: 40
+  tags:
+    - domain:admin
+    - operation:update
+http:
+  method: PATCH
+  url: "{{apiUrl}}/api/v1/admin/scheduler-config"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"recurringEnabled":true,"stopControlMode":"global-pause"}
+docs: |-
+  Purpose: Update global scheduler configuration.
+  Setup: Confirm this administrative change is intended.
+  Expected result: Returns updated scheduler configuration.

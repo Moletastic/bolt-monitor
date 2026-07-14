@@ -1,0 +1,14 @@
+info:
+  name: Acknowledge Incident
+  type: http
+  seq: 37
+  tags:
+    - domain:incidents
+    - operation:acknowledge
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}/ack"
+docs: |-
+  Purpose: Acknowledge an actionable incident.
+  Setup: Set `incidentId` to an open incident.
+  Expected result: Returns the acknowledged incident.

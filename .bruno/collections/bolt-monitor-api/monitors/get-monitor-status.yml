@@ -1,0 +1,14 @@
+info:
+  name: Get Monitor Status
+  type: http
+  seq: 25
+  tags:
+    - domain:monitors
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/status"
+docs: |-
+  Purpose: Read current monitor status.
+  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Expected result: Returns status and latest check information.

@@ -56,6 +56,15 @@ return builder.Build()(monitor)
 ### Extras
 - `make lint-all` — go + dashboard + infra lint
 - `make bootstrap` — `go work sync`
+- `make check-bruno` — validate Bruno coverage and request conventions against SST routes
+
+### Bruno API Collection
+- Bruno requests live under `.bruno/collections/` and cover every method/path route declared in `infra/stacks/bootstrap.ts`.
+- Organize requests by API domain: `health`, `search`, `channels`, `policies`, `services`, `monitors`, `incidents`, and `admin`.
+- Name requests `Verb Resource`; use exact route variables such as `serviceId`, `monitorId`, `incidentId`, `channelId`, and `policyId`.
+- Every request has exactly one `domain:<domain>` tag and one `operation:<operation>` tag.
+- Every request docs block includes `Purpose:`, `Setup:`, and `Expected result:`.
+- When adding or changing an API route, update Bruno coverage and run `make check-bruno`.
 
 ## Commit Messages
 

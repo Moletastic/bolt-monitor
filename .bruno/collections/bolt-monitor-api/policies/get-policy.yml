@@ -1,0 +1,14 @@
+info:
+  name: Get Escalation Policy
+  type: http
+  seq: 11
+  tags:
+    - domain:policies
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/escalation-policies/{{policyId}}"
+docs: |-
+  Purpose: Read one escalation policy.
+  Setup: Set `policyId` from a create or list response.
+  Expected result: Returns the selected policy.

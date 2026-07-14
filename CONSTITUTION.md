@@ -26,6 +26,7 @@ Tag legend: `[G]` general · `[F]` frontend · `[B]` backend · `[A]` API contra
 18. **Explicit dependencies.** Lockfiles committed. Manager pinned. Allowlists visible. `[G]`
 19. **Automated gates.** Lint, typecheck, test, format, build run in CI. Manual review is the exception. `[G]`
 20. **Public APIs documented.** JSDoc in TypeScript, godoc in Go. `[G]`
+21. **Manual API contracts stay synchronized.** Bruno collections cover every exposed API route and remain aligned with the service-owned contract. `[G]`
 
 ## Frontend
 

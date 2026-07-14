@@ -1,0 +1,14 @@
+info:
+  name: List Notification Channels
+  type: http
+  seq: 4
+  tags:
+    - domain:channels
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/notification-channels"
+docs: |-
+  Purpose: List configured notification channels.
+  Setup: Select an environment with `apiUrl`.
+  Expected result: Returns channel collection.

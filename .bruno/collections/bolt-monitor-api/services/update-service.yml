@@ -1,0 +1,21 @@
+info:
+  name: Update Service
+  type: http
+  seq: 18
+  tags:
+    - domain:services
+    - operation:update
+http:
+  method: PATCH
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"description":"Updated service description"}
+docs: |-
+  Purpose: Update mutable service fields.
+  Setup: Set `serviceId` from an existing service.
+  Expected result: Returns the updated service.

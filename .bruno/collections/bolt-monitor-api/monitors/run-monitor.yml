@@ -1,0 +1,14 @@
+info:
+  name: Run Monitor
+  type: http
+  seq: 27
+  tags:
+    - domain:monitors
+    - operation:run
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/run"
+docs: |-
+  Purpose: Start a manual monitor run.
+  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Expected result: Returns the accepted manual run and `runId`.

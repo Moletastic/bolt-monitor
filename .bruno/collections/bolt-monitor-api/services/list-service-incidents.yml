@@ -1,0 +1,14 @@
+info:
+  name: List Service Incidents
+  type: http
+  seq: 32
+  tags:
+    - domain:services
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/incidents"
+docs: |-
+  Purpose: List incidents for one service.
+  Setup: Set `serviceId` from an existing service.
+  Expected result: Returns service incidents.

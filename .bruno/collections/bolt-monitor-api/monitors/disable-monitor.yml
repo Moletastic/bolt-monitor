@@ -1,0 +1,14 @@
+info:
+  name: Disable Monitor
+  type: http
+  seq: 31
+  tags:
+    - domain:monitors
+    - operation:disable
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/disable"
+docs: |-
+  Purpose: Disable scheduled monitor execution.
+  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Expected result: Returns the disabled monitor.

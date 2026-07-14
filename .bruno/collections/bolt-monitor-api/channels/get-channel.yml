@@ -1,0 +1,14 @@
+info:
+  name: Get Notification Channel
+  type: http
+  seq: 5
+  tags:
+    - domain:channels
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/notification-channels/{{channelId}}"
+docs: |-
+  Purpose: Read one notification channel.
+  Setup: Set `channelId` from a create or list response.
+  Expected result: Returns the selected channel.

@@ -1,0 +1,14 @@
+info:
+  name: Enable Monitor
+  type: http
+  seq: 30
+  tags:
+    - domain:monitors
+    - operation:enable
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/enable"
+docs: |-
+  Purpose: Enable scheduled monitor execution.
+  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Expected result: Returns the enabled monitor.

@@ -1,0 +1,14 @@
+info:
+  name: List Service Monitors
+  type: http
+  seq: 21
+  tags:
+    - domain:monitors
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors"
+docs: |-
+  Purpose: List monitors belonging to a service.
+  Setup: Set `serviceId` from an existing service.
+  Expected result: Returns monitor collection.

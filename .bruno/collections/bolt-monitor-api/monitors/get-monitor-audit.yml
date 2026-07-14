@@ -1,0 +1,14 @@
+info:
+  name: Get Monitor Audit
+  type: http
+  seq: 29
+  tags:
+    - domain:monitors
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/audit"
+docs: |-
+  Purpose: Read audit events for one monitor.
+  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Expected result: Returns monitor audit events.

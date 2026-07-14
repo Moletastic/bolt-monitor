@@ -1,0 +1,14 @@
+info:
+  name: Delete Service Monitor
+  type: http
+  seq: 24
+  tags:
+    - domain:monitors
+    - operation:delete
+http:
+  method: DELETE
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}"
+docs: |-
+  Purpose: Delete a monitor from a service.
+  Setup: Set `serviceId` and `monitorId`; verify deletion is intended.
+  Expected result: Returns successful deletion.

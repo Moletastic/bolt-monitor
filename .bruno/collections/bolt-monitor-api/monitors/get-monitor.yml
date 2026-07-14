@@ -1,0 +1,14 @@
+info:
+  name: Get Service Monitor
+  type: http
+  seq: 22
+  tags:
+    - domain:monitors
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}"
+docs: |-
+  Purpose: Read one service monitor.
+  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Expected result: Returns the selected monitor.

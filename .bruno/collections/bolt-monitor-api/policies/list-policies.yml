@@ -1,0 +1,14 @@
+info:
+  name: List Escalation Policies
+  type: http
+  seq: 10
+  tags:
+    - domain:policies
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/escalation-policies"
+docs: |-
+  Purpose: List escalation policies.
+  Setup: Select an environment with `apiUrl`.
+  Expected result: Returns policy collection.

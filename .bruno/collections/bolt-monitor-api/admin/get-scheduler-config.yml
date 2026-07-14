@@ -1,0 +1,14 @@
+info:
+  name: Get Scheduler Config
+  type: http
+  seq: 39
+  tags:
+    - domain:admin
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/admin/scheduler-config"
+docs: |-
+  Purpose: Read global scheduler configuration.
+  Setup: Select an environment with `apiUrl`.
+  Expected result: Returns scheduler configuration.

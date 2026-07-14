@@ -1,0 +1,14 @@
+info:
+  name: Get Incident Activities
+  type: http
+  seq: 36
+  tags:
+    - domain:incidents
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}/activities"
+docs: |-
+  Purpose: Read activity history for one incident.
+  Setup: Set `incidentId` from an incident list response.
+  Expected result: Returns incident activities.

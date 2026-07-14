@@ -1,0 +1,14 @@
+info:
+  name: Test Notification Channel
+  type: http
+  seq: 8
+  tags:
+    - domain:channels
+    - operation:test
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/notification-channels/{{channelId}}/test"
+docs: |-
+  Purpose: Send a test notification.
+  Setup: Set `channelId` to a configured channel.
+  Expected result: Returns test delivery details.

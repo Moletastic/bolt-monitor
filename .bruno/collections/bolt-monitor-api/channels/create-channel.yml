@@ -1,0 +1,21 @@
+info:
+  name: Create Notification Channel
+  type: http
+  seq: 3
+  tags:
+    - domain:channels
+    - operation:create
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/notification-channels"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"name":"Primary email","type":"email","target":"oncall@example.com","config":{"apiKey":"replace-me"}}
+docs: |-
+  Purpose: Create a notification channel.
+  Setup: Replace channel target and provider config with test values.
+  Expected result: Returns the created channel and `channelId`.

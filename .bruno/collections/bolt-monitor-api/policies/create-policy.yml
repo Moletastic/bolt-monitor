@@ -1,0 +1,21 @@
+info:
+  name: Create Escalation Policy
+  type: http
+  seq: 9
+  tags:
+    - domain:policies
+    - operation:create
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/escalation-policies"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"name":"Primary policy","businessHoursPath":{"steps":[{"channelId":"{{channelId}}","delayMinutes":0}]},"offHoursPath":{"steps":[{"channelId":"{{channelId}}","delayMinutes":0}]}}
+docs: |-
+  Purpose: Create an escalation policy.
+  Setup: Set `channelId` to an existing notification channel.
+  Expected result: Returns the created policy and `policyId`.

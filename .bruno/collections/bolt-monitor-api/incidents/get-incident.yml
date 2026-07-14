@@ -1,0 +1,14 @@
+info:
+  name: Get Incident
+  type: http
+  seq: 35
+  tags:
+    - domain:incidents
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}"
+docs: |-
+  Purpose: Read one incident.
+  Setup: Set `incidentId` from an incident list response.
+  Expected result: Returns the selected incident.

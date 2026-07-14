@@ -1,0 +1,14 @@
+info:
+  name: Delete Service
+  type: http
+  seq: 19
+  tags:
+    - domain:services
+    - operation:delete
+http:
+  method: DELETE
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}"
+docs: |-
+  Purpose: Delete an eligible service.
+  Setup: Set `serviceId`; verify lifecycle and monitor prerequisites.
+  Expected result: Returns successful deletion.

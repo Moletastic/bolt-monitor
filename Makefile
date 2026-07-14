@@ -3,6 +3,7 @@
 	format-go-check vet-go ci-go \
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra \
+	check-bruno \
 	format-dashboard format-dashboard-files format-infra format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
@@ -53,6 +54,9 @@ check-dashboard:
 
 check-infra:
 	cd infra && pnpm run check
+
+check-bruno:
+	node scripts/check-bruno.mjs
 
 format-dashboard:
 	cd apps/dashboard && pnpm run format

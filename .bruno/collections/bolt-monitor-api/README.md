@@ -1,51 +1,42 @@
 # Bolt Monitor API Collection
 
-Collection documentation stored next to Bruno request files.
+Collection documentation stored next to Bruno request files. Requests mirror every route wired in `infra/stacks/bootstrap.ts`.
 
-## Requests
+## Domains
 
-1. `Health Check`
-2. `Create Monitor`
-3. `List Monitors`
-4. `Get Monitor`
-5. `Get Monitor Status`
-6. `List Monitor Runs`
-7. `Run Monitor`
-8. `Update Monitor`
-9. `Disable Monitor`
-10. `Enable Monitor`
-11. `List Incidents`
-12. `Get Incident`
-13. `List Monitor Incidents`
-14. `Acknowledge Incident`
-15. `Resolve Incident`
-16. `Get Scheduler Config`
-17. `Update Scheduler Config`
-18. `Get Monitor Audit`
+- `health`: API availability
+- `search`: global resource search
+- `channels`: notification channel CRUD and delivery test
+- `policies`: escalation policy CRUD
+- `services`: service CRUD, service incidents, and service audit
+- `monitors`: service-scoped monitor CRUD, status, runs, manual run, incidents, audit, enable, and disable
+- `incidents`: incident reads and state transitions
+- `admin`: scheduler configuration
+
+## Conventions
+
+- Request names use `Verb Resource`.
+- Route variables match API names: `serviceId`, `monitorId`, `runId`, `incidentId`, `channelId`, and `policyId`.
+- Every request has exactly one `domain:<domain>` tag and one `operation:<operation>` tag.
+- Every request docs block contains `Purpose`, `Setup`, and `Expected result`.
+- Run `make check-bruno` after route or request changes.
 
 ## Variables
 
-- `apiUrl`: base API URL
-- `monitorId`: monitor resource identifier captured after create
-- `runId`: manual run identifier captured after run request
-- `incidentId`: incident identifier captured after incident list requests
+- `apiUrl`: base API URL, configured in ignored `environments/development.local.yml`
+- `serviceId`: service identifier
+- `monitorId`: monitor identifier under `serviceId`
+- `runId`: manual run identifier
+- `incidentId`: incident identifier
+- `channelId`: notification channel identifier
+- `policyId`: escalation policy identifier
 
 ## Example flow
 
-1. Run `Create Monitor`
-2. Run `List Monitors`
-3. Run `Get Monitor`
-4. Run `Get Monitor Status`
-5. Run `List Monitor Runs`
-6. Run `Run Monitor`
-7. Run `Update Monitor`
-8. Run `Disable Monitor`
-9. Run `Enable Monitor`
-10. Run `List Incidents`
-11. Run `Get Incident`
-12. Run `List Monitor Incidents`
-13. Run `Acknowledge Incident`
-14. Run `Resolve Incident`
-15. Run `Get Scheduler Config`
-16. Run `Update Scheduler Config`
-17. Run `Get Monitor Audit`
+1. Create or list a service.
+2. Create a monitor under `serviceId`.
+3. Read, run, update, disable, or enable the monitor.
+4. Inspect monitor and service incidents/audit.
+5. Test channel and escalation policy operations separately.
+
+Create local environment file from `environments/development.example.yml`; never commit deployed URLs or credentials.

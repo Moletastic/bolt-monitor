@@ -1,0 +1,14 @@
+info:
+  name: Health Check
+  type: http
+  seq: 1
+  tags:
+    - domain:health
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/health"
+docs: |-
+  Purpose: Check API availability.
+  Setup: Select an environment with `apiUrl`.
+  Expected result: Returns a successful health response.

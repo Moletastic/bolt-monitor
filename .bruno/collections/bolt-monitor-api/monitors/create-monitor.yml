@@ -1,0 +1,21 @@
+info:
+  name: Create Service Monitor
+  type: http
+  seq: 20
+  tags:
+    - domain:monitors
+    - operation:create
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"name":"Homepage","type":"http","intervalSeconds":60,"enabled":true,"http":{"target":"https://example.com","method":"GET","timeoutMs":5000,"expectedStatusCodes":[200]}}
+docs: |-
+  Purpose: Create an HTTP monitor under a service.
+  Setup: Set `serviceId` to an existing service.
+  Expected result: Returns the created monitor and `monitorId`.

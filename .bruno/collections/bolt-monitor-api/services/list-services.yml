@@ -1,0 +1,14 @@
+info:
+  name: List Services
+  type: http
+  seq: 15
+  tags:
+    - domain:services
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/services"
+docs: |-
+  Purpose: List services and their rollup state.
+  Setup: Select an environment with `apiUrl`.
+  Expected result: Returns service collection.

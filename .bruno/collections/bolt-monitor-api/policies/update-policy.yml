@@ -1,0 +1,21 @@
+info:
+  name: Update Escalation Policy
+  type: http
+  seq: 12
+  tags:
+    - domain:policies
+    - operation:update
+http:
+  method: PUT
+  url: "{{apiUrl}}/api/v1/escalation-policies/{{policyId}}"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"name":"Primary policy updated","businessHoursPath":{"steps":[{"channelId":"{{channelId}}","delayMinutes":0}]},"offHoursPath":{"steps":[{"channelId":"{{channelId}}","delayMinutes":0}]}}
+docs: |-
+  Purpose: Update an escalation policy.
+  Setup: Set `policyId` and `channelId` to existing resources.
+  Expected result: Returns the updated policy.

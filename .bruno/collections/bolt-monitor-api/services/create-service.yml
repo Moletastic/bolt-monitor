@@ -1,0 +1,21 @@
+info:
+  name: Create Service
+  type: http
+  seq: 14
+  tags:
+    - domain:services
+    - operation:create
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services"
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {"name":"Checkout","description":"Checkout monitoring service","serviceCategory":"web"}
+docs: |-
+  Purpose: Create a service.
+  Setup: Provide a unique service name.
+  Expected result: Returns the created service and `serviceId`.

@@ -1,0 +1,14 @@
+info:
+  name: Search Resources
+  type: http
+  seq: 2
+  tags:
+    - domain:search
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/search?q=service"
+docs: |-
+  Purpose: Search operator-visible resources.
+  Setup: Use a query of at least the configured minimum length.
+  Expected result: Returns matching resources.

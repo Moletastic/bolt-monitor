@@ -1,0 +1,14 @@
+info:
+  name: Resolve Incident
+  type: http
+  seq: 38
+  tags:
+    - domain:incidents
+    - operation:resolve
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}/resolve"
+docs: |-
+  Purpose: Resolve an actionable incident.
+  Setup: Set `incidentId` to an acknowledged or open incident.
+  Expected result: Returns the resolved incident.

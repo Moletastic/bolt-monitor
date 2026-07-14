@@ -1,0 +1,14 @@
+info:
+  name: List Monitor Runs
+  type: http
+  seq: 26
+  tags:
+    - domain:monitors
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/runs"
+docs: |-
+  Purpose: List monitor execution history.
+  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Expected result: Returns run history.
