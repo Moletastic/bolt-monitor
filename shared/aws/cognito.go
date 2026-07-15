@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
+	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 )
 
 // CognitoIdentityProviderAPI keeps credentialed administration behind a testable facade.
@@ -22,6 +23,18 @@ type CognitoAdminCreateUserInput = cognitoidentityprovider.AdminCreateUserInput
 type CognitoAdminCreateUserOutput = cognitoidentityprovider.AdminCreateUserOutput
 type CognitoAdminResetUserPasswordInput = cognitoidentityprovider.AdminResetUserPasswordInput
 type CognitoAdminResetUserPasswordOutput = cognitoidentityprovider.AdminResetUserPasswordOutput
+type CognitoUser = types.UserType
+type CognitoAttribute = types.AttributeType
+type CognitoUserStatus = types.UserStatusType
+type CognitoMessageAction = types.MessageActionType
+type CognitoDeliveryMedium = types.DeliveryMediumType
+
+const (
+	CognitoUserStatusForceChangePassword CognitoUserStatus     = types.UserStatusTypeForceChangePassword
+	CognitoMessageActionSuppress         CognitoMessageAction  = types.MessageActionTypeSuppress
+	CognitoMessageActionResend           CognitoMessageAction  = types.MessageActionTypeResend
+	CognitoDeliveryMediumEmail           CognitoDeliveryMedium = types.DeliveryMediumTypeEmail
+)
 
 type cognitoIdentityProvider struct {
 	client *cognitoidentityprovider.Client
