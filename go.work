@@ -6,6 +6,7 @@ use (
 	./services/escalation-runtime
 	./services/monitor-api
 	./shared/api/response
+	./shared/auth
 	./shared/aws
 	./shared/checkexecution
 	./shared/dynamodb

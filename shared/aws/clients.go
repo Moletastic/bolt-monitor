@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -26,6 +27,24 @@ func NewDynamoDBAPI(ctx context.Context) (DynamoDBAPI, error) {
 		return nil, err
 	}
 	return NewDynamoDB(client), nil
+}
+
+// NewCognitoIdentityProviderClient returns a Cognito client configured from the default AWS config.
+func NewCognitoIdentityProviderClient(ctx context.Context) (*cognitoidentityprovider.Client, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+	return cognitoidentityprovider.NewFromConfig(cfg), nil
+}
+
+// NewCognitoIdentityProviderAPI returns a credentialed Cognito administration facade.
+func NewCognitoIdentityProviderAPI(ctx context.Context) (CognitoIdentityProviderAPI, error) {
+	client, err := NewCognitoIdentityProviderClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewCognitoIdentityProvider(client), nil
 }
 
 // NewEventBridgeClient returns an EventBridge client configured from the default AWS config.

@@ -32,6 +32,8 @@ export const ApiErrorCode = {
   PolicyReferenced: 'POLICY_REFERENCED',
   ChannelNotFound: 'CHANNEL_NOT_FOUND',
   NotificationDeliveryFailed: 'NOTIFICATION_DELIVERY_FAILED',
+  AuthenticationRequired: 'AUTHENTICATION_REQUIRED',
+  AuthorizationDenied: 'AUTHORIZATION_DENIED',
   Internal: 'INTERNAL',
 } as const
 
@@ -128,6 +130,8 @@ const HUMANIZED: Record<ApiErrorCode, string> = {
   POLICY_REFERENCED: 'The escalation policy is still referenced by a service.',
   CHANNEL_NOT_FOUND: 'That notification channel does not exist.',
   NOTIFICATION_DELIVERY_FAILED: 'The test notification could not be delivered.',
+  AUTHENTICATION_REQUIRED: 'Sign in is required to continue.',
+  AUTHORIZATION_DENIED: 'Your operator access is not authorized.',
   INTERNAL: 'The server hit an unexpected error.',
 }
 
