@@ -79,9 +79,12 @@ jobs:
 
       - name: Generate SST types
         run: pnpm --dir infra run install:providers
+        env:
+          SST_TARGET_CONFIG: deployment-target.example.json
+          SST_STAGE: staging
 
       - name: Run infrastructure release gates
-        run: make format-infra-check check-infra
+        run: make format-infra-check check-infra test-infra
 
   api-contract:
     name: API Contract
