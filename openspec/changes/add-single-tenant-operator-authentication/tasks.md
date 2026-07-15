@@ -36,8 +36,8 @@ These sections are reviewable internal implementation milestones. Completing or 
 
 ## 5. Dashboard Auth Storage And Provider Adapters
 
-- [ ] 5.1 Add server-only, provider-neutral TypeScript contracts and discriminated results for sign-in challenges, password recovery, TOTP, token refresh/revocation, auth transactions, sessions, and memberships, with Cognito as the sole adapter.
-- [ ] 5.2 Implement Cognito I/O adapters under `lib/io/**` for password sign-in, `NEW_PASSWORD_REQUIRED`, TOTP association/verification/challenge, forgot/confirm password, refresh rotation, and revocation without exposing raw provider errors.
+- [x] 5.1 Add server-only, provider-neutral TypeScript contracts and discriminated results for sign-in challenges, password recovery, TOTP, token refresh/revocation, auth transactions, sessions, and memberships, with Cognito as the sole adapter.
+- [x] 5.2 Implement Cognito I/O adapters under `lib/io/**` for password sign-in, `NEW_PASSWORD_REQUIRED`, TOTP association/verification/challenge, forgot/confirm password, refresh rotation, and revocation without exposing raw provider errors.
 - [ ] 5.3 Implement `AuthTable` auth-transaction storage using 256-bit opaque references, hashed DynamoDB keys, AES-256-GCM encrypted challenge state bound to application/stage/record/active-generation context, flow/attempt constraints, 10-minute explicit expiry, TTL cleanup, and conditional single use.
 - [ ] 5.4 Implement `AuthTable` dashboard-session creation and lookup using 256-bit opaque IDs, `__Host-bolt-session` attributes, SHA-256 DynamoDB lookup keys, context-bound AES-256-GCM encrypted token bundles, 12-hour explicit expiry, TTL-only cleanup, and the sole active key generation.
 - [ ] 5.5 Implement conditional version/lease refresh coordination, winner token rotation, bounded loser rereads, stale-writer rejection, expired-lease takeover, and terminal-refresh session invalidation.
