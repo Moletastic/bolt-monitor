@@ -12,6 +12,16 @@ test('extracts SST method and path declarations', () => {
   ]);
 });
 
+test('extracts shared protected v1 route declarations', () => {
+  assert.deepEqual(
+    extractBootstrapRoutes("const protectedV1Routes = [\n  'GET /api/v1/items',\n  'POST /api/v1/items',\n  ]"),
+    [
+      { method: 'GET', path: '/api/v1/items' },
+      { method: 'POST', path: '/api/v1/items' },
+    ]
+  );
+});
+
 test('reports missing, stale, and metadata violations', () => {
   const result = validate({
     bootstrapSource: "api.route('GET /api/health', handler)",

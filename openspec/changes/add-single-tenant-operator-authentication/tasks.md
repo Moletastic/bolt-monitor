@@ -18,8 +18,8 @@ These sections are reviewable internal implementation milestones. Completing or 
 
 ## 3. API Gateway And Go Authorization
 
-- [ ] 3.1 Create the API Gateway JWT authorizer for the Cognito issuer and both approved app clients, require `aws.cognito.signin.user.admin` through a protected-v1 route helper, and leave `GET /api/health` public without authorizer or scope.
-- [ ] 3.2 Add a Bruno/SST route guard test that fails when any `/api/v1/**` route lacks the shared JWT authorizer or required scope, or when `/api/health` requires either.
+- [x] 3.1 Create the API Gateway JWT authorizer for the Cognito issuer and both approved app clients, require `aws.cognito.signin.user.admin` through a protected-v1 route helper, and leave `GET /api/health` public without authorizer or scope.
+- [x] 3.2 Add a Bruno/SST route guard test that fails when any `/api/v1/**` route lacks the shared JWT authorizer or required scope, or when `/api/health` requires either.
 - [ ] 3.3 Implement the Cognito API Gateway claim adapter behind a Go `PrincipalResolver`, including explicit `token_use=access`, approved `client_id`, non-empty `sub`, normalized non-negative integer `auth_time`, diagnostic-only `iat`, and fail-closed claim validation.
 - [ ] 3.4 Implement authoritative `AuthTable` membership lookup with `ConsistentRead=true`; validate immutable IDs, `DEFAULT`/`ACTIVE`/`ADMIN`, version/timestamps, and `auth_time > AuthValidAfter`, denying ceremonies at or before the boundary before normalizing a principal.
 - [ ] 3.5 Resolve and authorize the principal once before monitor route dispatch, replace constructor-injected request tenant use with `principal.TenantID`, and prevent request-controlled tenant overrides.

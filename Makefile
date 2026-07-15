@@ -4,6 +4,7 @@
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra test-infra \
 	check-bruno check-api-contract test-api-contract check-sst-target test-sst-target \
+	check-auth-routes \
 	format-dashboard format-dashboard-check format-dashboard-files format-infra format-infra-check format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
@@ -64,6 +65,9 @@ test-infra:
 
 check-bruno:
 	node scripts/check-bruno.mjs
+
+check-auth-routes:
+	node scripts/check-auth-routes.mjs
 
 test-api-contract:
 	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/rotate-auth-key.test.mjs
