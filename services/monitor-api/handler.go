@@ -81,20 +81,22 @@ type monitorRepository interface {
 }
 
 type monitorHandler struct {
-	repo     monitorRepository
-	tenantID string
-	now      func() time.Time
-	senders  notifications.SenderRegistry
+	repo               monitorRepository
+	principalResolver  PrincipalResolver
+	membershipResolver MembershipResolver
+	tenantID           string
+	now                func() time.Time
+	senders            notifications.SenderRegistry
 }
 
-func newMonitorHandler(repo monitorRepository, args ...any) monitorHandler {
-	tenantID := ""
-	for _, arg := range args {
-		if value, ok := arg.(string); ok {
-			tenantID = value
-		}
+func newAuthorizedMonitorHandler(repo monitorRepository, principalResolver PrincipalResolver, membershipResolver MembershipResolver) monitorHandler {
+	return monitorHandler{
+		repo:               repo,
+		principalResolver:  principalResolver,
+		membershipResolver: membershipResolver,
+		now:                time.Now,
+		senders:            defaultNotificationSenderRegistry(),
 	}
-	return monitorHandler{repo: repo, tenantID: tenantID, now: time.Now, senders: defaultNotificationSenderRegistry()}
 }
 
 func defaultNotificationSenderRegistry() notifications.SenderRegistry {
@@ -108,6 +110,20 @@ func defaultNotificationSenderRegistry() notifications.SenderRegistry {
 }
 
 func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if h.principalResolver == nil || h.membershipResolver == nil {
+		return respondAPIGateway(authenticationRequired())
+	}
+	identity, err := h.principalResolver.Resolve(ctx, request)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	principal, err := h.membershipResolver.Resolve(ctx, identity)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+
+	// All domain operations use the tenant from the per-request authorized principal.
+	h.tenantID = string(principal.TenantID)
 	path := request.RawPath
 	method := request.RequestContext.HTTP.Method
 	serviceID := strings.TrimSpace(request.PathParameters["serviceId"])

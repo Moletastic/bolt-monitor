@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"bolt-monitor/shared/auth"
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/dynamodbrecord"
@@ -37,6 +38,23 @@ type fakeMonitorRepository struct {
 	audit            map[string][]auditEventView
 	scheduler        dynamodbrecord.SchedulerConfigRecord
 	channelTestAudit []channelTestAuditRecord
+}
+
+type fixedPrincipalResolver struct{}
+
+func (fixedPrincipalResolver) Resolve(_ context.Context, _ events.APIGatewayV2HTTPRequest) (auth.AuthenticatedIdentity, error) {
+	return auth.AuthenticatedIdentity{Subject: "test-operator", AuthTime: 1}, nil
+}
+
+type fixedMembershipResolver struct{}
+
+func (fixedMembershipResolver) Resolve(_ context.Context, _ auth.AuthenticatedIdentity) (auth.Principal, error) {
+	return auth.Principal{Subject: "test-operator", TenantID: auth.DefaultTenantID, Role: auth.RoleAdmin}, nil
+}
+
+// newMonitorHandler preserves legacy domain tests while production uses the real resolvers.
+func newMonitorHandler(repo monitorRepository, _ ...any) monitorHandler {
+	return newAuthorizedMonitorHandler(repo, fixedPrincipalResolver{}, fixedMembershipResolver{})
 }
 
 type channelTestAuditRecord struct {

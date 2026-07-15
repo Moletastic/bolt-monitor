@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/lambda"
 
@@ -18,7 +19,9 @@ func main() {
 	}
 
 	repo := newDynamoMonitorRepository(dynamoClient, os.Getenv("TABLE_NAME"))
-	handler := newMonitorHandler(repo, defaultTenantID)
+	principalResolver := newCognitoPrincipalResolver(strings.Split(os.Getenv("COGNITO_CLIENT_IDS"), ","))
+	membershipResolver := newAuthTableMembershipResolver(dynamoClient, os.Getenv("AUTH_TABLE_NAME"))
+	handler := newAuthorizedMonitorHandler(repo, principalResolver, membershipResolver)
 
 	lambda.Start(handler.handleRequest)
 }
