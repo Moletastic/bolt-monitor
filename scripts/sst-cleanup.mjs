@@ -28,6 +28,16 @@ export function stateInventory(target, environment = process.env, execute = exec
   }
 }
 
+export function stageStateIsDeployed(target, environment = process.env, execute = execFileSync) {
+  const output = execute('pnpm', ['--dir', 'infra', 'exec', 'sst', 'state', 'list'], {
+    encoding: 'utf8',
+    env: environment,
+  });
+  if (typeof output !== 'string') return false;
+  const stageLine = output.split('\n').find((line) => line.trim().startsWith(target.stage));
+  return stageLine !== undefined && !stageLine.includes('(not deployed)');
+}
+
 function aws(environment, args) {
   return execFileSync('aws', args, { encoding: 'utf8', env: environment }).trim();
 }
@@ -53,9 +63,17 @@ export function cleanupEphemeral(target, environment = process.env, execute = ex
     removeError = error;
   }
   const residuals = residualInventory(target, environment, query);
-  if (removeError !== undefined || residuals.length > 0) {
+  let stateError;
+  let stateDeployed = true;
+  try {
+    stateDeployed = stageStateIsDeployed(target, environment, execute);
+  } catch (error) {
+    stateError = error;
+  }
+  if (removeError !== undefined || residuals.length > 0 || stateDeployed || stateError !== undefined) {
     const original = removeError instanceof Error ? removeError.message : 'none';
-    throw new Error(`ephemeral cleanup failed; original=${original}; residuals=${residuals.join(',') || 'none'}`);
+    const state = stateError instanceof Error ? stateError.message : stateDeployed ? 'stage remains deployed' : 'none';
+    throw new Error(`ephemeral cleanup failed; original=${original}; residuals=${residuals.join(',') || 'none'}; state=${state}`);
   }
   return { residuals, stateResources, coveredResourceKinds };
 }

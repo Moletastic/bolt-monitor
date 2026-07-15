@@ -28,7 +28,7 @@
 - [x] 4.1 Configure every ephemeral resource with no retain-on-delete and no deletion protection while preserving bounded native item TTL, message retention, log retention, and expiration controls where applicable.
 - [x] 4.2 Implement an idempotent cleanup entrypoint around the pinned SST removal path that handles success, failure, and cancellation and does not invoke persistent retirement behavior.
 - [x] 4.3 Verify pinned SST `4.14.1` state/output/removal behavior and implement bounded residual discovery using stack state, deterministic identifiers, and ownership tags rather than broad prefix-only deletion.
-- [ ] 4.4 Make residual verification cover Cognito user pools, DynamoDB tables, SSM parameters and SST Secrets, EventBridge schedules, SQS queues, S3 buckets, functions, APIs, dashboard resources, log groups, subscriptions, and SST-managed supporting resources.
+- [x] 4.4 Make residual verification cover Cognito user pools, DynamoDB tables, SSM parameters and SST Secrets, EventBridge schedules, SQS queues, S3 buckets, functions, APIs, dashboard resources, log groups, subscriptions, and SST-managed supporting resources.
 - [x] 4.5 Report cleanup failures and non-secret orphan identifiers without hiding the original workflow result, and support safe idempotent retry by exact stage ownership.
 - [x] 4.6 Add fixture tests for interrupted removal, non-empty or versioned buckets, partial provider failure, missing state, foreign similarly named resources, repeated cleanup, and zero-residual success.
 
