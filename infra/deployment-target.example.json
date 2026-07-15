@@ -8,6 +8,7 @@
       "accountId": "123456789012",
       "region": "us-east-1",
       "credentialSource": "AWS profile bolt-monitor",
+      "dashboardOrigin": "https://staging.example.com",
       "approved": true
     },
     {
@@ -18,6 +19,7 @@
       "accountId": "123456789012",
       "region": "us-east-1",
       "credentialSource": "AWS profile bolt-monitor",
+      "dashboardOrigin": "https://dev-jane.example.com",
       "disposable": true,
       "expiresAt": "2026-07-16T00:00:00Z"
     }

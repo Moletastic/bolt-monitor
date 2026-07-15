@@ -11,6 +11,7 @@ export interface DeploymentTarget {
   accountId: string
   region: string
   credentialSource: string
+  dashboardOrigin: string
   approved?: boolean
   disposable?: boolean
   expiresAt?: string
@@ -57,6 +58,7 @@ function parseTarget(value: unknown): DeploymentTarget {
     accountId: requireText(target.accountId, 'accountId'),
     region: requireText(target.region, 'region'),
     credentialSource: requireText(target.credentialSource, 'credentialSource'),
+    dashboardOrigin: requireText(target.dashboardOrigin, 'dashboardOrigin'),
     ...(typeof target.approved === 'boolean' ? { approved: target.approved } : {}),
     ...(typeof target.disposable === 'boolean' ? { disposable: target.disposable } : {}),
     ...(typeof target.expiresAt === 'string' ? { expiresAt: target.expiresAt } : {}),
@@ -71,6 +73,21 @@ export function validateDeploymentTarget(
   requireText(target.owner, 'owner')
   requireText(target.service, 'service')
   requireText(target.credentialSource, 'credentialSource')
+  const dashboardOrigin = requireText(target.dashboardOrigin, 'dashboardOrigin')
+  let dashboardURL
+  try {
+    dashboardURL = new URL(dashboardOrigin)
+  } catch {
+    throw new Error('deployment target dashboardOrigin must be an absolute URL')
+  }
+  if (
+    dashboardURL.protocol !== 'https:' ||
+    dashboardURL.pathname !== '/' ||
+    dashboardURL.search ||
+    dashboardURL.hash
+  ) {
+    throw new Error('deployment target dashboardOrigin must be an HTTPS origin without a path')
+  }
   if (!/^\d{12}$/.test(target.accountId)) {
     throw new Error('deployment target accountId must be a 12-digit AWS account ID')
   }
@@ -167,6 +184,7 @@ export function confirmationFor(target: DeploymentTarget, action: string) {
         target.accountId,
         target.region,
         target.credentialSource,
+        target.dashboardOrigin,
       ].join(':')
     )
     .digest('hex')

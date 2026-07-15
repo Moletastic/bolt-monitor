@@ -9,6 +9,7 @@ const base: Omit<DeploymentTarget, 'lifecycle'> = {
   accountId: '123456789012',
   region: 'us-east-1',
   credentialSource: 'AWS profile bolt-monitor',
+  dashboardOrigin: 'https://staging.example.com',
 }
 
 test('persistent policy retains only durable resources and protects stack', () => {

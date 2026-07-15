@@ -17,6 +17,7 @@ const persistent: DeploymentTarget = {
   accountId: '123456789012',
   region: 'us-east-1',
   credentialSource: 'AWS profile bolt-monitor',
+  dashboardOrigin: 'https://staging.example.com',
   approved: true,
 }
 
@@ -28,6 +29,7 @@ const ephemeral: DeploymentTarget = {
   accountId: '123456789012',
   region: 'us-east-1',
   credentialSource: 'AWS profile bolt-monitor',
+  dashboardOrigin: 'https://dev-jane.example.com',
   disposable: true,
   expiresAt: '2099-01-01T00:00:00Z',
 }
@@ -65,6 +67,17 @@ test('rejects incomplete target identity', () => {
   assert.throws(
     () => validateDeploymentTarget({ ...persistent, region: '' }, ['staging']),
     /region/
+  )
+  assert.throws(
+    () => validateDeploymentTarget({ ...persistent, dashboardOrigin: '' }, ['staging']),
+    /dashboardOrigin/
+  )
+  assert.throws(
+    () =>
+      validateDeploymentTarget({ ...persistent, dashboardOrigin: 'http://staging.example.com' }, [
+        'staging',
+      ]),
+    /HTTPS origin/
   )
 })
 
