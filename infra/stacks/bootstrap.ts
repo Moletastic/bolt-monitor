@@ -260,8 +260,16 @@ export function createBootstrapStack(target: DeploymentTarget) {
     runtime: 'go' as const,
     handler: '../services/monitor-api',
     link: [table],
+    permissions: [
+      {
+        actions: ['dynamodb:GetItem'],
+        resources: [authTable.arn],
+      },
+    ],
     environment: {
       TABLE_NAME: table.name,
+      AUTH_TABLE_NAME: authTable.name,
+      COGNITO_CLIENT_IDS: $interpolate`${dashboardUserPoolClient.id},${directOperatorUserPoolClient.id}`,
     },
   }
 
@@ -325,7 +333,40 @@ export function createBootstrapStack(target: DeploymentTarget) {
       environment: {
         NEXT_PUBLIC_MONITOR_API_BASE_URL: api.url,
         DASHBOARD_ORIGIN: target.dashboardOrigin,
+        AUTH_STAGE: target.stage,
+        AUTH_TABLE_NAME: authTable.name,
+        COGNITO_USER_POOL_ID: operatorUserPool.id,
+        COGNITO_DASHBOARD_CLIENT_ID: dashboardUserPoolClient.id,
+        COGNITO_DASHBOARD_CLIENT_SECRET: dashboardUserPoolClient.clientSecret,
+        AUTH_ENCRYPTION_KEY_PARAMETER_NAME: authEncryptionKey.name,
       },
+      permissions: [
+        {
+          actions: [
+            'dynamodb:DeleteItem',
+            'dynamodb:GetItem',
+            'dynamodb:PutItem',
+            'dynamodb:UpdateItem',
+          ],
+          resources: [authTable.arn],
+        },
+        {
+          actions: ['ssm:GetParameter'],
+          resources: [authEncryptionKey.arn],
+        },
+        {
+          actions: [
+            'cognito-idp:AssociateSoftwareToken',
+            'cognito-idp:ConfirmForgotPassword',
+            'cognito-idp:ForgotPassword',
+            'cognito-idp:InitiateAuth',
+            'cognito-idp:RespondToAuthChallenge',
+            'cognito-idp:RevokeToken',
+            'cognito-idp:VerifySoftwareToken',
+          ],
+          resources: [operatorUserPool.arn],
+        },
+      ],
     },
     disposableOptions
   )
@@ -336,8 +377,6 @@ export function createBootstrapStack(target: DeploymentTarget) {
     appTableName: table.name,
     authTableName: authTable.name,
     operatorUserPoolId: operatorUserPool.id,
-    dashboardUserPoolClientId: dashboardUserPoolClient.id,
-    directOperatorUserPoolClientId: directOperatorUserPoolClient.id,
     authEncryptionKeyParameterName: authEncryptionKey.name,
     bootstrapBucket: bootstrapBucket.name,
     notificationQueueUrl: notificationQueue.url,
