@@ -52,6 +52,19 @@ initially exceeded the command time limit while CloudFront tore down; an exact
 stage retry after SST unlock completed successfully. Final ownership-tag
 inventory was zero and SST reported no resources left to remove.
 
+Persistent staging was deployed in the same account and region. The existing
+`bolt-monitor-staging-AppTableTable-coumsncm` physical table name remained
+unchanged, with PITR, deletion protection, and `service`, `stage`, and `owner`
+tags verified after deploy. SST `4.14.1` has no safe preview command, so the
+workflow fails closed rather than claiming a no-replacement preview.
+
+## Credentialed Smoke
+
+Credentialed smoke selects exactly one lifecycle: a unique, disposable
+ephemeral target with verified cleanup, or declared persistent `staging` with
+no teardown. Persistent target names beginning with `smoke` are rejected even
+if configured, preventing unique retained smoke installations.
+
 ## Cost posture
 
 Persistent retained tables and future identity material deliberately incur

@@ -57,3 +57,16 @@ test('persistent deployment verification rejects missing protection and tags', (
   assert.throws(() => verifyPersistentDeployment(persistent, 'AppTable', {}, () => responses.shift()), /tag mismatch: owner/);
   assert.throws(() => verifyPersistentDeployment(persistent, 'AppTable', {}, () => JSON.stringify({ Table: { DeletionProtectionEnabled: false } })), /lacks deletion protection/);
 });
+
+test('persistent deployment verification accepts matching retained identity', () => {
+  const persistent = { ...target, lifecycle: 'persistent', stage: 'staging', owner: 'Moletastic', approved: true };
+  const responses = [
+    JSON.stringify({ Table: { TableArn: 'arn:table', DeletionProtectionEnabled: true } }),
+    JSON.stringify({ Tags: [
+      { Key: 'service', Value: 'bolt-monitor' },
+      { Key: 'stage', Value: 'staging' },
+      { Key: 'owner', Value: 'Moletastic' },
+    ] }),
+  ];
+  assert.doesNotThrow(() => verifyPersistentDeployment(persistent, 'AppTable', {}, () => responses.shift()));
+});

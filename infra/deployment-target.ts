@@ -86,6 +86,9 @@ export function validateDeploymentTarget(
   ])
 
   if (target.lifecycle === 'persistent') {
+    if (normalizedStage.startsWith('smoke')) {
+      throw new Error('persistent target cannot use a smoke stage name')
+    }
     if (
       target.approved !== true ||
       !approvedPersistentNames.map(normalizeStageName).includes(normalizedStage)
