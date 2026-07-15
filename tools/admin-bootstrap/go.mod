@@ -1,20 +1,13 @@
-module bolt-monitor/services/check-runtime
+module bolt-monitor/tools/admin-bootstrap
 
 go 1.26.0
 
 require (
+	bolt-monitor/shared/auth v0.0.0
 	bolt-monitor/shared/aws v0.0.0
-	bolt-monitor/shared/checkexecution v0.0.0
-	bolt-monitor/shared/dynamodbrecord v0.0.0
-	bolt-monitor/shared/dynamodbschema v0.0.0
-	bolt-monitor/shared/monitorconfig v0.0.0
-	bolt-monitor/shared/resultstatus v0.0.0
-	github.com/aws/aws-lambda-go v1.50.0
-	github.com/oklog/ulid/v2 v2.1.1
 )
 
 require (
-	bolt-monitor/shared/escalation v0.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.42.1 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.0 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.0 // indirect
@@ -37,21 +30,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.1 // indirect
 	github.com/aws/smithy-go v1.27.3 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
 )
 
-replace bolt-monitor/shared/checkexecution => ../../shared/checkexecution
-
-replace bolt-monitor/shared/dynamodbschema => ../../shared/dynamodbschema
-
-replace bolt-monitor/shared/dynamodbrecord => ../../shared/dynamodbrecord
+replace bolt-monitor/shared/auth => ../../shared/auth
 
 replace bolt-monitor/shared/aws => ../../shared/aws
-
-replace bolt-monitor/shared/dynamodb => ../../shared/dynamodb
-
-replace bolt-monitor/shared/escalation => ../../shared/escalation
-
-replace bolt-monitor/shared/monitorconfig => ../../shared/monitorconfig
-
-replace bolt-monitor/shared/resultstatus => ../../shared/resultstatus

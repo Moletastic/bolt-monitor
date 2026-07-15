@@ -13,13 +13,21 @@ import (
 
 type fakeAuthTableDynamoClient struct {
 	sharedaws.DynamoDBAPI
-	getItemInput  *sharedaws.DynamoDBGetItemInput
-	getItemOutput *sharedaws.DynamoDBGetItemOutput
-	getItemErr    error
+	getItemInput   *sharedaws.DynamoDBGetItemInput
+	getItemInputs  []*sharedaws.DynamoDBGetItemInput
+	getItemOutputs []*sharedaws.DynamoDBGetItemOutput
+	getItemOutput  *sharedaws.DynamoDBGetItemOutput
+	getItemErr     error
 }
 
 func (f *fakeAuthTableDynamoClient) GetItem(_ context.Context, input *sharedaws.DynamoDBGetItemInput) (*sharedaws.DynamoDBGetItemOutput, error) {
 	f.getItemInput = input
+	f.getItemInputs = append(f.getItemInputs, input)
+	if len(f.getItemOutputs) > 0 {
+		output := f.getItemOutputs[0]
+		f.getItemOutputs = f.getItemOutputs[1:]
+		return output, f.getItemErr
+	}
 	return f.getItemOutput, f.getItemErr
 }
 
@@ -79,6 +87,50 @@ func TestAuthTableMembershipResolverDeniesInvalidAuthorityAndRevokedCeremonies(t
 			_, err := newAuthTableMembershipResolver(client, "auth-table").Resolve(context.Background(), identity)
 			assertAuthorizationDenied(t, err)
 		})
+	}
+}
+
+func TestAuthTableMembershipResolverDoesNotFallBackWhenMembershipIsAbsent(t *testing.T) {
+	client := &fakeAuthTableDynamoClient{getItemOutput: &sharedaws.DynamoDBGetItemOutput{}}
+	resolver := newAuthTableMembershipResolver(client, "authoritative-auth-table")
+
+	_, err := resolver.Resolve(context.Background(), auth.AuthenticatedIdentity{Subject: "operator-subject", AuthTime: 11})
+	assertAuthorizationDenied(t, err)
+
+	if len(client.getItemInputs) != 1 {
+		t.Fatalf("GetItem() calls = %d, want one AuthTable lookup with no fallback", len(client.getItemInputs))
+	}
+	if got := sharedaws.ToString(client.getItemInputs[0].TableName); got != "authoritative-auth-table" {
+		t.Fatalf("GetItem() table = %q, want authoritative AuthTable only", got)
+	}
+}
+
+func TestAuthTableMembershipResolverObservesImmediateDisable(t *testing.T) {
+	active := validAuthMembershipRecord()
+	disabled := validAuthMembershipRecord()
+	disabled.Status = "DISABLED"
+	client := &fakeAuthTableDynamoClient{
+		getItemOutputs: []*sharedaws.DynamoDBGetItemOutput{
+			membershipGetItemOutput(t, active),
+			membershipGetItemOutput(t, disabled),
+		},
+	}
+	resolver := newAuthTableMembershipResolver(client, "authoritative-auth-table")
+	identity := auth.AuthenticatedIdentity{Subject: "operator-subject", AuthTime: 11}
+
+	if _, err := resolver.Resolve(context.Background(), identity); err != nil {
+		t.Fatalf("Resolve() active membership error = %v", err)
+	}
+	_, err := resolver.Resolve(context.Background(), identity)
+	assertAuthorizationDenied(t, err)
+
+	if len(client.getItemInputs) != 2 {
+		t.Fatalf("GetItem() calls = %d, want a fresh membership read for each request", len(client.getItemInputs))
+	}
+	for _, input := range client.getItemInputs {
+		if input.ConsistentRead == nil || !*input.ConsistentRead {
+			t.Fatalf("GetItem() ConsistentRead = %v, want true", input.ConsistentRead)
+		}
 	}
 }
 

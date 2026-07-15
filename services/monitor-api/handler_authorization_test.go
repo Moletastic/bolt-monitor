@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"bolt-monitor/shared/auth"
@@ -66,7 +68,7 @@ func TestHandleRequestAuthorizesOnceAndUsesPrincipalTenant(t *testing.T) {
 
 func TestHandleRequestStopsBeforeDispatchWhenPrincipalResolutionFails(t *testing.T) {
 	repo := newFakeMonitorRepository()
-	identity := &stubPrincipalResolver{err: sharederrors.New(sharederrors.CodeAuthenticationRequired, nil)}
+	identity := &stubPrincipalResolver{err: errors.New("malformed auth_time")}
 	membership := &stubMembershipResolver{}
 	handler := newAuthorizedMonitorHandler(repo, identity, membership)
 	request := events.APIGatewayV2HTTPRequest{
@@ -82,30 +84,48 @@ func TestHandleRequestStopsBeforeDispatchWhenPrincipalResolutionFails(t *testing
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
 	}
+	envelope := decodeEnvelope(t, response.Body)
+	if envelope.Reason.Code != string(sharederrors.CodeAuthenticationRequired) || envelope.Reason.Details != nil {
+		t.Fatalf("reason = %#v, want redacted AUTHENTICATION_REQUIRED", envelope.Reason)
+	}
+	if strings.Contains(response.Body, "auth_time") {
+		t.Fatalf("principal failure details leaked: %s", response.Body)
+	}
 	if membership.calls != 0 || len(repo.services) != 0 {
 		t.Fatalf("authorization failure dispatched request: membership calls=%d services=%d", membership.calls, len(repo.services))
 	}
 }
 
 func TestHandleRequestStopsBeforeDispatchWhenMembershipAuthorizationFails(t *testing.T) {
-	repo := newFakeMonitorRepository()
-	identity := &stubPrincipalResolver{identity: auth.AuthenticatedIdentity{Subject: "operator", AuthTime: 2}}
-	membership := &stubMembershipResolver{err: sharederrors.New(sharederrors.CodeAuthorizationDenied, nil)}
-	handler := newAuthorizedMonitorHandler(repo, identity, membership)
-	request := events.APIGatewayV2HTTPRequest{
-		RawPath:        "/api/v1/services",
-		Body:           `{"name":"Auth"}`,
-		RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}},
-	}
+	for _, denial := range []string{"missing", "non-active", "wrong tenant", "unsupported role", "old auth_time"} {
+		t.Run(denial, func(t *testing.T) {
+			repo := newFakeMonitorRepository()
+			identity := &stubPrincipalResolver{identity: auth.AuthenticatedIdentity{Subject: "operator", AuthTime: 2}}
+			membership := &stubMembershipResolver{err: sharederrors.New(sharederrors.CodeAuthorizationDenied, map[string]any{"membership": denial})}
+			handler := newAuthorizedMonitorHandler(repo, identity, membership)
+			request := events.APIGatewayV2HTTPRequest{
+				RawPath:        "/api/v1/services",
+				Body:           `{"name":"Auth"}`,
+				RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}},
+			}
 
-	response, err := handler.handleRequest(context.Background(), request)
-	if err != nil {
-		t.Fatalf("handleRequest() error = %v", err)
-	}
-	if response.StatusCode != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusForbidden)
-	}
-	if identity.calls != 1 || membership.calls != 1 || len(repo.services) != 0 {
-		t.Fatalf("membership denial dispatched request: principal calls=%d membership calls=%d services=%d", identity.calls, membership.calls, len(repo.services))
+			response, err := handler.handleRequest(context.Background(), request)
+			if err != nil {
+				t.Fatalf("handleRequest() error = %v", err)
+			}
+			if response.StatusCode != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusForbidden)
+			}
+			envelope := decodeEnvelope(t, response.Body)
+			if envelope.Reason.Code != string(sharederrors.CodeAuthorizationDenied) || envelope.Reason.Details != nil {
+				t.Fatalf("reason = %#v, want redacted AUTHORIZATION_DENIED", envelope.Reason)
+			}
+			if strings.Contains(response.Body, denial) {
+				t.Fatalf("membership state leaked: %s", response.Body)
+			}
+			if identity.calls != 1 || membership.calls != 1 || len(repo.services) != 0 {
+				t.Fatalf("membership denial dispatched request: principal calls=%d membership calls=%d services=%d", identity.calls, membership.calls, len(repo.services))
+			}
+		})
 	}
 }

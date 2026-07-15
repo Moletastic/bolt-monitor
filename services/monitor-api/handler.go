@@ -115,10 +115,16 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	}
 	identity, err := h.principalResolver.Resolve(ctx, request)
 	if err != nil {
-		return respondAPIGateway(err)
+		// Gateway-authenticated claims that cannot be safely normalized are always
+		// an application authentication failure, without resolver diagnostics.
+		return respondAPIGateway(authenticationRequired())
 	}
 	principal, err := h.membershipResolver.Resolve(ctx, identity)
 	if err != nil {
+		if typed, ok := sharederrors.As(err); ok && typed.Code == sharederrors.CodeAuthorizationDenied {
+			// Do not disclose why a current membership check denied this subject.
+			return respondAPIGateway(authorizationDenied())
+		}
 		return respondAPIGateway(err)
 	}
 
