@@ -6,6 +6,28 @@ export const coveredResourceKinds = [
   'dashboard resources', 'log groups', 'subscriptions', 'SST support resources',
 ];
 
+function resourceUrns(value) {
+  if (typeof value !== 'object' || value === null) return [];
+  if (Array.isArray(value)) return value.flatMap(resourceUrns);
+  const object = value;
+  const own = typeof object.urn === 'string' && (object.type?.startsWith('aws:') || object.type?.startsWith('sst:'))
+    ? [object.urn]
+    : [];
+  return [...own, ...Object.values(object).flatMap(resourceUrns)];
+}
+
+export function stateInventory(target, environment = process.env, execute = execFileSync) {
+  try {
+    const output = execute('pnpm', ['--dir', 'infra', 'exec', 'sst', 'state', 'export', '--stage', target.stage], {
+      encoding: 'utf8',
+      env: environment,
+    });
+    return [...new Set(resourceUrns(JSON.parse(output)))];
+  } catch {
+    return [];
+  }
+}
+
 function aws(environment, args) {
   return execFileSync('aws', args, { encoding: 'utf8', env: environment }).trim();
 }
@@ -23,6 +45,7 @@ export function cleanupEphemeral(target, environment = process.env, execute = ex
   if (target.lifecycle !== 'ephemeral' || target.disposable !== true) {
     throw new Error('ephemeral cleanup refuses persistent or non-disposable target');
   }
+  const stateResources = stateInventory(target, environment, execute);
   let removeError;
   try {
     execute('pnpm', ['--dir', 'infra', 'exec', 'sst', 'remove', '--stage', target.stage], { stdio: 'inherit', env: environment });
@@ -34,5 +57,5 @@ export function cleanupEphemeral(target, environment = process.env, execute = ex
     const original = removeError instanceof Error ? removeError.message : 'none';
     throw new Error(`ephemeral cleanup failed; original=${original}; residuals=${residuals.join(',') || 'none'}`);
   }
-  return { residuals, coveredResourceKinds };
+  return { residuals, stateResources, coveredResourceKinds };
 }
