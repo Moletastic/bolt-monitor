@@ -8,7 +8,7 @@ import { preflight, sstArgs, verifyPersistentDeployment } from './sst-lifecycle.
 
 const target = {
   stage: 'dev-jane-20260715', lifecycle: 'ephemeral', owner: 'jane', service: 'bolt-monitor',
-  accountId: '123456789012', region: 'us-east-1', credentialSource: 'AWS profile bolt-monitor',
+  accountId: '123456789012', region: 'us-east-1', credentialSource: 'AWS profile bolt-monitor', dashboardOrigin: 'https://dev-jane.example.com',
   disposable: true, expiresAt: '2099-01-01T00:00:00Z',
 };
 const config = join(mkdtempSync(join(tmpdir(), 'bolt-lifecycle-')), 'target.json');
