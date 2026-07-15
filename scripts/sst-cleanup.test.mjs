@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanupEphemeral, residualInventory, stateInventory } from './sst-cleanup.mjs';
+import { cleanupEphemeral, residualInventory, stageStateIsDeployed, stateInventory } from './sst-cleanup.mjs';
 
 const target = { stage: 'dev-jane', lifecycle: 'ephemeral', disposable: true, service: 'bolt-monitor' };
 const empty = () => JSON.stringify({ ResourceTagMappingList: [] });
@@ -35,4 +35,13 @@ test('cleanup supports interrupted and versioned bucket retry fixtures', () => {
   const providerFailure = () => { throw new Error('versioned bucket deletion interrupted'); };
   assert.throws(() => cleanupEphemeral(target, {}, providerFailure, empty), /versioned bucket deletion interrupted/);
   assert.deepEqual(cleanupEphemeral(target, {}, () => {}, empty).residuals, []);
+});
+
+test('state verification covers SST-managed resources after taggable resources are gone', () => {
+  assert.equal(stageStateIsDeployed(target, {}, () => 'Stages: staging\nsmoke (not deployed)\ndev-jane (not deployed)'), false);
+  assert.equal(stageStateIsDeployed(target, {}, () => 'Stages:\n  dev-jane'), true);
+  assert.throws(
+    () => cleanupEphemeral(target, {}, () => 'Stages:\n  dev-jane', empty),
+    /state=stage remains deployed/
+  );
 });
