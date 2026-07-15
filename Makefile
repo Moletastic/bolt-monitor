@@ -8,7 +8,7 @@
 	commitlint \
 	build-go build-dashboard build-all \
 	deploy-infra deploy-infra-print preview-infra remove-infra dev-infra \
-	bootstrap clean
+	bootstrap rotate-auth-key clean
 
 GO_SERVICES := api-health check-runtime escalation-runtime monitor-api
 GO_SHARED := api/response auth aws checkexecution dynamodb dynamodbrecord dynamodbschema errors escalation monitorconfig notifications resultstatus rules
@@ -16,6 +16,9 @@ GO_MODULE_DIRS := $(addprefix ./services/,$(GO_SERVICES)) $(addprefix ./shared/,
 
 bootstrap:
 	go work sync
+
+rotate-auth-key:
+	node scripts/rotate-auth-key.mjs
 
 test-go: bootstrap
 	$(foreach module,$(GO_MODULE_DIRS),go test $(module);)
@@ -63,7 +66,7 @@ check-bruno:
 	node scripts/check-bruno.mjs
 
 test-api-contract:
-	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs
+	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/rotate-auth-key.test.mjs
 
 check-api-contract: test-api-contract
 	node scripts/check-api-contract.mjs
