@@ -29,7 +29,7 @@ jobs:
             shared/**/go.mod
 
       - name: Setup golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
 
@@ -97,6 +97,10 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
+
+      - name: Enable pnpm
+        run: corepack enable
 
       - name: Run Bruno and API contract gates
         run: make check-bruno check-api-contract check-sst-target
