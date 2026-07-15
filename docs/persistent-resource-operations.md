@@ -2,9 +2,10 @@
 
 ## Re-adopt or import
 
-1. Run `make preview-infra` with explicit persistent target configuration and
-   target confirmation. Capture its non-secret account, region, stage, owner,
-   and retained inventory.
+1. Run target preflight with explicit persistent configuration and target
+   confirmation. Capture its non-secret account, region, stage, owner, and
+   retained inventory. SST `4.14.1` does not expose a safe stack preview
+   command; `sst diff` must not be used because it enters the deploy path.
 2. Verify each physical identifier and `service`, `stage`, and `owner` tags.
 3. Confirm SST `4.14.1` and Pulumi support importing/adopting that resource
    kind. If unsupported, stop. Do not permit an automated replacement.

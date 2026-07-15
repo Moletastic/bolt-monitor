@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { confirmationFor } from '../infra/deployment-target.ts';
-import { preflight } from './sst-lifecycle.mjs';
+import { preflight, sstArgs, verifyPersistentDeployment } from './sst-lifecycle.mjs';
 
 const target = {
   stage: 'dev-jane-20260715', lifecycle: 'ephemeral', owner: 'jane', service: 'bolt-monitor',
@@ -42,4 +42,18 @@ test('persistent removal needs separate destructive intent', () => {
   const env = environment({ SST_STAGE: 'staging', SST_LIFECYCLE_ACTION: 'remove', SST_TARGET_CONFIRMATION: confirmationFor(persistent, 'remove') });
   assert.throws(() => preflight(env, () => persistent.accountId), /destruction requires/);
   writeFileSync(config, JSON.stringify({ targets: [target] }));
+});
+
+test('preview fails closed because SST 4.14.1 has no safe preview command', () => {
+  assert.throws(() => sstArgs('preview', target), /no safe preview command/);
+});
+
+test('persistent deployment verification rejects missing protection and tags', () => {
+  const persistent = { ...target, lifecycle: 'persistent', stage: 'staging', approved: true };
+  const responses = [
+    JSON.stringify({ Table: { TableArn: 'arn:table', DeletionProtectionEnabled: true } }),
+    JSON.stringify({ Tags: [{ Key: 'service', Value: 'bolt-monitor' }, { Key: 'stage', Value: 'staging' }] }),
+  ];
+  assert.throws(() => verifyPersistentDeployment(persistent, 'AppTable', {}, () => responses.shift()), /tag mismatch: owner/);
+  assert.throws(() => verifyPersistentDeployment(persistent, 'AppTable', {}, () => JSON.stringify({ Table: { DeletionProtectionEnabled: false } })), /lacks deletion protection/);
 });

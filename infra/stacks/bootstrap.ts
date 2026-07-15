@@ -44,6 +44,11 @@ export function createBootstrapStack(target: DeploymentTarget) {
       },
       ttl: 'TTL',
       deletionProtection: policy.retainDurableResources,
+      transform: {
+        table: (args) => {
+          args.tags = { ...args.tags, ...policy.tags }
+        },
+      },
     },
     durableOptions
   )

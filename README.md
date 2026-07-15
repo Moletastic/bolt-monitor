@@ -188,7 +188,7 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 | Install infra deps | `cd infra && pnpm install --frozen-lockfile` |
 | Typecheck infra | `make check-infra` |
 | Start local infra | `make dev-infra` with explicit target environment |
-| Preview infra | `make preview-infra` with explicit target environment |
+| Review persistent changes | `docs/persistent-resource-operations.md` runbook; SST `4.14.1` has no safe preview command |
 | Deploy infra | `make deploy-infra` with explicit target environment |
 | Remove ephemeral infra | `make remove-infra` with explicit target environment |
 | Test Go services/shared modules | `make test-go-all` |

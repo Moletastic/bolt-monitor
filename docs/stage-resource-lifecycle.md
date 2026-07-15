@@ -39,6 +39,9 @@ covered are Cognito, DynamoDB, SSM/SST secrets, EventBridge, SQS, S3, functions,
 APIs, dashboard resources, logs, subscriptions, and SST support resources. Do
 not delete resources only because their names share a prefix.
 
+`make preview-infra` fails closed because SST `4.14.1` has no safe preview
+command. It must never map to `sst diff`; that command enters SST's deploy path.
+
 ## Cost posture
 
 Persistent retained tables and future identity material deliberately incur

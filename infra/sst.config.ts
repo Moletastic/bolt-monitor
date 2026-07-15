@@ -1,9 +1,8 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
-import { lifecyclePolicy, loadDeploymentTarget } from './deployment-target'
-
 export default $config({
-  app(input?: { stage?: string }) {
+  async app(input?: { stage?: string }) {
+    const { lifecyclePolicy, loadDeploymentTarget } = await import('./deployment-target')
     const target = loadDeploymentTarget(input?.stage)
     const policy = lifecyclePolicy(target)
     return {
@@ -14,14 +13,14 @@ export default $config({
       providers: {
         aws: {
           region: target.region,
-          defaultTags: { tags: policy.tags },
           ...(process.env.AWS_PROFILE === undefined ? {} : { profile: process.env.AWS_PROFILE }),
         },
       },
     }
   },
-  async run(input?: { stage?: string }) {
-    const target = loadDeploymentTarget(input?.stage)
+  async run() {
+    const { loadDeploymentTarget } = await import('./deployment-target')
+    const target = loadDeploymentTarget($app.stage)
     const { createBootstrapStack } = await import('./stacks/bootstrap')
     return createBootstrapStack(target)
   },
