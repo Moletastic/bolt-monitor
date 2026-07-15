@@ -42,6 +42,16 @@ not delete resources only because their names share a prefix.
 `make preview-infra` fails closed because SST `4.14.1` has no safe preview
 command. It must never map to `sst diff`; that command enters SST's deploy path.
 
+## Verification Evidence
+
+On 2026-07-15, `smoke-20260715` deployed as an explicit ephemeral target in
+AWS account `045104965990`, region `us-east-1`. The deployment included the
+application table, queues, schedule, bucket, API, dashboard, and SST-generated
+resources. AppTable deletion protection was disabled as required. Removal
+initially exceeded the command time limit while CloudFront tore down; an exact
+stage retry after SST unlock completed successfully. Final ownership-tag
+inventory was zero and SST reported no resources left to remove.
+
 ## Cost posture
 
 Persistent retained tables and future identity material deliberately incur
