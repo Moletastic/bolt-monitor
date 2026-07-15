@@ -23,6 +23,10 @@ export function extractBootstrapRoutes(source) {
   for (const match of source.matchAll(routePattern)) {
     routes.push({ method: match[1], path: match[2] });
   }
+  const protectedRoutes = source.match(/const protectedV1Routes = \[([\s\S]*?)\n  \]/)?.[1] ?? '';
+  for (const match of protectedRoutes.matchAll(/['"]([A-Z]+)\s+(\/api\/v1\/[^'"]+)['"]/g)) {
+    routes.push({ method: match[1], path: match[2] });
+  }
   return routes;
 }
 
