@@ -28,10 +28,10 @@ jobs:
             services/**/go.mod
             shared/**/go.mod
 
-      - name: Setup golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.64.8
+      - name: Install golangci-lint with configured Go
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run Go CI
         run: make ci-go lint-go build-go
