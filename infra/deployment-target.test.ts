@@ -89,6 +89,10 @@ test('rejects unapproved persistent and normalized protected ephemeral names', (
     /not approved/
   )
   assert.throws(
+    () => validateDeploymentTarget({ ...persistent, stage: 'smoke-20260715' }, ['smoke-20260715']),
+    /cannot use a smoke stage name/
+  )
+  assert.throws(
     () => validateDeploymentTarget({ ...ephemeral, stage: 'PROD-uction' }, ['staging']),
     /protected name/
   )
