@@ -4,7 +4,7 @@
 System SHALL allow an operator to request an on-demand run for an existing monitor through HTTP API.
 
 #### Scenario: Operator triggers monitor run
-- **WHEN** operator calls `POST /api/v1/monitors/{id}/run` for existing monitor
+- **WHEN** operator calls `POST /api/v1/services/{serviceId}/monitors/{monitorId}/run` for existing monitor
 - **THEN** system executes one check attempt in the system execution environment
 - **AND** the response includes a stable run identifier, trigger, timing, duration, outcome, status code when available, and error when available
 - **AND** the response does not include probe-location or region identity
@@ -32,5 +32,5 @@ System SHALL expose on-demand execution as a command endpoint rather than as mon
 
 #### Scenario: Client inspects API shape
 - **WHEN** client needs to trigger immediate execution
-- **THEN** system provides a dedicated command route at `POST /api/v1/monitors/{id}/run`
+- **THEN** system provides a dedicated command route at `POST /api/v1/services/{serviceId}/monitors/{monitorId}/run`
 - **AND** does not require client to create internal execution records directly

@@ -1,0 +1,14 @@
+info:
+  name: Archive Service
+  type: http
+  seq: 45
+  tags:
+    - domain:services
+    - operation:archive
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/archive"
+docs: |-
+  Purpose: Archive a service.
+  Setup: Set `serviceId` for an existing service.
+  Expected result: Returns archived service.

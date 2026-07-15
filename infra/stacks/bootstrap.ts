@@ -145,6 +145,8 @@ export function createBootstrapStack() {
   api.route('GET /api/v1/services/{serviceId}/escalation-policy', monitorHandler)
   api.route('PATCH /api/v1/services/{serviceId}', monitorHandler)
   api.route('DELETE /api/v1/services/{serviceId}', monitorHandler)
+  api.route('POST /api/v1/services/{serviceId}/archive', monitorHandler)
+  api.route('POST /api/v1/services/{serviceId}/reactivate', monitorHandler)
   api.route('POST /api/v1/services/{serviceId}/monitors', monitorHandler)
   api.route('GET /api/v1/services/{serviceId}/monitors', monitorHandler)
   api.route('GET /api/v1/services/{serviceId}/monitors/{monitorId}', monitorHandler)
@@ -159,8 +161,17 @@ export function createBootstrapStack() {
   api.route('GET /api/v1/services/{serviceId}/audit', monitorHandler)
   api.route('POST /api/v1/services/{serviceId}/monitors/{monitorId}/enable', monitorHandler)
   api.route('POST /api/v1/services/{serviceId}/monitors/{monitorId}/disable', monitorHandler)
+  api.route(
+    'POST /api/v1/services/{serviceId}/monitors/{monitorId}/maintenance/enable',
+    monitorHandler
+  )
+  api.route(
+    'POST /api/v1/services/{serviceId}/monitors/{monitorId}/maintenance/disable',
+    monitorHandler
+  )
   api.route('GET /api/v1/incidents', monitorHandler)
   api.route('GET /api/v1/incidents/{incidentId}', monitorHandler)
+  api.route('GET /api/v1/incidents/{incidentId}/escalation-state', monitorHandler)
   api.route('GET /api/v1/incidents/{incidentId}/activities', monitorHandler)
   api.route('POST /api/v1/incidents/{incidentId}/ack', monitorHandler)
   api.route('POST /api/v1/incidents/{incidentId}/resolve', monitorHandler)

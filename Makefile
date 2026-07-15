@@ -3,8 +3,8 @@
 	format-go-check vet-go ci-go \
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra \
-	check-bruno \
-	format-dashboard format-dashboard-files format-infra format-infra-files \
+	check-bruno check-api-contract test-api-contract check-sst-target test-sst-target \
+	format-dashboard format-dashboard-check format-dashboard-files format-infra format-infra-check format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
 	deploy-infra deploy-infra-print \
@@ -58,8 +58,23 @@ check-infra:
 check-bruno:
 	node scripts/check-bruno.mjs
 
+test-api-contract:
+	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs
+
+check-api-contract: test-api-contract
+	node scripts/check-api-contract.mjs
+
+test-sst-target:
+	node --test scripts/check-sst-target.test.mjs
+
+check-sst-target: test-sst-target
+	node scripts/check-sst-target.mjs
+
 format-dashboard:
 	cd apps/dashboard && pnpm run format
+
+format-dashboard-check:
+	cd apps/dashboard && pnpm run format:check
 
 format-dashboard-files:
 	@if [ -n "$(FILES)" ]; then \
@@ -75,6 +90,9 @@ format-dashboard-files:
 
 format-infra:
 	cd infra && pnpm run format
+
+format-infra-check:
+	cd infra && pnpm run format:check
 
 format-infra-files:
 	@if [ -n "$(FILES)" ]; then \
@@ -111,10 +129,10 @@ build-dashboard:
 build-all: build-go build-dashboard
 
 deploy-infra:
-	cd infra && AWS_PROFILE=bolt-monitor pnpm exec sst deploy --stage staging
+	cd infra && AWS_PROFILE=$${AWS_PROFILE:-bolt-monitor} pnpm exec sst deploy --stage $${SST_STAGE:-staging}
 
 deploy-infra-print:
-	cd infra && AWS_PROFILE=bolt-monitor pnpm exec sst deploy --stage staging --print-logs
+	cd infra && AWS_PROFILE=$${AWS_PROFILE:-bolt-monitor} pnpm exec sst deploy --stage $${SST_STAGE:-staging} --print-logs
 
 clean:
 	rm -f services/api-health/function.zip services/api-health/handler

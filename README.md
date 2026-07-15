@@ -130,10 +130,10 @@ SST prints resource outputs, including API URL.
 curl <api-url>/api/health
 ```
 
-Expected response:
+Expected response. Health stays public; versioned API route authentication lands in a follow-on change.
 
 ```json
-{"ok":true}
+{"status":"success","data":{"status":"ok"}}
 ```
 
 ### 6. Point dashboard at monitor API for local development
@@ -181,6 +181,8 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 | Test Go services/shared modules | `make test-go-all` |
 | Install dashboard deps | `cd apps/dashboard && pnpm install --frozen-lockfile` |
 | Run dashboard lint | `make lint-dashboard` |
+| Run API route governance | `make check-bruno && make check-api-contract` |
+| Run dashboard production build | `make build-dashboard` |
 | Start dashboard dev server | `cd apps/dashboard && pnpm run dev` |
 | Install OpenAPI docs deps | `cd openapi && npm install` |
 | Run local API docs | `cd openapi && npm run docs` |
@@ -189,8 +191,8 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 
 | Path | Purpose |
 | --- | --- |
-| `infra/` | SST app that defines API Gateway, DynamoDB, and scheduled runtime jobs |
-| `infra/stacks/bootstrap.ts` | Main infrastructure wiring point for routes, table, and cron jobs |
+| `infra/` | SST app that defines API Gateway, dashboard, DynamoDB, queues, and runtime jobs |
+| `infra/stacks/bootstrap.ts` | Main wiring for routes, dashboard, table, queues, scheduler, workers, and escalation runtime |
 | `services/api-health` | Small Go Lambda behind `GET /api/health` |
 | `services/monitor-api` | Go Lambda for monitor CRUD, status, runs, incidents, and admin config |
 | `services/check-runtime` | Go runtime worker/scheduler service for recurring execution |
@@ -210,6 +212,9 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 - SST deploys the dashboard as a standalone Next.js site and outputs `dashboardUrl` with the generated CloudFront hostname.
 - Monitor execution location is not operator-configurable in the dashboard.
 - AWS commands run through SST inherit profile behavior from `infra/sst.config.ts`.
+- Route changes update SST wiring, `services/monitor-api/routes.go`, Bruno, OpenAPI, and affected merged OpenSpec specs. Run `make check-bruno check-api-contract`.
+- Before protected-route refactoring, also run dashboard production build and portable stage/profile checks.
+- Archive completed OpenSpec changes only after implementation validation. Archival is maintenance, not runtime or release-gate verification.
 
 ## 🔐 JavaScript Dependency Install Policy
 

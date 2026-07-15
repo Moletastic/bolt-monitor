@@ -5,7 +5,7 @@
 System SHALL allow clients to read activity/timeline events for an individual incident through HTTP API. This surfaces the full state-transition history of an incident  not just its current status.
 
 #### Scenario: Operator requests incident activity timeline
-- **WHEN** operator calls `GET /api/v1/incidents/{id}/activities` for an existing incident
+- **WHEN** operator calls `GET /api/v1/incidents/{incidentId}/activities` for an existing incident
 - **THEN** system returns all activity records associated with that incident, sorted by timestamp ascending
 
 #### Scenario: Incident has no recorded activity
@@ -13,7 +13,7 @@ System SHALL allow clients to read activity/timeline events for an individual in
 - **THEN** system returns an empty activities collection with successful response
 
 #### Scenario: Requested incident does not exist
-- **WHEN** operator calls `GET /api/v1/incidents/{id}/activities` for a non-existent incident
+- **WHEN** operator calls `GET /api/v1/incidents/{incidentId}/activities` for a non-existent incident
 - **THEN** system returns a 404 response with an error message
 
 ### Requirement: Incident activity responses expose state-transition metadata

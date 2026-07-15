@@ -28,15 +28,17 @@ jobs:
             services/**/go.mod
             shared/**/go.mod
 
+      - name: Setup golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v1.64.8
+
       - name: Run Go CI
-        run: make ci-go
+        run: make ci-go lint-go build-go
 
   dashboard:
     name: Dashboard
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/dashboard
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -51,26 +53,14 @@ jobs:
         run: corepack enable
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --reporter=silent
+        run: pnpm --dir apps/dashboard install --frozen-lockfile --reporter=silent
 
-      - name: Check formatting
-        run: pnpm run format:check
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Test
-        run: pnpm run test
+      - name: Run dashboard release gates
+        run: make format-dashboard-check lint-dashboard check-dashboard test-dashboard build-dashboard
 
   infra:
     name: Infrastructure
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: infra
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -85,10 +75,25 @@ jobs:
         run: corepack enable
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --reporter=silent
+        run: pnpm --dir infra install --frozen-lockfile --reporter=silent
 
       - name: Generate SST types
-        run: pnpm run install:providers
+        run: pnpm --dir infra run install:providers
 
-      - name: Typecheck
-        run: pnpm run check
+      - name: Run infrastructure release gates
+        run: make format-infra-check check-infra
+
+  api-contract:
+    name: API Contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Run Bruno and API contract gates
+        run: make check-bruno check-api-contract check-sst-target

@@ -4,7 +4,7 @@
 System SHALL allow clients to read audit history for an individual monitor through HTTP API.
 
 #### Scenario: Operator requests monitor audit history
-- **WHEN** operator calls `GET /api/v1/monitors/{id}/audit` for existing monitor
+- **WHEN** operator calls `GET /api/v1/services/{serviceId}/monitors/{monitorId}/audit` for existing monitor
 - **THEN** system returns audit events associated with that monitor
 
 ### Requirement: Audit read responses expose stable mutation history fields
@@ -19,7 +19,7 @@ System SHALL keep audit-event creation under system business process and expose 
 
 #### Scenario: Client inspects audit API shape
 - **WHEN** client needs mutation history for monitor
-- **THEN** system provides read access at `GET /api/v1/monitors/{id}/audit`
+- **THEN** system provides read access at `GET /api/v1/services/{serviceId}/monitors/{monitorId}/audit`
 - **AND** does not expose generic create, update, or delete audit endpoints
 
 ### Requirement: Audit history tolerates empty monitor history

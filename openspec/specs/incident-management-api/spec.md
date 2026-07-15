@@ -11,22 +11,22 @@ System SHALL allow operators to read incident records through HTTP API.
 System SHALL allow operators to inspect one incident directly and inspect incidents for one monitor.
 
 #### Scenario: Operator requests incident by ID
-- **WHEN** operator calls `GET /api/v1/incidents/{id}` for existing incident
+- **WHEN** operator calls `GET /api/v1/incidents/{incidentId}` for existing incident
 - **THEN** system returns incident resource for that incident
 
 #### Scenario: Operator requests incidents for one monitor
-- **WHEN** operator calls `GET /api/v1/monitors/{id}/incidents` for existing monitor
+- **WHEN** operator calls `GET /api/v1/services/{serviceId}/monitors/{monitorId}/incidents` for existing monitor
 - **THEN** system returns incidents associated with that monitor
 
 ### Requirement: System exposes incident acknowledgement and resolution as commands
 System SHALL allow operators to acknowledge or resolve incidents through dedicated action endpoints.
 
 #### Scenario: Operator acknowledges incident
-- **WHEN** operator calls `POST /api/v1/incidents/{id}/ack` for actionable incident
+- **WHEN** operator calls `POST /api/v1/incidents/{incidentId}/ack` for actionable incident
 - **THEN** system records acknowledgement state for that incident
 
 #### Scenario: Operator resolves incident
-- **WHEN** operator calls `POST /api/v1/incidents/{id}/resolve` for actionable incident
+- **WHEN** operator calls `POST /api/v1/incidents/{incidentId}/resolve` for actionable incident
 - **THEN** system records resolution state for that incident
 
 ### Requirement: System keeps incident lifecycle ownership in business rules

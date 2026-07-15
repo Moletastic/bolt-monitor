@@ -1,0 +1,14 @@
+info:
+  name: Reactivate Service
+  type: http
+  seq: 46
+  tags:
+    - domain:services
+    - operation:reactivate
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/reactivate"
+docs: |-
+  Purpose: Reactivate an archived service.
+  Setup: Set `serviceId` for an archived service.
+  Expected result: Returns reactivated service.

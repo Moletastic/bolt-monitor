@@ -1,0 +1,14 @@
+info:
+  name: Enable Monitor Maintenance
+  type: http
+  seq: 47
+  tags:
+    - domain:monitors
+    - operation:maintenance-enable
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/maintenance/enable"
+docs: |-
+  Purpose: Start monitor maintenance.
+  Setup: Set `serviceId` and `monitorId` for an existing monitor.
+  Expected result: Returns monitor maintenance status.

@@ -1,0 +1,14 @@
+info:
+  name: Get Incident Escalation-State
+  type: http
+  seq: 49
+  tags:
+    - domain:incidents
+    - operation:read-escalation-state
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}/escalation-state"
+docs: |-
+  Purpose: Read incident escalation state.
+  Setup: Set `incidentId` from an incident list response.
+  Expected result: Returns selected incident escalation state.

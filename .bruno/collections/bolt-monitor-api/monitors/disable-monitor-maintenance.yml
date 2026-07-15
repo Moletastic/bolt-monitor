@@ -1,0 +1,14 @@
+info:
+  name: Disable Monitor Maintenance
+  type: http
+  seq: 48
+  tags:
+    - domain:monitors
+    - operation:maintenance-disable
+http:
+  method: POST
+  url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/maintenance/disable"
+docs: |-
+  Purpose: End monitor maintenance.
+  Setup: Set `serviceId` and `monitorId` for a maintained monitor.
+  Expected result: Returns monitor maintenance status.

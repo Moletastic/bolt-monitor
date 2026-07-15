@@ -23,8 +23,10 @@ func TestHandlerReturnsSuccessEnvelope(t *testing.T) {
 	}
 
 	var payload struct {
-		Status string            `json:"status"`
-		Data   map[string]string `json:"data"`
+		Status  string            `json:"status"`
+		Data    map[string]string `json:"data"`
+		Reason  json.RawMessage   `json:"reason"`
+		Message json.RawMessage   `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(response.Body), &payload); err != nil {
 		t.Fatalf("response body is not valid json: %v", err)
@@ -35,6 +37,9 @@ func TestHandlerReturnsSuccessEnvelope(t *testing.T) {
 	}
 	if payload.Data["status"] != "ok" {
 		t.Fatalf("payload.data.status = %q, want ok", payload.Data["status"])
+	}
+	if payload.Reason != nil || payload.Message != nil {
+		t.Fatalf("error-only fields must be omitted: reason=%s message=%s", payload.Reason, payload.Message)
 	}
 }
 

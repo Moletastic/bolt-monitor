@@ -7,7 +7,7 @@ export default $config({
       home: 'aws',
       providers: {
         aws: {
-          profile: 'bolt-monitor',
+          profile: process.env.AWS_PROFILE ?? 'bolt-monitor',
         },
       },
     }
