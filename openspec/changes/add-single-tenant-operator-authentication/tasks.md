@@ -31,7 +31,7 @@ These sections are reviewable internal implementation milestones. Completing or 
 
 - [x] 4.1 Implement an AWS-credentialed Go administration command and Make target that normalizes an email, uniquely discovers or creates the Cognito user with invitation delivery suppressed, resolves immutable `sub`, conditionally creates the complete `ACTIVE` `DEFAULT`/`ADMIN` `AuthTable` membership with immutable `MembershipID`, `AuthValidAfter`, version, and timestamps, then sends or resends the default Cognito invitation only when activation remains required.
 - [x] 4.2 Make bootstrap retries preserve immutable membership identity, established credentials, and non-decreasing `AuthValidAfter`; avoid duplicate users or replacement invitations while failing loudly on ambiguous identity, tenant, role, status, or record-shape conflicts.
-- [ ] 4.3 Emit secret-safe structured bootstrap outcomes including stage, acting AWS principal when available, target subject, desired authority, and correlation data without credential values.
+- [x] 4.3 Emit secret-safe structured bootstrap outcomes including stage, acting AWS principal when available, target subject, desired authority, and correlation data without credential values.
 - [ ] 4.4 Add fake-backed tests for first creation, complete retry, Cognito-only partial recovery, complete membership reconciliation, invitation-after-membership ordering, immutable-field preservation, concurrent invocation, ambiguous users, conflicting membership, and denied AWS operations.
 
 ## 5. Dashboard Auth Storage And Provider Adapters

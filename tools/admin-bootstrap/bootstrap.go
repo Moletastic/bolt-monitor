@@ -39,15 +39,15 @@ type membershipRecord struct {
 	UpdatedAt      string `dynamodbav:"UpdatedAt"`
 }
 
-func (b bootstrapper) bootstrap(ctx context.Context, email string) error {
+func (b bootstrapper) bootstrap(ctx context.Context, email string) (auth.Subject, error) {
 	normalizedEmail, err := normalizeEmail(email)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	user, err := b.findUser(ctx, normalizedEmail)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if user == nil {
 		if _, err := b.cognito.AdminCreateUser(ctx, &sharedaws.CognitoAdminCreateUserInput{
@@ -59,25 +59,25 @@ func (b bootstrapper) bootstrap(ctx context.Context, email string) error {
 		}); err != nil {
 			var usernameExists *types.UsernameExistsException
 			if !errors.As(err, &usernameExists) {
-				return fmt.Errorf("create cognito user: %w", err)
+				return "", fmt.Errorf("create cognito user: %w", err)
 			}
 		}
 		user, err = b.getUser(ctx, normalizedEmail)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 	if cognitoEmail(*user) != normalizedEmail {
-		return fmt.Errorf("conflicting cognito identity")
+		return "", fmt.Errorf("conflicting cognito identity")
 	}
 
 	subject, err := cognitoSubject(*user)
 	if err != nil {
-		return err
+		return "", err
 	}
 	membershipCreated, err := b.ensureMembership(ctx, subject)
 	if err != nil {
-		return err
+		return subject, err
 	}
 	if membershipCreated && user.UserStatus == sharedaws.CognitoUserStatusForceChangePassword {
 		if _, err := b.cognito.AdminCreateUser(ctx, &sharedaws.CognitoAdminCreateUserInput{
@@ -85,10 +85,10 @@ func (b bootstrapper) bootstrap(ctx context.Context, email string) error {
 			Username:      user.Username,
 			MessageAction: sharedaws.CognitoMessageActionResend,
 		}); err != nil {
-			return fmt.Errorf("send cognito invitation: %w", err)
+			return subject, fmt.Errorf("send cognito invitation: %w", err)
 		}
 	}
-	return nil
+	return subject, nil
 }
 
 func normalizeEmail(value string) (string, error) {

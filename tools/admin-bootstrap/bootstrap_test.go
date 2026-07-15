@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,7 +81,7 @@ func TestBootstrapCreatesMembershipBeforeSendingInvitation(t *testing.T) {
 	dynamo := &fakeDynamo{}
 	bootstrap := testBootstrapper(cognito, dynamo)
 
-	if err := bootstrap.bootstrap(context.Background(), " OPERATOR@EXAMPLE.COM "); err != nil {
+	if _, err := bootstrap.bootstrap(context.Background(), " OPERATOR@EXAMPLE.COM "); err != nil {
 		t.Fatalf("bootstrap returned error: %v", err)
 	}
 	if len(cognito.created) != 2 {
@@ -118,7 +121,7 @@ func TestBootstrapDoesNotInviteEstablishedUser(t *testing.T) {
 	cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}}
 	dynamo := &fakeDynamo{item: item}
 
-	if err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
+	if _, err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
 		t.Fatalf("bootstrap returned error: %v", err)
 	}
 	if len(cognito.created) != 0 || dynamo.put != nil {
@@ -136,7 +139,7 @@ func TestBootstrapRetryPreservesPendingCredentialsAndMembership(t *testing.T) {
 	cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}}
 	dynamo := &fakeDynamo{item: item}
 
-	if err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
+	if _, err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
 		t.Fatalf("bootstrap returned error: %v", err)
 	}
 	if len(cognito.created) != 0 || dynamo.put != nil {
@@ -152,7 +155,7 @@ func TestBootstrapRecoversConcurrentCognitoCreation(t *testing.T) {
 	}
 	dynamo := &fakeDynamo{}
 
-	if err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
+	if _, err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
 		t.Fatalf("bootstrap returned error: %v", err)
 	}
 	if len(cognito.created) != 2 || dynamo.put == nil {
@@ -176,7 +179,7 @@ func TestBootstrapRejectsConflictingMembership(t *testing.T) {
 			cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}}
 			dynamo := &fakeDynamo{item: item}
 
-			if err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err == nil {
+			if _, err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err == nil {
 				t.Fatal("bootstrap accepted conflicting membership")
 			}
 			if len(cognito.created) != 0 || dynamo.put != nil {
@@ -188,14 +191,58 @@ func TestBootstrapRejectsConflictingMembership(t *testing.T) {
 
 func TestBootstrapRejectsAmbiguousUsersAndStorageFailures(t *testing.T) {
 	user := cognitoUser("operator@example.com", "subject-1", "CONFIRMED")
-	err := testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user, user}}, &fakeDynamo{}).bootstrap(context.Background(), "operator@example.com")
+	_, err := testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user, user}}, &fakeDynamo{}).bootstrap(context.Background(), "operator@example.com")
 	if err == nil {
 		t.Fatal("bootstrap accepted ambiguous users")
 	}
 
-	err = testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user}}, &fakeDynamo{getErr: errors.New("denied")}).bootstrap(context.Background(), "operator@example.com")
+	_, err = testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user}}, &fakeDynamo{getErr: errors.New("denied")}).bootstrap(context.Background(), "operator@example.com")
 	if err == nil {
 		t.Fatal("bootstrap accepted denied membership read")
+	}
+}
+
+func TestBootstrapOutcomeIncludesRequiredSafeContext(t *testing.T) {
+	outcome := newBootstrapOutcome("staging", "arn:aws:iam::123456789012:role/operator", "subject-1", "correlation-1", nil)
+	var output bytes.Buffer
+	emitOutcomeOrFatal(&output, outcome)
+
+	var decoded bootstrapOutcome
+	if err := json.Unmarshal(output.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode outcome: %v", err)
+	}
+	if decoded.Event != auth.EventBootstrapReconciled || decoded.Outcome != "success" || decoded.Stage != "staging" || decoded.ActingAWSPrincipal != "arn:aws:iam::123456789012:role/operator" || decoded.TargetSubject != "subject-1" || decoded.Correlation.ID != "correlation-1" {
+		t.Fatalf("outcome = %+v, want structured bootstrap context", decoded)
+	}
+	if decoded.DesiredAuthority.TenantID != "DEFAULT" || decoded.DesiredAuthority.Status != "ACTIVE" || decoded.DesiredAuthority.Role != "ADMIN" {
+		t.Fatalf("desired authority = %+v, want DEFAULT ACTIVE ADMIN", decoded.DesiredAuthority)
+	}
+}
+
+func TestBootstrapOutcomeExcludesFailureAndCredentialValues(t *testing.T) {
+	secret := "AKIAIOSFODNN7EXAMPLE"
+	outcome := newBootstrapOutcome("staging", "", "subject-1", "correlation-1", errors.New(secret))
+	encoded, err := json.Marshal(outcome)
+	if err != nil {
+		t.Fatalf("marshal outcome: %v", err)
+	}
+	if strings.Contains(string(encoded), secret) {
+		t.Fatalf("outcome exposed credential-like error value: %s", encoded)
+	}
+	if strings.Contains(string(encoded), "operator@example.com") {
+		t.Fatalf("outcome exposed target email: %s", encoded)
+	}
+	if outcome.Outcome != "failure" {
+		t.Fatalf("outcome = %q, want failure", outcome.Outcome)
+	}
+}
+
+func TestNormalizeStageRejectsUnsafeValues(t *testing.T) {
+	if _, err := normalizeStage("staging"); err != nil {
+		t.Fatalf("normalize stage: %v", err)
+	}
+	if _, err := normalizeStage("secret value"); err == nil {
+		t.Fatal("normalize stage accepted unsafe value")
 	}
 }
 
