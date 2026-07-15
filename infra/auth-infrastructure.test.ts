@@ -62,3 +62,40 @@ test('auth encryption uses only a non-secret reference and no customer-managed k
   assert.doesNotMatch(stackSource, /authEncryptionKey\.(value|valueString|secretValue)/)
   assert.doesNotMatch(stackSource, /aws\.kms|kms\.Key|customer.?managed/i)
 })
+
+test('auth configuration and permissions are scoped to monitor API and dashboard server', () => {
+  const monitorHandler = stackSource.slice(
+    stackSource.indexOf('const monitorHandler'),
+    stackSource.indexOf('const protectedV1Routes')
+  )
+  const dashboard = stackSource.slice(
+    stackSource.indexOf("'Dashboard'"),
+    stackSource.indexOf('\n  return {')
+  )
+  const outputs = stackSource.slice(stackSource.indexOf('\n  return {'))
+
+  assert.match(monitorHandler, /AUTH_TABLE_NAME: authTable\.name/)
+  assert.match(
+    monitorHandler,
+    /COGNITO_CLIENT_IDS: \$interpolate`\$\{dashboardUserPoolClient\.id\},\$\{directOperatorUserPoolClient\.id\}`/
+  )
+  assert.match(monitorHandler, /actions: \['dynamodb:GetItem'\]/)
+  assert.match(monitorHandler, /resources: \[authTable\.arn\]/)
+
+  assert.match(dashboard, /DASHBOARD_ORIGIN: target\.dashboardOrigin/)
+  assert.match(dashboard, /AUTH_STAGE: target\.stage/)
+  assert.match(dashboard, /AUTH_TABLE_NAME: authTable\.name/)
+  assert.match(dashboard, /COGNITO_USER_POOL_ID: operatorUserPool\.id/)
+  assert.match(dashboard, /COGNITO_DASHBOARD_CLIENT_ID: dashboardUserPoolClient\.id/)
+  assert.match(dashboard, /COGNITO_DASHBOARD_CLIENT_SECRET: dashboardUserPoolClient\.clientSecret/)
+  assert.match(dashboard, /AUTH_ENCRYPTION_KEY_PARAMETER_NAME: authEncryptionKey\.name/)
+  assert.match(dashboard, /actions: \['ssm:GetParameter'\]/)
+  assert.doesNotMatch(dashboard, /NEXT_PUBLIC_(?:AUTH|COGNITO|DASHBOARD_ORIGIN)/)
+  assert.doesNotMatch(dashboard, /NEXT_PUBLIC_COGNITO_DASHBOARD_CLIENT_SECRET/)
+  assert.doesNotMatch(dashboard, /authEncryptionKey\.(?:value|valueString|secretValue)/)
+
+  assert.match(outputs, /authTableName: authTable\.name/)
+  assert.match(outputs, /operatorUserPoolId: operatorUserPool\.id/)
+  assert.match(outputs, /authEncryptionKeyParameterName: authEncryptionKey\.name/)
+  assert.doesNotMatch(outputs, /dashboardUserPoolClientId|directOperatorUserPoolClientId/)
+})
