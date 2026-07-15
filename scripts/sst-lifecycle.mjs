@@ -60,14 +60,14 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   const { target, summary } = preflight();
   console.log(`SST lifecycle target: ${summary}`);
   const action = process.env.SST_LIFECYCLE_ACTION;
+  const sstEnvironment = {
+    ...process.env,
+    SST_TARGET_CONFIG: resolve(process.env.SST_TARGET_CONFIG),
+  };
   if (action === 'remove' && target.lifecycle === 'ephemeral') {
-    const result = cleanupEphemeral(target);
+    const result = cleanupEphemeral(target, sstEnvironment);
     console.log(`SST cleanup verified zero residual resources across: ${result.coveredResourceKinds.join(', ')}`);
   } else {
-    const sstEnvironment = {
-      ...process.env,
-      SST_TARGET_CONFIG: resolve(process.env.SST_TARGET_CONFIG),
-    };
     execFileSync('pnpm', sstArgs(action, target), {
       stdio: 'inherit',
       env: target.lifecycle === 'persistent' && action === 'remove'
