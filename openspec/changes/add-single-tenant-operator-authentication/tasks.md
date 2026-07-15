@@ -14,7 +14,7 @@ These sections are reviewable internal implementation milestones. Completing or 
 - [x] 2.3 Provision the on-demand `AuthTable` with `PK`/`SK`, TTL on `TTL`, tags, and lifecycle-mapped PITR/protection, and encode that it is the sole authority for membership, sessions, authentication transactions, revocation epoch, and future user lifecycle while `AppTable` remains monitoring-only.
 - [x] 2.4 Define one active generation of an installation-specific 256-bit AES key through an SST Secret or bootstrap-safe secret reference, with least-privilege retrieval limited to dashboard auth code; generate and install/rotate it through a credentialed non-printing helper without persisting the value in source, scripts, shell history, files, logs, outputs, templates, or state-visible configuration, and document the transient process/CLI boundary.
 - [ ] 2.5 Link Cognito, `AuthTable`, the AES secret reference, canonical dashboard origin, approved client IDs, and stage configuration only to functions that require them; export only non-secret identifiers needed by bootstrap and recovery.
-- [ ] 2.6 Add infrastructure tests asserting Essentials, no public sign-up/managed login, default email, TOTP/refresh rotation, authoritative `AuthTable`, persistent-stage protection/PITR, ephemeral-stage clean deletion, secret grants/value non-exposure, no customer-managed KMS key, and required resource tags.
+- [x] 2.6 Add infrastructure tests asserting Essentials, no public sign-up/managed login, default email, TOTP/refresh rotation, authoritative `AuthTable`, persistent-stage protection/PITR, ephemeral-stage clean deletion, secret grants/value non-exposure, no customer-managed KMS key, and required resource tags.
 
 ## 3. API Gateway And Go Authorization
 
@@ -32,7 +32,7 @@ These sections are reviewable internal implementation milestones. Completing or 
 - [x] 4.1 Implement an AWS-credentialed Go administration command and Make target that normalizes an email, uniquely discovers or creates the Cognito user with invitation delivery suppressed, resolves immutable `sub`, conditionally creates the complete `ACTIVE` `DEFAULT`/`ADMIN` `AuthTable` membership with immutable `MembershipID`, `AuthValidAfter`, version, and timestamps, then sends or resends the default Cognito invitation only when activation remains required.
 - [x] 4.2 Make bootstrap retries preserve immutable membership identity, established credentials, and non-decreasing `AuthValidAfter`; avoid duplicate users or replacement invitations while failing loudly on ambiguous identity, tenant, role, status, or record-shape conflicts.
 - [x] 4.3 Emit secret-safe structured bootstrap outcomes including stage, acting AWS principal when available, target subject, desired authority, and correlation data without credential values.
-- [ ] 4.4 Add fake-backed tests for first creation, complete retry, Cognito-only partial recovery, complete membership reconciliation, invitation-after-membership ordering, immutable-field preservation, concurrent invocation, ambiguous users, conflicting membership, and denied AWS operations.
+- [x] 4.4 Add fake-backed tests for first creation, complete retry, Cognito-only partial recovery, complete membership reconciliation, invitation-after-membership ordering, immutable-field preservation, concurrent invocation, ambiguous users, conflicting membership, and denied AWS operations.
 
 ## 5. Dashboard Auth Storage And Provider Adapters
 

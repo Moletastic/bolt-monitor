@@ -6,18 +6,22 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"bolt-monitor/shared/auth"
 	sharedaws "bolt-monitor/shared/aws"
 	cognitotypes "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
+	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 type fakeCognito struct {
 	sharedaws.CognitoIdentityProviderAPI
+	mu         sync.Mutex
 	users      []sharedaws.CognitoUser
 	created    []*sharedaws.CognitoAdminCreateUserInput
+	events     *[]string
 	getUser    sharedaws.CognitoUser
 	listErr    error
 	createErr  error
@@ -26,6 +30,8 @@ type fakeCognito struct {
 }
 
 func (f *fakeCognito) ListUsers(_ context.Context, _ *sharedaws.CognitoListUsersInput) (*sharedaws.CognitoListUsersOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -33,7 +39,12 @@ func (f *fakeCognito) ListUsers(_ context.Context, _ *sharedaws.CognitoListUsers
 }
 
 func (f *fakeCognito) AdminCreateUser(_ context.Context, input *sharedaws.CognitoAdminCreateUserInput) (*sharedaws.CognitoAdminCreateUserOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.created = append(f.created, input)
+	if f.events != nil {
+		*f.events = append(*f.events, "cognito:"+string(input.MessageAction))
+	}
 	if len(f.createErrs) >= len(f.created) {
 		if err := f.createErrs[len(f.created)-1]; err != nil {
 			return nil, err
@@ -46,6 +57,8 @@ func (f *fakeCognito) AdminCreateUser(_ context.Context, input *sharedaws.Cognit
 }
 
 func (f *fakeCognito) AdminGetUser(_ context.Context, _ *sharedaws.CognitoAdminGetUserInput) (*sharedaws.CognitoAdminGetUserOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.getUserErr != nil {
 		return nil, f.getUserErr
 	}
@@ -54,13 +67,18 @@ func (f *fakeCognito) AdminGetUser(_ context.Context, _ *sharedaws.CognitoAdminG
 
 type fakeDynamo struct {
 	sharedaws.DynamoDBAPI
-	item   map[string]sharedaws.AttributeValue
-	put    *sharedaws.DynamoDBPutItemInput
-	getErr error
-	putErr error
+	mu      sync.Mutex
+	item    map[string]sharedaws.AttributeValue
+	put     *sharedaws.DynamoDBPutItemInput
+	events  *[]string
+	persist bool
+	getErr  error
+	putErr  error
 }
 
 func (f *fakeDynamo) GetItem(_ context.Context, _ *sharedaws.DynamoDBGetItemInput) (*sharedaws.DynamoDBGetItemOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
@@ -68,17 +86,29 @@ func (f *fakeDynamo) GetItem(_ context.Context, _ *sharedaws.DynamoDBGetItemInpu
 }
 
 func (f *fakeDynamo) PutItem(_ context.Context, input *sharedaws.DynamoDBPutItemInput) (*sharedaws.DynamoDBPutItemOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.put = input
+	if f.events != nil {
+		*f.events = append(*f.events, "dynamo:put")
+	}
 	if f.putErr != nil {
 		return nil, f.putErr
+	}
+	if f.persist && len(f.item) != 0 {
+		return nil, &ddbtypes.ConditionalCheckFailedException{}
+	}
+	if f.persist {
+		f.item = input.Item
 	}
 	return &sharedaws.DynamoDBPutItemOutput{}, nil
 }
 
-func TestBootstrapCreatesMembershipBeforeSendingInvitation(t *testing.T) {
+func TestBootstrapFirstCreationCreatesCompleteMembershipBeforeInvitation(t *testing.T) {
 	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
-	cognito := &fakeCognito{getUser: user}
-	dynamo := &fakeDynamo{}
+	events := []string{}
+	cognito := &fakeCognito{getUser: user, events: &events}
+	dynamo := &fakeDynamo{events: &events}
 	bootstrap := testBootstrapper(cognito, dynamo)
 
 	if _, err := bootstrap.bootstrap(context.Background(), " OPERATOR@EXAMPLE.COM "); err != nil {
@@ -96,6 +126,9 @@ func TestBootstrapCreatesMembershipBeforeSendingInvitation(t *testing.T) {
 	if dynamo.put == nil {
 		t.Fatal("membership was not created before invitation")
 	}
+	if got := strings.Join(events, ","); got != "cognito:SUPPRESS,dynamo:put,cognito:RESEND" {
+		t.Fatalf("operation order = %q, want suppressed creation, membership, invitation", got)
+	}
 	if got := cognito.created[1].MessageAction; got != sharedaws.CognitoMessageActionResend {
 		t.Fatalf("invitation message action = %q, want RESEND", got)
 	}
@@ -111,7 +144,7 @@ func TestBootstrapCreatesMembershipBeforeSendingInvitation(t *testing.T) {
 	}
 }
 
-func TestBootstrapDoesNotInviteEstablishedUser(t *testing.T) {
+func TestBootstrapCompleteRetryLeavesEstablishedIdentityUntouched(t *testing.T) {
 	user := cognitoUser("operator@example.com", "subject-1", "CONFIRMED")
 	record := membershipRecord{PK: "MEMBER#subject-1", SK: auth.MembershipSK, MembershipID: "MEM_existing", Subject: "subject-1", TenantID: "DEFAULT", Status: "ACTIVE", Role: "ADMIN", AuthValidAfter: 1, Version: 1, CreatedAt: "1970-01-01T00:00:01Z", UpdatedAt: "1970-01-01T00:00:01Z"}
 	item, err := sharedaws.MarshalMap(record)
@@ -129,7 +162,7 @@ func TestBootstrapDoesNotInviteEstablishedUser(t *testing.T) {
 	}
 }
 
-func TestBootstrapRetryPreservesPendingCredentialsAndMembership(t *testing.T) {
+func TestBootstrapPreservesImmutableMembershipAndPendingCredentials(t *testing.T) {
 	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
 	record := membershipRecord{PK: "MEMBER#subject-1", SK: auth.MembershipSK, MembershipID: "MEM_existing", Subject: "subject-1", TenantID: "DEFAULT", Status: "ACTIVE", Role: "ADMIN", AuthValidAfter: 200, Version: 3, CreatedAt: "1970-01-01T00:00:01Z", UpdatedAt: "1970-01-01T00:00:02Z"}
 	item, err := sharedaws.MarshalMap(record)
@@ -147,7 +180,7 @@ func TestBootstrapRetryPreservesPendingCredentialsAndMembership(t *testing.T) {
 	}
 }
 
-func TestBootstrapRecoversConcurrentCognitoCreation(t *testing.T) {
+func TestBootstrapRecoversCognitoOnlyPartialCreation(t *testing.T) {
 	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
 	cognito := &fakeCognito{
 		getUser:    user,
@@ -160,6 +193,37 @@ func TestBootstrapRecoversConcurrentCognitoCreation(t *testing.T) {
 	}
 	if len(cognito.created) != 2 || dynamo.put == nil {
 		t.Fatalf("concurrent creation did not reconcile membership and invitation: create calls=%d membershipPut=%v", len(cognito.created), dynamo.put != nil)
+	}
+}
+
+func TestBootstrapReconcilesConcurrentInvocations(t *testing.T) {
+	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
+	cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}}
+	dynamo := &fakeDynamo{persist: true}
+	bootstrap := testBootstrapper(cognito, dynamo)
+
+	var group sync.WaitGroup
+	errs := make(chan error, 2)
+	for range 2 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			_, err := bootstrap.bootstrap(context.Background(), "operator@example.com")
+			errs <- err
+		}()
+	}
+	group.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent bootstrap returned error: %v", err)
+		}
+	}
+	if len(cognito.created) != 1 || cognito.created[0].MessageAction != sharedaws.CognitoMessageActionResend {
+		t.Fatalf("invitation calls = %+v, want exactly one resend", cognito.created)
+	}
+	if dynamo.item == nil {
+		t.Fatal("concurrent bootstrap did not persist membership")
 	}
 }
 
@@ -189,16 +253,29 @@ func TestBootstrapRejectsConflictingMembership(t *testing.T) {
 	}
 }
 
-func TestBootstrapRejectsAmbiguousUsersAndStorageFailures(t *testing.T) {
+func TestBootstrapRejectsAmbiguousUsers(t *testing.T) {
 	user := cognitoUser("operator@example.com", "subject-1", "CONFIRMED")
 	_, err := testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user, user}}, &fakeDynamo{}).bootstrap(context.Background(), "operator@example.com")
 	if err == nil {
 		t.Fatal("bootstrap accepted ambiguous users")
 	}
+}
 
-	_, err = testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user}}, &fakeDynamo{getErr: errors.New("denied")}).bootstrap(context.Background(), "operator@example.com")
-	if err == nil {
-		t.Fatal("bootstrap accepted denied membership read")
+func TestBootstrapRejectsDeniedAWSOperations(t *testing.T) {
+	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
+	for name, bootstrap := range map[string]bootstrapper{
+		"list users":        testBootstrapper(&fakeCognito{listErr: errors.New("denied")}, &fakeDynamo{}),
+		"create user":       testBootstrapper(&fakeCognito{createErr: errors.New("denied")}, &fakeDynamo{}),
+		"get created user":  testBootstrapper(&fakeCognito{getUserErr: errors.New("denied")}, &fakeDynamo{}),
+		"read membership":   testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user}}, &fakeDynamo{getErr: errors.New("denied")}),
+		"create membership": testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user}}, &fakeDynamo{putErr: errors.New("denied")}),
+		"send invitation":   testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user}, createErrs: []error{errors.New("denied")}}, &fakeDynamo{}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := bootstrap.bootstrap(context.Background(), "operator@example.com"); err == nil {
+				t.Fatal("bootstrap accepted denied AWS operation")
+			}
+		})
 	}
 }
 
