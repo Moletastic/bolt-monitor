@@ -38,7 +38,7 @@ Known limitations today:
 - Single built-in tenant ID: `DEFAULT`
 - Single execution environment; regional probe selection is intentionally out of scope for now
 - Authentication, RBAC, and multi-user access are intentionally outside the current single-operator scope
-- Local and deploy flows assume AWS credentials already exist and SST uses AWS profile `bolt-monitor` by default
+- SST mutations require an explicit validated deployment target; no stage, lifecycle class, profile, account, or region is inferred
 - No production hardening claims around security, scaling policy, backup policy, or multi-region execution
 
 ## 🏗️ Architecture
@@ -77,7 +77,7 @@ EventBridge Cron
 - pnpm 10.x (pinned per package root via `packageManager`; `infra/.npmrc` and `apps/dashboard/.npmrc`)
 - Go 1.26+
 - AWS credentials configured for target account
-- AWS profile access compatible with SST config in `infra/sst.config.ts` (`bolt-monitor` by default)
+- AWS credentials for the declared target, supplied through an explicit profile or workload identity
 
 The default JavaScript workflow for `infra/` and `apps/dashboard` is `pnpm`
 with `pnpm-lock.yaml` committed. `npm install` against those roots is no
@@ -113,14 +113,26 @@ make test-go-all
 make lint-dashboard
 ```
 
-### 4. Start SST local development
+### 4. Configure and start SST local development
+
+Copy `infra/deployment-target.example.json` outside source control, replace its
+example account, region, owner, and expiry values, then declare it explicitly.
+`staging` is persistent only when approved in this file. Prefer a unique,
+developer-owned ephemeral target for local work.
 
 ```bash
-cd infra
-pnpm exec sst dev --stage staging --mode=mono
+export SST_TARGET_CONFIG="$HOME/.config/bolt-monitor/deployment-target.json"
+export SST_STAGE=dev-jane-20260715
+export AWS_PROFILE=bolt-monitor
+export SST_LIFECYCLE_ACTION=dev
+node scripts/sst-lifecycle.mjs
 ```
 
-Repo pins `sst dev --mode=mono` to avoid SST TTY multiplexer issues.
+The preflight prints non-secret target identity, then prints a target-bound
+`SST_TARGET_CONFIRMATION` value if confirmation is missing. Set that exact
+value and rerun. It rejects mismatched account/region or incomplete target
+configuration before SST mutates AWS. Persistent remove and protection changes
+also require `SST_DESTRUCTIVE_CONFIRMATION`.
 
 SST prints resource outputs, including API URL.
 
@@ -175,9 +187,10 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 | --- | --- |
 | Install infra deps | `cd infra && pnpm install --frozen-lockfile` |
 | Typecheck infra | `make check-infra` |
-| Start local infra | `cd infra && pnpm exec sst dev --stage staging --mode=mono` |
-| Deploy infra | `cd infra && pnpm exec sst deploy --stage staging` |
-| Deploy SST-hosted dashboard | `cd infra && pnpm exec sst deploy --stage staging` |
+| Start local infra | `make dev-infra` with explicit target environment |
+| Preview infra | `make preview-infra` with explicit target environment |
+| Deploy infra | `make deploy-infra` with explicit target environment |
+| Remove ephemeral infra | `make remove-infra` with explicit target environment |
 | Test Go services/shared modules | `make test-go-all` |
 | Install dashboard deps | `cd apps/dashboard && pnpm install --frozen-lockfile` |
 | Run dashboard lint | `make lint-dashboard` |
@@ -208,10 +221,10 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 - `go.work` wires local Go modules together across `services/` and `shared/`.
 - `services/monitor-api` and `services/check-runtime` both depend on DynamoDB table injection from SST.
 - Dashboard uses server-side fetches; if `NEXT_PUBLIC_MONITOR_API_BASE_URL` is unset, page rendering fails fast.
-- Use explicit stage `staging` for both local dev and deploy workflows to avoid accidental extra SST stages.
+- Declare lifecycle target explicitly for every local, preview, deploy, and remove workflow. Do not infer `staging`; use approved persistent staging only for deliberate shared validation.
 - SST deploys the dashboard as a standalone Next.js site and outputs `dashboardUrl` with the generated CloudFront hostname.
 - Monitor execution location is not operator-configurable in the dashboard.
-- AWS commands run through SST inherit profile behavior from `infra/sst.config.ts`.
+- `AWS_PROFILE` is optional but never silently defaulted. The target config records only a non-secret credential-source label.
 - Route changes update SST wiring, `services/monitor-api/routes.go`, Bruno, OpenAPI, and affected merged OpenSpec specs. Run `make check-bruno check-api-contract`.
 - Before protected-route refactoring, also run dashboard production build and portable stage/profile checks.
 - Archive completed OpenSpec changes only after implementation validation. Archival is maintenance, not runtime or release-gate verification.

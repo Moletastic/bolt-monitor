@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["sst-env.d.ts", "sst.config.ts", "stacks/**/*.ts"]
+  "include": ["sst-env.d.ts", "sst.config.ts", "stacks/**/*.ts", "deployment-target.ts"]
 }

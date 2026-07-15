@@ -10,6 +10,8 @@
     "remove": "sst remove",
     "install:providers": "sst install",
     "check": "tsc --noEmit",
+    "test": "node --test deployment-target.test.ts lifecycle-policy.test.ts",
+    "lifecycle": "node ../scripts/sst-lifecycle.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

@@ -2,12 +2,12 @@
 	test-go test-go-all test-dashboard \
 	format-go-check vet-go ci-go \
 	lint-go lint-dashboard lint-infra lint-all \
-	check-dashboard check-infra \
+	check-dashboard check-infra test-infra \
 	check-bruno check-api-contract test-api-contract check-sst-target test-sst-target \
 	format-dashboard format-dashboard-check format-dashboard-files format-infra format-infra-check format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
-	deploy-infra deploy-infra-print \
+	deploy-infra deploy-infra-print preview-infra remove-infra dev-infra \
 	bootstrap clean
 
 GO_SERVICES := api-health check-runtime escalation-runtime monitor-api
@@ -54,6 +54,10 @@ check-dashboard:
 
 check-infra:
 	cd infra && pnpm run check
+
+test-infra:
+	cd infra && pnpm run test
+	node --test scripts/sst-lifecycle.test.mjs scripts/sst-cleanup.test.mjs
 
 check-bruno:
 	node scripts/check-bruno.mjs
@@ -129,10 +133,19 @@ build-dashboard:
 build-all: build-go build-dashboard
 
 deploy-infra:
-	cd infra && AWS_PROFILE=$${AWS_PROFILE:-bolt-monitor} pnpm exec sst deploy --stage $${SST_STAGE:-staging}
+	SST_LIFECYCLE_ACTION=deploy node scripts/sst-lifecycle.mjs
 
 deploy-infra-print:
-	cd infra && AWS_PROFILE=$${AWS_PROFILE:-bolt-monitor} pnpm exec sst deploy --stage $${SST_STAGE:-staging} --print-logs
+	SST_LIFECYCLE_ACTION=deploy node scripts/sst-lifecycle.mjs
+
+preview-infra:
+	SST_LIFECYCLE_ACTION=preview node scripts/sst-lifecycle.mjs
+
+remove-infra:
+	SST_LIFECYCLE_ACTION=remove node scripts/sst-lifecycle.mjs
+
+dev-infra:
+	SST_LIFECYCLE_ACTION=dev node scripts/sst-lifecycle.mjs
 
 clean:
 	rm -f services/api-health/function.zip services/api-health/handler

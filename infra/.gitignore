@@ -4,3 +4,4 @@ sst-env.d.ts
 
 # Local environment overrides
 *.local.yml
+deployment-target.local.json

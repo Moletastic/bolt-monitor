@@ -1,0 +1,25 @@
+{
+  "targets": [
+    {
+      "stage": "staging",
+      "lifecycle": "persistent",
+      "owner": "shared-platform-team",
+      "service": "bolt-monitor",
+      "accountId": "123456789012",
+      "region": "us-east-1",
+      "credentialSource": "AWS profile bolt-monitor",
+      "approved": true
+    },
+    {
+      "stage": "dev-jane-20260715",
+      "lifecycle": "ephemeral",
+      "owner": "developer",
+      "service": "bolt-monitor",
+      "accountId": "123456789012",
+      "region": "us-east-1",
+      "credentialSource": "AWS profile bolt-monitor",
+      "disposable": true,
+      "expiresAt": "2026-07-16T00:00:00Z"
+    }
+  ]
+}
