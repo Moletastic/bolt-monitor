@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanupEphemeral, residualInventory } from './sst-cleanup.mjs';
+import { cleanupEphemeral, residualInventory, stateInventory } from './sst-cleanup.mjs';
 
 const target = { stage: 'dev-jane', lifecycle: 'ephemeral', disposable: true, service: 'bolt-monitor' };
 const empty = () => JSON.stringify({ ResourceTagMappingList: [] });
@@ -20,4 +20,19 @@ test('residual inventory does not select similarly named foreign resources', () 
   const seen = [];
   residualInventory(target, {}, (_, args) => { seen.push(args); return JSON.stringify({ ResourceTagMappingList: [] }); });
   assert.deepEqual(seen[0].slice(-2), ['Key=service,Values=bolt-monitor', 'Key=stage,Values=dev-jane']);
+});
+
+test('state inventory records non-secret logical identifiers and tolerates missing state', () => {
+  const execute = () => JSON.stringify({ deployment: { resources: [
+    { urn: 'urn:pulumi:dev::app::aws:s3/bucket:Bucket::owned', type: 'aws:s3/bucket:Bucket' },
+    { urn: 'urn:pulumi:dev::app::random:index:RandomBytes::secret', type: 'random:index:RandomBytes' },
+  ] } });
+  assert.deepEqual(stateInventory(target, {}, execute), ['urn:pulumi:dev::app::aws:s3/bucket:Bucket::owned']);
+  assert.deepEqual(stateInventory(target, {}, () => { throw new Error('state missing'); }), []);
+});
+
+test('cleanup supports interrupted and versioned bucket retry fixtures', () => {
+  const providerFailure = () => { throw new Error('versioned bucket deletion interrupted'); };
+  assert.throws(() => cleanupEphemeral(target, {}, providerFailure, empty), /versioned bucket deletion interrupted/);
+  assert.deepEqual(cleanupEphemeral(target, {}, () => {}, empty).residuals, []);
 });
