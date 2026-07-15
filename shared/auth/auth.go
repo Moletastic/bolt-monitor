@@ -45,6 +45,14 @@ type Principal struct {
 	Role     Role
 }
 
+// AuthenticatedIdentity is the validated identity data needed before membership authorization.
+// IssuedAt is diagnostic-only and must not be used as authorization authority.
+type AuthenticatedIdentity struct {
+	Subject  Subject
+	AuthTime int64
+	IssuedAt *int64
+}
+
 func MembershipPK(subject Subject) string {
 	return membershipPrefix + string(subject)
 }
