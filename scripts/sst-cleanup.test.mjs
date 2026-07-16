@@ -37,6 +37,18 @@ test('cleanup supports interrupted and versioned bucket retry fixtures', () => {
   assert.deepEqual(cleanupEphemeral(target, {}, () => {}, empty).residuals, []);
 });
 
+test('cleanup removes the exact ephemeral auth key and tolerates an absent key', () => {
+  const calls = [];
+  cleanupEphemeral(target, {}, (command, args) => { calls.push([command, args]); }, empty);
+  assert.deepEqual(
+    calls.find(([command, args]) => command === 'aws' && args[0] === 'ssm'),
+    ['aws', ['ssm', 'delete-parameter', '--name', '/bolt-monitor/dev-jane/auth/aes-256-gcm']]
+  );
+  assert.doesNotThrow(() => cleanupEphemeral(target, {}, (command) => {
+    if (command === 'aws') throw new Error('ParameterNotFound');
+  }, empty));
+});
+
 test('state verification covers SST-managed resources after taggable resources are gone', () => {
   assert.equal(stageStateIsDeployed(target, {}, () => 'Stages: staging\nsmoke (not deployed)\ndev-jane (not deployed)'), false);
   assert.equal(stageStateIsDeployed(target, {}, () => 'Stages:\n  dev-jane'), true);

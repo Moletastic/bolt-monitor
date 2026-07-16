@@ -220,7 +220,9 @@ handler. Before cutover, block the release unless all of the following are
 true:
 
 1. The target is explicitly classified and lifecycle protections, inventory,
-   tags, and ephemeral cleanup verification are active.
+   tags, and ephemeral cleanup verification are active. Run
+   `make check-auth-cutover-prerequisites` to prove this prerequisite before
+   beginning the cutover checklist.
 2. Auth resources, least-privilege grants, canonical dashboard origin, alarms,
    finite log retention, and non-secret outputs are deployed.
 3. At least one fully shaped `ACTIVE` `DEFAULT`/`ADMIN` membership exists,

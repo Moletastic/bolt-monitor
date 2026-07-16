@@ -51,6 +51,19 @@ export function residualInventory(target, environment = process.env, query = aws
   return resources.map((resource) => resource.ResourceARN).filter((arn) => typeof arn === 'string');
 }
 
+function removeEphemeralAuthKey(target, environment, execute) {
+  const parameterName = `/${target.service}/${target.stage}/auth/aes-256-gcm`;
+  try {
+    execute('aws', ['ssm', 'delete-parameter', '--name', parameterName], {
+      stdio: 'inherit',
+      env: environment,
+    });
+  } catch (error) {
+    if (error instanceof Error && /ParameterNotFound/i.test(error.message)) return;
+    throw error;
+  }
+}
+
 export function cleanupEphemeral(target, environment = process.env, execute = execFileSync, query = aws) {
   if (target.lifecycle !== 'ephemeral' || target.disposable !== true) {
     throw new Error('ephemeral cleanup refuses persistent or non-disposable target');
@@ -61,6 +74,11 @@ export function cleanupEphemeral(target, environment = process.env, execute = ex
     execute('pnpm', ['--dir', 'infra', 'exec', 'sst', 'remove', '--stage', target.stage], { stdio: 'inherit', env: environment });
   } catch (error) {
     removeError = error;
+  }
+  try {
+    removeEphemeralAuthKey(target, environment, execute);
+  } catch (error) {
+    removeError ??= error;
   }
   const residuals = residualInventory(target, environment, query);
   let stateError;

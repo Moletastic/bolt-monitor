@@ -97,6 +97,15 @@ test('auth configuration and permissions are scoped to monitor API and dashboard
   assert.match(outputs, /authTableName: authTable\.name/)
   assert.match(outputs, /operatorUserPoolId: operatorUserPool\.id/)
   assert.match(outputs, /authEncryptionKeyParameterName: authEncryptionKey\.name/)
+  assert.match(
+    outputs,
+    /authTables: \[\{ logicalName: 'AuthTable', name: authTable\.name, arn: authTable\.arn \}\]/
+  )
+  assert.match(
+    outputs,
+    /logicalName: 'OperatorUserPool', id: operatorUserPool\.id, arn: operatorUserPool\.arn/
+  )
+  assert.match(outputs, /logicalName: 'AuthEncryptionKey', name: authEncryptionKey\.name/)
   assert.doesNotMatch(outputs, /dashboardUserPoolClientId|directOperatorUserPoolClientId/)
 })
 
