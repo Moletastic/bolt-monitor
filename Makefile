@@ -4,7 +4,7 @@
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra test-infra \
 	check-bruno check-api-contract test-api-contract check-sst-target test-sst-target \
-	check-auth-routes \
+	check-auth-routes check-auth-cutover-prerequisites \
 	format-dashboard format-dashboard-check format-dashboard-files format-infra format-infra-check format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
@@ -69,13 +69,16 @@ check-infra:
 
 test-infra:
 	cd infra && pnpm run test
-	node --test scripts/sst-lifecycle.test.mjs scripts/sst-cleanup.test.mjs
+	node --test scripts/sst-lifecycle.test.mjs scripts/sst-cleanup.test.mjs scripts/check-auth-cutover-prerequisites.test.mjs
 
 check-bruno:
 	node scripts/check-bruno.mjs
 
 check-auth-routes:
 	node scripts/check-auth-routes.mjs
+
+check-auth-cutover-prerequisites:
+	node scripts/check-auth-cutover-prerequisites.mjs
 
 test-api-contract:
 	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/check-openapi-auth.test.mjs scripts/rotate-auth-key.test.mjs

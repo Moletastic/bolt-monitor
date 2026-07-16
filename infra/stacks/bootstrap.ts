@@ -449,7 +449,9 @@ export function createBootstrapStack(target: DeploymentTarget) {
             { logicalName: 'OperatorUserPool', id: operatorUserPool.id, arn: operatorUserPool.arn },
           ],
           authTables: [{ logicalName: 'AuthTable', name: authTable.name, arn: authTable.arn }],
-          parametersAndSecrets: [],
+          parametersAndSecrets: [
+            { logicalName: 'AuthEncryptionKey', name: authEncryptionKey.name },
+          ],
         }
       : { version: 'v1', tables: [], authTables: [], identity: [], parametersAndSecrets: [] },
   }

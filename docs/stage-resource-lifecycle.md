@@ -23,14 +23,16 @@ local work. Never omit a target and never use a unique persistent smoke stage.
 | Resource | Persistent | Ephemeral | Inventory / cleanup |
 | --- | --- | --- | --- |
 | `AppTable` | PITR, deletion protection, retain on delete | no protection, no retain | retained table name and ARN / remove and verify tag ownership |
-| `AuthTable`, Cognito, durable parameters and secrets | `AuthTable` PITR/deletion protection/retain; Cognito protection/retain; AES parameter retained | no protection/PITR/retention; delete with stage | identifiers only, never values; auth details in `docs/auth-operations.md` |
+| `AuthTable`, Cognito, durable parameters and secrets | `AuthTable` PITR/deletion protection/retain; Cognito protection/retain; AES parameter retained | no protection/PITR/retention; exact-stage cleanup deletes the AES parameter with the stage | identifiers only, never values; auth details in `docs/auth-operations.md` |
 | Bucket | removable; object expiry remains bounded | removable; object expiry remains bounded | ownership tags and SST state |
 | Queues, schedules, API, functions, log groups, subscriptions | removable, not durable installation state | removable | ownership tags and SST state |
 | Dashboard and generated SST support resources | removable | removable | SST state plus ownership tags where supported |
 
 Provider default tags apply `service`, `stage`, `owner`, `lifecycle`, and, for
 ephemeral targets, `expiresAt` to every taggable AWS resource. The bootstrap
-stack has no stage-name conditionals: policy derives from validated target.
+stack has no stage-name conditionals: policy derives from validated target. The
+non-printing AES-key helper applies the same policy tags to its SSM parameter;
+persistent inventory lists its name but never its value.
 
 SST is pinned to `4.14.1`. Ephemeral `make remove-infra` invokes the pinned SST
 removal path and bounded Resource Groups Tagging API verification for exact
@@ -66,6 +68,15 @@ Credentialed smoke selects exactly one lifecycle: a unique, disposable
 ephemeral target with verified cleanup, or declared persistent `staging` with
 no teardown. Persistent target names beginning with `smoke` are rejected even
 if configured, preventing unique retained smoke installations.
+
+## Authentication Cutover Gate
+
+Before protected-route cutover, run
+`make check-auth-cutover-prerequisites`. This deterministic release gate proves
+the validated stage classification, persistent `AppTable` deletion and
+retain-on-delete protection, lifecycle-guarded ephemeral cleanup, and the
+retained inventory including the auth key reference. It does not deploy AWS
+resources or replace the later auth-resource ephemeral cleanup evidence.
 
 ## Cost posture
 

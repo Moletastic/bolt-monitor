@@ -45,9 +45,9 @@
 - [x] 6.2 Document `staging` as approved persistent only for deliberate shared validation and provide a developer-owned ephemeral local recipe with explicit cleanup and stale-stage guidance.
 - [x] 6.3 Reconcile credentialed release smoke so a unique current-revision stage is explicitly ephemeral with always-run zero-residual verification, while named persistent staging is the only non-ephemeral smoke alternative and is never torn down by smoke.
 - [x] 6.4 Add lifecycle guards/tests that reject unique persistent smoke stages and prevent ephemeral cleanup from targeting approved persistent staging or protected production names.
-- [ ] 6.5 Make the lifecycle policy available to the authentication infrastructure so persistent `AuthTable`, Cognito user pool, and durable SSM/SST secret material receive required protection, inventory, and tags while ephemeral auth resources remain removable.
-- [ ] 6.6 Add an explicit release gate proving stage classification, basic persistent `AppTable` protection, ephemeral cleanup, and retained inventory are active before authentication route cutover proceeds.
-- [ ] 6.7 Reconcile overlapping auth, recovery/capacity, and release-gate implementation documentation to consume this capability without introducing a second stage taxonomy or a unique retained smoke stage.
+- [x] 6.5 Make the lifecycle policy available to the authentication infrastructure so persistent `AuthTable`, Cognito user pool, and durable SSM/SST secret material receive required protection, inventory, and tags while ephemeral auth resources remain removable.
+- [x] 6.6 Add an explicit release gate proving stage classification, basic persistent `AppTable` protection, ephemeral cleanup, and retained inventory are active before authentication route cutover proceeds.
+- [x] 6.7 Reconcile overlapping auth, recovery/capacity, and release-gate implementation documentation to consume this capability without introducing a second stage taxonomy or a unique retained smoke stage.
 
 ## 7. Cost, Validation, And Rollout
 
