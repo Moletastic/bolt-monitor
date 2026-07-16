@@ -31,6 +31,7 @@ import { parseJson, runServerAction } from '@/lib/io/server-action'
 import { err, isErr, ok, type Result } from '@/lib/result'
 import { actionErr, actionOk, type ActionState } from '@/lib/action-state'
 import { ApiErrorCode, messageFor } from '@/lib/errors'
+import { requireDashboardSession } from '@/lib/auth/session-guard'
 import type {
   CreateServicePayload,
   CreateMonitorPayload,
@@ -57,6 +58,7 @@ export async function loadMonitorHistoryPageAction(
   _previousState: ActionState<MonitorHistoryActionData>,
   formData: FormData
 ): Promise<ActionState<MonitorHistoryActionData>> {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const monitorId = String(formData.get('monitorId') ?? '').trim()
   const cursor = String(formData.get('cursor') ?? '').trim() || undefined
@@ -197,6 +199,7 @@ function appendInlineFeedback(path: string): string {
 }
 
 export async function createMonitorAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}/monitors/new`)
 
@@ -221,6 +224,7 @@ export async function createMonitorAction(formData: FormData) {
 }
 
 export async function updateMonitorAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const monitorId = String(formData.get('monitorId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}/monitors/${monitorId}`)
@@ -243,6 +247,7 @@ export async function updateMonitorAction(formData: FormData) {
 }
 
 export async function toggleMonitorAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const monitorId = String(formData.get('monitorId') ?? '').trim()
   const enabled = formData.get('enabled') === 'true'
@@ -263,6 +268,7 @@ export async function toggleMonitorStateAction(
   _previousState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const monitorId = String(formData.get('monitorId') ?? '').trim()
   const enabled = formData.get('enabled') === 'true'
@@ -279,6 +285,7 @@ export async function toggleMonitorStateAction(
 }
 
 export async function toggleMaintenanceModeAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const monitorId = String(formData.get('monitorId') ?? '').trim()
   const enabled = formData.get('enabled') === 'true'
@@ -296,6 +303,7 @@ export async function toggleMaintenanceModeAction(formData: FormData) {
 }
 
 export async function deleteMonitorAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const monitorId = String(formData.get('monitorId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}/monitors/${monitorId}`)
@@ -312,6 +320,7 @@ export async function deleteMonitorAction(formData: FormData) {
 }
 
 export async function acknowledgeIncidentAction(formData: FormData) {
+  await requireDashboardSession()
   const incidentId = String(formData.get('incidentId') ?? '').trim()
   const returnTo = getReturnTo(formData, '/incidents')
 
@@ -329,6 +338,7 @@ export async function acknowledgeIncidentStateAction(
   _previousState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireDashboardSession()
   const incidentId = String(formData.get('incidentId') ?? '').trim()
 
   const result = await runServerAction(() => acknowledgeIncident(incidentId))
@@ -342,6 +352,7 @@ export async function acknowledgeIncidentStateAction(
 }
 
 export async function resolveIncidentAction(formData: FormData) {
+  await requireDashboardSession()
   const incidentId = String(formData.get('incidentId') ?? '').trim()
   const returnTo = getReturnTo(formData, '/incidents')
 
@@ -359,6 +370,7 @@ export async function resolveIncidentStateAction(
   _previousState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireDashboardSession()
   const incidentId = String(formData.get('incidentId') ?? '').trim()
 
   const result = await runServerAction(() => resolveIncident(incidentId))
@@ -372,6 +384,7 @@ export async function resolveIncidentStateAction(
 }
 
 export async function updateSchedulerConfigAction(formData: FormData) {
+  await requireDashboardSession()
   const returnTo = getReturnTo(formData, '/admin/scheduler')
 
   const recurringEnabled = formData.get('recurringEnabled') === 'true'
@@ -392,6 +405,7 @@ export async function updateSchedulerConfigStateAction(
   _previousState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireDashboardSession()
   const recurringEnabled = formData.get('recurringEnabled') === 'true'
   const stopControlMode = formData.get('stopControlMode') as string | undefined
 
@@ -407,6 +421,7 @@ export async function updateSchedulerConfigStateAction(
 }
 
 export async function triggerManualRunAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const monitorId = String(formData.get('monitorId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}/monitors/${monitorId}`)
@@ -422,6 +437,7 @@ export async function triggerManualRunAction(formData: FormData) {
 }
 
 export async function createServiceAction(formData: FormData) {
+  await requireDashboardSession()
   const returnTo = getReturnTo(formData, '/services/new')
 
   const serviceCategory = String(formData.get('serviceCategory') ?? '').trim()
@@ -448,6 +464,7 @@ export async function createServiceAction(formData: FormData) {
 }
 
 export async function updateServiceAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}`)
 
@@ -496,6 +513,7 @@ function parseServiceBusinessHours(value: FormDataEntryValue | null): BusinessHo
 }
 
 export async function archiveServiceAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}`)
 
@@ -512,6 +530,7 @@ export async function archiveServiceAction(formData: FormData) {
 }
 
 export async function deleteServiceAction(formData: FormData) {
+  await requireDashboardSession()
   const serviceId = String(formData.get('serviceId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/services/${serviceId}`)
 
@@ -526,6 +545,7 @@ export async function deleteServiceAction(formData: FormData) {
 }
 
 export async function createEscalationPolicyAction(formData: FormData) {
+  await requireDashboardSession()
   const errorHref = String(formData.get('errorHref') ?? '/policies/new').trim()
   const returnTo = String(formData.get('returnTo') ?? '/policies').trim()
   const name = String(formData.get('name') ?? '').trim()
@@ -568,6 +588,7 @@ export async function createEscalationPolicyAction(formData: FormData) {
 }
 
 export async function updateEscalationPolicyAction(formData: FormData) {
+  await requireDashboardSession()
   const errorHref = String(formData.get('errorHref') ?? '/policies').trim()
   const returnTo = String(formData.get('returnTo') ?? '/policies').trim()
   const policyId = String(formData.get('policyId') ?? '').trim()
@@ -612,6 +633,7 @@ export async function updateEscalationPolicyAction(formData: FormData) {
 }
 
 export async function deleteEscalationPolicyAction(formData: FormData) {
+  await requireDashboardSession()
   const policyId = String(formData.get('policyId') ?? '').trim()
   const returnTo = String(formData.get('returnTo') ?? '/policies').trim()
 
@@ -644,6 +666,7 @@ function buildNotificationChannelPayload(formData: FormData) {
 }
 
 export async function createNotificationChannelAction(formData: FormData) {
+  await requireDashboardSession()
   const returnTo = getReturnTo(formData, '/integrations/channels/new')
   const result = await runServerAction(() =>
     createNotificationChannel(buildNotificationChannelPayload(formData))
@@ -656,6 +679,7 @@ export async function createNotificationChannelAction(formData: FormData) {
 }
 
 export async function updateNotificationChannelAction(formData: FormData) {
+  await requireDashboardSession()
   const channelId = String(formData.get('channelId') ?? '').trim()
   const returnTo = getReturnTo(formData, `/integrations/channels/${channelId}`)
   const result = await runServerAction(() =>
@@ -670,6 +694,7 @@ export async function updateNotificationChannelAction(formData: FormData) {
 }
 
 export async function deleteNotificationChannelAction(formData: FormData) {
+  await requireDashboardSession()
   const channelId = String(formData.get('channelId') ?? '').trim()
   const returnTo = getReturnTo(formData, '/integrations/channels')
   const result = await runServerAction(() => deleteNotificationChannel(channelId))
@@ -684,6 +709,7 @@ export async function testNotificationChannelStateAction(
   _previousState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  await requireDashboardSession()
   const channelId = String(formData.get('channelId') ?? '').trim()
   const result = await runServerAction(() => testNotificationChannel(channelId))
   if (isErr(result)) {

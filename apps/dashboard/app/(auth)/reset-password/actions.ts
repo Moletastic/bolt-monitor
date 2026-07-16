@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 
 import { confirmPasswordRecovery } from '@/lib/auth/password-recovery'
 import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
+import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import type { AuthTransactionReference } from '@/lib/auth/contracts'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -19,6 +20,7 @@ export async function resetPasswordAction(
   _previousState: ResetPasswordFormState,
   formData: FormData
 ): Promise<ResetPasswordFormState> {
+  await redirectIfDashboardSession()
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
   if (!reference)

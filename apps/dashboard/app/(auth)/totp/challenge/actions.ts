@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import type { AuthTransactionReference, DashboardSessionReference } from '@/lib/auth/contracts'
 import { completeTotpChallenge } from '@/lib/auth/totp'
 import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
+import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -25,6 +26,7 @@ export async function completeTotpChallengeAction(
   _previousState: TotpChallengeFormState,
   formData: FormData
 ): Promise<TotpChallengeFormState> {
+  await redirectIfDashboardSession()
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
   if (!reference)

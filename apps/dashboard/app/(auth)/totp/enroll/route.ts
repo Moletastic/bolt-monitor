@@ -16,9 +16,11 @@ import {
   DASHBOARD_SESSION_LIFETIME_SECONDS,
   createDynamoDashboardSessionStoreFromEnv,
 } from '@/lib/io/auth/sessions'
+import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 
 // This route deliberately bypasses RSC: the TOTP secret exists only in this immediate HTML response.
 export async function GET(request: Request) {
+  await redirectIfDashboardSession()
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
   if (!reference) return failure(request)
@@ -41,6 +43,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  await redirectIfDashboardSession()
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
   if (!reference) return failure(request)
