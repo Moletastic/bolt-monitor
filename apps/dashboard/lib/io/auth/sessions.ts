@@ -396,7 +396,7 @@ export function createDynamoDashboardSessionStore(
 
 export function createDynamoDashboardSessionStoreFromEnv(): Pick<
   DashboardSessionStore,
-  'create' | 'read' | 'replace' | 'invalidate'
+  'create' | 'read' | 'refresh' | 'replace' | 'invalidate'
 > {
   return createDynamoDashboardSessionStore({
     tableName: process.env.AUTH_TABLE_NAME ?? '',

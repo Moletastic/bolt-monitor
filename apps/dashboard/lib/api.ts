@@ -28,103 +28,31 @@ import {
   type GlobalSearchResourceType,
   type AuditEvent,
 } from '@/lib/types'
-import { type ApiResponse, isCursorPagination, isError, Status } from '@/lib/api-response'
-import { ApiError, ApiErrorCode, fromEnvelope, type ApiReasonPayload } from '@/lib/errors'
+import { isCursorPagination } from '@/lib/api-response'
+import { ApiError, type ApiErrorCode, type ApiReasonPayload } from '@/lib/errors'
+import { createAuthenticatedMonitorApiClientFromEnv } from '@/lib/io/monitor-api'
 
 export { ApiError }
 export type { ApiErrorCode, ApiReasonPayload }
 
-function getApiBaseUrl() {
-  const baseUrl = process.env.NEXT_PUBLIC_MONITOR_API_BASE_URL
-  if (!baseUrl) {
-    throw new Error('NEXT_PUBLIC_MONITOR_API_BASE_URL is not configured.')
-  }
-
-  return baseUrl.replace(/\/$/, '')
-}
-
-function unwrap<T>(response: ApiResponse<T>, httpStatus: number): T {
-  if (isError(response)) {
-    throw attachMessage(fromEnvelope(response.reason, httpStatus), response.message)
-  }
-  if (response.status !== Status.Success || response.data === undefined) {
-    throw new ApiError(ApiErrorCode.Internal, httpStatus, { body: response })
-  }
-  return response.data
-}
-
-function attachMessage(err: ApiError, message: string | undefined): ApiError {
-  if (!message) return err
-  return new ApiError(err.code, err.status, err.details, message)
-}
-
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    ...init,
-    cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-  })
-
-  const text = await response.text()
-  const parsed = text ? (JSON.parse(text) as ApiResponse<T>) : undefined
-
-  if (!response.ok) {
-    const reason = parsed && isError(parsed) ? parsed.reason : undefined
-    if (reason) {
-      throw attachMessage(fromEnvelope(reason, response.status), parsed?.message)
-    }
-    throw new ApiError(ApiErrorCode.Internal, response.status, {}, parsed?.message)
-  }
-
-  return unwrap(parsed as ApiResponse<T>, response.status)
+  const result = await createAuthenticatedMonitorApiClientFromEnv().request<T>(path, init)
+  if (!result.ok) throw result.error
+  return result.value
 }
 
 async function cursorPageRequest<T, U>(
   path: string,
   select: (data: T) => U[]
 ): Promise<{ items: U[]; nextCursor?: string }> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
-  })
-  const text = await response.text()
-  const parsed = text ? (JSON.parse(text) as ApiResponse<T>) : undefined
-  if (!response.ok) {
-    const reason = parsed && isError(parsed) ? parsed.reason : undefined
-    throw reason
-      ? attachMessage(fromEnvelope(reason, response.status), parsed?.message)
-      : new ApiError(ApiErrorCode.Internal, response.status, {}, parsed?.message)
-  }
-  const data = unwrap(parsed as ApiResponse<T>, response.status)
-  if (!isCursorPagination(parsed?.pagination)) {
-    throw new ApiError(ApiErrorCode.Internal, response.status, {})
-  }
-  return { items: select(data), nextCursor: parsed.pagination.nextCursor }
+  const result = await createAuthenticatedMonitorApiClientFromEnv().requestResponse<T>(path)
+  if (!result.ok) throw result.error
+  if (!isCursorPagination(result.value.pagination)) throw new ApiError('INTERNAL', 500)
+  return { items: select(result.value.data), nextCursor: result.value.pagination.nextCursor }
 }
 
 async function apiRequestVoid(path: string, init?: RequestInit): Promise<void> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    ...init,
-    cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-  })
-
-  const text = await response.text()
-  const parsed = text ? (JSON.parse(text) as ApiResponse<unknown>) : undefined
-
-  if (!response.ok) {
-    const reason = parsed && isError(parsed) ? parsed.reason : undefined
-    if (reason) {
-      throw attachMessage(fromEnvelope(reason, response.status), parsed?.message)
-    }
-    throw new ApiError(ApiErrorCode.Internal, response.status, {}, parsed?.message)
-  }
+  await apiRequest<unknown>(path, init)
 }
 
 export async function listServices() {

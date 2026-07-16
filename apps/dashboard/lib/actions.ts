@@ -26,6 +26,7 @@ import {
   getMonitorRuns,
   getMonitorIncidents,
   getMonitorAudit,
+  searchResources,
 } from '@/lib/api'
 import { parseJson, runServerAction } from '@/lib/io/server-action'
 import { err, isErr, ok, type Result } from '@/lib/result'
@@ -44,6 +45,8 @@ import type {
   Incident,
   AuditEvent,
   MonitorHistoryPage,
+  GlobalSearchResourceType,
+  GlobalSearchResult,
   UpdateServicePayload,
   UpdateMonitorPayload,
 } from '@/lib/types'
@@ -52,6 +55,22 @@ export type MonitorHistoryKind = 'runs' | 'incidents' | 'audit'
 export type MonitorHistoryActionData = {
   kind: MonitorHistoryKind
   page: MonitorHistoryPage<CheckRun | Incident | AuditEvent>
+}
+
+export type GlobalSearchActionResult = Result<
+  GlobalSearchResult[],
+  { readonly code: ApiErrorCode; readonly message: string }
+>
+
+/** Keeps interactive global search behind the same server-only API token boundary. */
+export async function searchResourcesAction(input: {
+  readonly query: string
+  readonly limit?: number
+  readonly types?: GlobalSearchResourceType[]
+}): Promise<GlobalSearchActionResult> {
+  await requireDashboardSession()
+  const result = await runServerAction(() => searchResources(input))
+  return result.ok ? result : err({ code: result.error.code, message: messageFor(result.error) })
 }
 
 export async function loadMonitorHistoryPageAction(

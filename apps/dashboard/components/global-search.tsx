@@ -4,8 +4,7 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { Bell, RadioTower, Search, Server, ShieldAlert, X } from 'lucide-react'
 
-import { searchResources } from '@/lib/api'
-import { ApiError, messageFor } from '@/lib/errors'
+import { searchResourcesAction } from '@/lib/actions'
 import type { GlobalSearchResult } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -42,20 +41,18 @@ export function GlobalSearch() {
     setStatus('loading')
     setOpen(true)
     const timeout = window.setTimeout(() => {
-      void searchResources({ query: normalizedQuery, limit: 8 }).then(
-        (nextResults) => {
-          if (requestSeq.current !== seq) return
-          setResults(nextResults)
-          setStatus(nextResults.length > 0 ? 'ready' : 'empty')
-          setErrorMessage('')
-        },
-        (error: unknown) => {
-          if (requestSeq.current !== seq) return
+      void searchResourcesAction({ query: normalizedQuery, limit: 8 }).then((result) => {
+        if (requestSeq.current !== seq) return
+        if (!result.ok) {
           setResults([])
           setStatus('error')
-          setErrorMessage(error instanceof ApiError ? messageFor(error) : 'Try again.')
+          setErrorMessage(result.error.message)
+          return
         }
-      )
+        setResults(result.value)
+        setStatus(result.value.length > 0 ? 'ready' : 'empty')
+        setErrorMessage('')
+      })
     }, debounceMs)
 
     return () => window.clearTimeout(timeout)
