@@ -10,11 +10,12 @@ import { signInAction, type SignInFormState } from './actions'
 
 const initialState: SignInFormState = { feedback: null }
 
-export function SignInForm() {
+export function SignInForm({ returnTarget }: { returnTarget: string }) {
   const [state, formAction, pending] = useActionState(signInAction, initialState)
 
   return (
     <form action={formAction} className="grid gap-5">
+      <input name="returnTo" type="hidden" value={returnTarget} />
       <div className="grid gap-2">
         <label className="text-sm font-medium text-foreground" htmlFor="email">
           Email

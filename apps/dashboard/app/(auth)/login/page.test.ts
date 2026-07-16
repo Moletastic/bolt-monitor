@@ -8,7 +8,7 @@ const monitoringLayout = readFileSync(join(process.cwd(), 'app/(monitoring)/layo
 
 describe('public sign-in route', () => {
   it('renders the custom form outside the monitoring shell', () => {
-    expect(loginPage).toContain('<SignInForm />')
+    expect(loginPage).toContain('<SignInForm returnTarget={sanitizeReturnTarget(returnTo)} />')
     expect(loginPage).not.toContain('AppShell')
     expect(loginPage).not.toContain('PollingProvider')
     expect(monitoringLayout).toContain('PollingProvider')
@@ -25,6 +25,7 @@ describe('public sign-in route', () => {
   it('redirects after establishing an authenticated dashboard session', () => {
     expect(loginAction).toContain('DASHBOARD_SESSION_COOKIE.name')
     expect(loginAction).toContain('cookieStore.set')
-    expect(loginAction).toContain("redirect('/')")
+    expect(loginAction).toContain('const returnTarget = sanitizeReturnTarget')
+    expect(loginAction).toContain('redirect(returnTarget)')
   })
 })

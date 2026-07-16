@@ -7,7 +7,9 @@ const activationAction = readFileSync(join(process.cwd(), 'app/(auth)/activate/a
 
 describe('invitation activation route', () => {
   it('renders the custom activation form outside the monitoring shell', () => {
-    expect(activationPage).toContain('<ActivationForm />')
+    expect(activationPage).toContain(
+      '<ActivationForm returnTarget={sanitizeReturnTarget(returnTo)} />'
+    )
     expect(activationPage).not.toContain('AppShell')
     expect(activationPage).not.toContain('PollingProvider')
   })
@@ -25,6 +27,7 @@ describe('invitation activation route', () => {
   it('replaces the authentication transaction with an established session before redirecting', () => {
     expect(activationAction).toContain('DASHBOARD_SESSION_COOKIE.name')
     expect(activationAction).toContain('AUTH_TRANSACTION_EXPIRY_COOKIE.name')
-    expect(activationAction).toContain("redirect('/')")
+    expect(activationAction).toContain('const returnTarget = sanitizeReturnTarget')
+    expect(activationAction).toContain('redirect(returnTarget)')
   })
 })

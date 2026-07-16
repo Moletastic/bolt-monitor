@@ -18,6 +18,7 @@ import {
 } from '@/lib/io/auth/sessions'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
+import { loginPath, sanitizeReturnTarget } from '@/lib/auth/return-target'
 
 // This route deliberately bypasses RSC: the TOTP secret exists only in this immediate HTML response.
 export async function GET(request: Request) {
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
   if (!reference) return failure(request)
+  const returnTarget = sanitizeReturnTarget(new URL(request.url).searchParams.get('returnTo'))
   const formData = await request.formData()
   const completed = await completeTotpChallenge({
     reference: reference as AuthTransactionReference,
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
     sessionStore: createDynamoDashboardSessionStoreFromEnv(),
   })
   if (completed.kind !== 'authenticated') return failure(request)
-  const response = NextResponse.redirect(new URL('/', request.url), 303)
+  const response = NextResponse.redirect(new URL(returnTarget, request.url), 303)
   response.cookies.set(
     DASHBOARD_SESSION_COOKIE.name,
     completed.sessionReference,
@@ -71,7 +73,8 @@ export async function POST(request: Request) {
 }
 
 function failure(request: Request) {
-  return NextResponse.redirect(new URL('/login', request.url), 303)
+  const returnTarget = sanitizeReturnTarget(new URL(request.url).searchParams.get('returnTo'))
+  return NextResponse.redirect(new URL(loginPath(returnTarget), request.url), 303)
 }
 
 function enrollmentHtml(enrollment: {

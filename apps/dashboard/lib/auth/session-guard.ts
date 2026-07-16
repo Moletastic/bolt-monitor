@@ -12,21 +12,22 @@ import {
   DASHBOARD_SESSION_COOKIE,
   createDynamoDashboardSessionStoreFromEnv,
 } from '@/lib/io/auth/sessions'
+import { loginPath } from './return-target'
 
 /**
  * Validates the opaque browser session against the authoritative AuthTable.
  * Layout checks protect renders; actions and route handlers must call this too.
  */
-export async function requireDashboardSession(): Promise<DashboardSession> {
+export async function requireDashboardSession(returnTarget?: string): Promise<DashboardSession> {
   const cookieStore = await cookies()
   const reference = cookieStore.get(DASHBOARD_SESSION_COOKIE.name)?.value
-  if (!reference) redirect('/login')
+  if (!reference) redirect(loginPath(returnTarget))
 
   const session = await readDashboardSession(
     reference as DashboardSessionReference,
     createDynamoDashboardSessionStoreFromEnv()
   )
-  if (!session) redirect('/login')
+  if (!session) redirect(loginPath(returnTarget))
   return session
 }
 

@@ -60,8 +60,8 @@ These sections are reviewable internal implementation milestones. Completing or 
 - [x] 7.2 Refactor dashboard API I/O through one server-only authenticated adapter that obtains a usable access token, forwards only Bearer access tokens, and keeps public health access separate.
 - [x] 7.3 Invalidate the local dashboard session on `AUTHORIZATION_DENIED`, handle API Gateway non-envelope 401 separately from application envelopes, and return safe sign-in-required navigation/results.
 - [x] 7.4 Implement centralized CSRF validation for every state-changing auth, session, and application action using canonical Origin plus effective Host/protocol and tightly bounded missing-Origin Fetch Metadata handling.
-- [ ] 7.5 Implement one return-target sanitizer that accepts only normalized safe root-relative paths, rejects external/authority/encoded/control/backslash/auth-loop targets, and defaults to `/`.
-- [ ] 7.6 Configure nonce-capable production CSP, frame/base/form/object restrictions, `nosniff`, restrictive referrer and permissions policies, and production HTTPS HSTS for auth and protected responses.
+- [x] 7.5 Implement one return-target sanitizer that accepts only normalized safe root-relative paths, rejects external/authority/encoded/control/backslash/auth-loop targets, and defaults to `/`.
+- [x] 7.6 Configure nonce-capable production CSP, frame/base/form/object restrictions, `nosniff`, restrictive referrer and permissions policies, and production HTTPS HSTS for auth and protected responses.
 - [ ] 7.7 Add tests for unauthenticated render/action denial, no protected-data leak, Bearer forwarding without browser token exposure, non-active/old-epoch membership invalidation, CSRF Origin/Host/proxy cases, redirect attacks, and exact security headers.
 - [ ] 7.8 Add static/serialization guard tests that reject Cognito tokens, challenge sessions, passwords/codes, TOTP secrets, cookie values, or session records in client modules, RSC props, browser storage, URLs, logs, and telemetry fixtures.
 

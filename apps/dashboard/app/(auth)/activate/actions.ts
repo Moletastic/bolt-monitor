@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { completeNewPasswordChallenge } from '@/lib/auth/sign-in'
 import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
+import { sanitizeReturnTarget } from '@/lib/auth/return-target'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
 import type { AuthTransactionReference, DashboardSessionReference } from '@/lib/auth/contracts'
 import { now } from '@/lib/clock'
@@ -30,6 +31,7 @@ export async function activateInvitationAction(
 ): Promise<ActivateFormState> {
   await requireDashboardCsrf()
   await redirectIfDashboardSession()
+  const returnTarget = sanitizeReturnTarget(formData.get('returnTo'))
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
   if (!reference)
@@ -61,7 +63,7 @@ export async function activateInvitationAction(
       path: AUTH_TRANSACTION_EXPIRY_COOKIE.path,
       maxAge: AUTH_TRANSACTION_EXPIRY_COOKIE.maxAge,
     })
-    redirect('/')
+    redirect(returnTarget)
   }
 
   return { feedback: feedbackForAuthFailure(outcome.failure, 'activation') }
