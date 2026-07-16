@@ -84,8 +84,8 @@ These sections are reviewable internal implementation milestones. Completing or 
 
 ## 10. End-To-End Verification And Cutover Readiness
 
-- [ ] 10.1 Add integration coverage for custom sign-in through dashboard session to authenticated API, invite activation, recovery, optional TOTP, logout, explicit session expiry, and concurrent refresh.
-- [ ] 10.2 Add integration coverage proving anonymous/wrong-token/missing-scope denial, valid ID-token rejection before Lambda, equality and older-ceremony denial at `auth_time <= AuthValidAfter`, later full-auth access, immediate non-active denial with an unexpired JWT, fixed `DEFAULT` scope, and unauthenticated `/api/health` success.
-- [ ] 10.3 Run `make check-bruno`, all Go/dashboard/infra format, lint, typecheck, test, and build targets, and resolve every auth-related failure without weakening test assertions.
+- [x] 10.1 Add integration coverage for custom sign-in through dashboard session to authenticated API, invite activation, recovery, optional TOTP, logout, explicit session expiry, and concurrent refresh.
+- [x] 10.2 Add integration coverage proving anonymous/wrong-token/missing-scope denial, valid ID-token rejection before Lambda, equality and older-ceremony denial at `auth_time <= AuthValidAfter`, later full-auth access, immediate non-active denial with an unexpired JWT, fixed `DEFAULT` scope, and unauthenticated `/api/health` success.
+- [x] 10.3 Run `make check-bruno`, all Go/dashboard/infra format, lint, typecheck, test, and build targets, and resolve every auth-related failure without weakening test assertions.
 - [ ] 10.4 Inspect generated/deployed configuration for no Amplify, no Cognito managed-login domain, no self-registration, no custom DNS/SES dependency, correct persistent/ephemeral lifecycle, no secret value in outputs/templates/state-visible configuration, least-privilege grants, and authorizer plus scope coverage on every v1 route.
 - [ ] 10.5 Execute and record the atomic staging cutover checklist with a fully shaped bootstrapped administrator, custom dashboard and Bruno evidence, Gateway ID-token rejection, non-active and advanced-epoch denial, public health, security headers, alarms/log redaction, rotation invalidation, and break-glass dry run before approving production cutover.
