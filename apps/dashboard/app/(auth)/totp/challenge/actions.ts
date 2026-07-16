@@ -8,6 +8,7 @@ import type { AuthTransactionReference, DashboardSessionReference } from '@/lib/
 import { completeTotpChallenge } from '@/lib/auth/totp'
 import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
+import { sanitizeReturnTarget } from '@/lib/auth/return-target'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
@@ -29,6 +30,7 @@ export async function completeTotpChallengeAction(
 ): Promise<TotpChallengeFormState> {
   await requireDashboardCsrf()
   await redirectIfDashboardSession()
+  const returnTarget = sanitizeReturnTarget(formData.get('returnTo'))
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
   if (!reference)
@@ -50,5 +52,5 @@ export async function completeTotpChallengeAction(
 
   cookieStore.set(DASHBOARD_SESSION_COOKIE.name, outcome.sessionReference, DASHBOARD_SESSION_COOKIE)
   cookieStore.delete(AUTH_TRANSACTION_COOKIE.name)
-  redirect('/')
+  redirect(returnTarget)
 }

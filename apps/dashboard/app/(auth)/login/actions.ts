@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { signInWithPassword } from '@/lib/auth/sign-in'
 import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
+import { sanitizeReturnTarget } from '@/lib/auth/return-target'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
@@ -29,6 +30,7 @@ export async function signInAction(
 ): Promise<SignInFormState> {
   await requireDashboardCsrf()
   await redirectIfDashboardSession()
+  const returnTarget = sanitizeReturnTarget(formData.get('returnTo'))
   const outcome = await signInWithPassword({
     username: String(formData.get('email') ?? '').trim(),
     password: String(formData.get('password') ?? ''),
@@ -47,7 +49,7 @@ export async function signInAction(
       sameSite: DASHBOARD_SESSION_COOKIE.sameSite,
       path: DASHBOARD_SESSION_COOKIE.path,
     })
-    redirect('/')
+    redirect(returnTarget)
   }
 
   if (outcome.kind === 'challenge-required') {
@@ -59,7 +61,7 @@ export async function signInAction(
       path: AUTH_TRANSACTION_COOKIE.path,
       maxAge: AUTH_TRANSACTION_LIFETIME_SECONDS,
     })
-    redirect(challengePath(outcome.challenge))
+    redirect(`${challengePath(outcome.challenge)}?returnTo=${encodeURIComponent(returnTarget)}`)
   }
 
   return {

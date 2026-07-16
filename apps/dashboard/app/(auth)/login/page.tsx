@@ -2,8 +2,15 @@ import { Activity } from 'lucide-react'
 import Link from 'next/link'
 
 import { SignInForm } from './sign-in-form'
+import { sanitizeReturnTarget } from '@/lib/auth/return-target'
 
-export default function SignInPage() {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string | string[] }>
+}) {
+  const { returnTo } = await searchParams
+
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-10" id="main-content">
       <section className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl shadow-surface-lowest/40 sm:p-8">
@@ -24,7 +31,7 @@ export default function SignInPage() {
           Sign in with the credentials issued to your operator account.
         </p>
         <div className="mt-6 border-t border-border pt-6">
-          <SignInForm />
+          <SignInForm returnTarget={sanitizeReturnTarget(returnTo)} />
           <Link
             className="mt-4 inline-block text-sm text-primary hover:underline"
             href="/forgot-password"

@@ -10,10 +10,11 @@ import { completeTotpChallengeAction, type TotpChallengeFormState } from './acti
 
 const initialState: TotpChallengeFormState = { feedback: null }
 
-export function TotpChallengeForm() {
+export function TotpChallengeForm({ returnTarget }: { returnTarget: string }) {
   const [state, formAction, pending] = useActionState(completeTotpChallengeAction, initialState)
   return (
     <form action={formAction} className="grid gap-5">
+      <input name="returnTo" type="hidden" value={returnTarget} />
       <div className="grid gap-2">
         <label className="text-sm font-medium text-foreground" htmlFor="code">
           Authentication code

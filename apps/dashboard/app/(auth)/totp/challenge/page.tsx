@@ -1,8 +1,15 @@
 import { Activity } from 'lucide-react'
 
 import { TotpChallengeForm } from './totp-challenge-form'
+import { sanitizeReturnTarget } from '@/lib/auth/return-target'
 
-export default function TotpChallengePage() {
+export default async function TotpChallengePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string | string[] }>
+}) {
+  const { returnTo } = await searchParams
+
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-10" id="main-content">
       <section className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl shadow-surface-lowest/40 sm:p-8">
@@ -14,7 +21,7 @@ export default function TotpChallengePage() {
           Enter the code from your authenticator app to continue.
         </p>
         <div className="mt-6 border-t border-border pt-6">
-          <TotpChallengeForm />
+          <TotpChallengeForm returnTarget={sanitizeReturnTarget(returnTo)} />
         </div>
       </section>
     </main>

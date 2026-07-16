@@ -10,11 +10,12 @@ import { activateInvitationAction, type ActivateFormState } from './actions'
 
 const initialState: ActivateFormState = { feedback: null }
 
-export function ActivationForm() {
+export function ActivationForm({ returnTarget }: { returnTarget: string }) {
   const [state, formAction, pending] = useActionState(activateInvitationAction, initialState)
 
   return (
     <form action={formAction} className="grid gap-5">
+      <input name="returnTo" type="hidden" value={returnTarget} />
       <div className="grid gap-2">
         <label className="text-sm font-medium text-foreground" htmlFor="newPassword">
           New password
