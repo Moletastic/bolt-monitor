@@ -1,7 +1,3 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-
 import { EmptyState } from '@/components/empty-state'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getIncidentActivities } from '@/lib/api'
@@ -12,41 +8,17 @@ interface TimelineTabProps {
   incidentId: string
 }
 
-export function TimelineTab({ incidentId }: TimelineTabProps) {
-  const [activities, setActivities] = useState<IncidentActivity[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export async function TimelineTab({ incidentId }: TimelineTabProps) {
+  let activities: IncidentActivity[] = []
+  let error: string | null = null
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadActivities() {
-      setLoading(true)
-      setError(null)
-      try {
-        const next = await getIncidentActivities(incidentId)
-        if (cancelled) {
-          return
-        }
-        setActivities([...next].sort((a, b) => a.timestamp.localeCompare(b.timestamp)))
-      } catch (err) {
-        if (cancelled) {
-          return
-        }
-        setError(err instanceof Error ? err.message : 'Unable to load incident activity.')
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    void loadActivities()
-
-    return () => {
-      cancelled = true
-    }
-  }, [incidentId])
+  try {
+    activities = [...(await getIncidentActivities(incidentId))].sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp)
+    )
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : 'Unable to load incident activity.'
+  }
 
   return (
     <Card>
@@ -54,9 +26,7 @@ export function TimelineTab({ incidentId }: TimelineTabProps) {
         <CardTitle>Timeline</CardTitle>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading timeline…</p>
-        ) : error ? (
+        {error ? (
           <div className="rounded-md border border-status-down/30 bg-status-down/10 px-3 py-2 text-sm text-status-down">
             {error}
           </div>
