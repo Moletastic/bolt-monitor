@@ -11,6 +11,7 @@ import {
 import { getUnixTime } from 'date-fns'
 
 import { now } from '@/lib/clock'
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
 import type {
   AuthResult,
   DashboardSessionReference,
@@ -22,6 +23,7 @@ import { err, ok } from '@/lib/result'
 
 import {
   type EncryptionKey,
+  AuthKeyLoadError,
   createOpaqueReference,
   createSsmKeyLoader,
   encryptionContext,
@@ -484,7 +486,9 @@ function unixNow(): number {
 async function inIoBoundary<T>(operation: () => Promise<AuthResult<T>>): Promise<AuthResult<T>> {
   try {
     return await operation()
-  } catch {
+  } catch (cause) {
+    if (!(cause instanceof AuthKeyLoadError))
+      emitSecurityEvent({ event: securityEvents.storageFailed, outcome: 'failure' })
     return err({ kind: 'storage-unavailable' })
   }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
 
@@ -21,6 +21,8 @@ const session: DashboardSession = {
 }
 
 describe('authenticated monitor API adapter', () => {
+  afterEach(() => vi.restoreAllMocks())
+
   it('denies an unauthenticated request before it can fetch protected data', async () => {
     const fetch = vi.fn()
     const client = createAuthenticatedMonitorApiClient({
@@ -65,6 +67,9 @@ describe('authenticated monitor API adapter', () => {
     expect(headers.get('Authorization')).not.toContain('id-token')
     expect(headers.get('Authorization')).not.toContain('refresh-token')
     expect(headers.get('Cookie')).toBeNull()
+    expect(headers.get('X-Correlation-ID')).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    )
   })
 
   it('refreshes an expiring access token before calling the protected API', async () => {
@@ -148,6 +153,32 @@ describe('authenticated monitor API adapter', () => {
       error: { code: 'AUTHENTICATION_REQUIRED', status: 401 },
     })
     expect(invalidate).not.toHaveBeenCalled()
+  })
+
+  it('uses one correlation ID for the API request and resulting dashboard audit event', async () => {
+    const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ status: 'error', reason: { code: 'AUTHORIZATION_DENIED' } }),
+          { status: 403 }
+        )
+      )
+    const client = createAuthenticatedMonitorApiClient({
+      baseUrl: 'https://api.example.test',
+      fetch,
+      readSession: vi.fn().mockResolvedValue(ok(session)),
+      sessionStore: { refresh: vi.fn(), invalidate: vi.fn().mockResolvedValue(ok(undefined)) },
+      identityProvider: { refresh: vi.fn() },
+    })
+
+    await client.request('/api/v1/services')
+
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit]
+    const correlationId = new Headers(init.headers).get('X-Correlation-ID')
+    expect(correlationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(String(output.mock.calls[0][0])).toContain(`"correlationId":"${correlationId}"`)
   })
 })
 

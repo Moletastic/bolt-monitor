@@ -33,6 +33,26 @@ type bootstrapOutcome struct {
 	TargetSubject      string               `json:"targetSubject,omitempty"`
 	DesiredAuthority   bootstrapAuthority   `json:"desiredAuthority"`
 	Correlation        bootstrapCorrelation `json:"correlation"`
+	Component          string               `json:"component,omitempty"`
+	Operation          string               `json:"operation,omitempty"`
+	Events             int                  `json:"AuthenticationEvents,omitempty"`
+	EMF                *embeddedMetric      `json:"_aws,omitempty"`
+}
+
+type embeddedMetric struct {
+	Timestamp         int64                 `json:"Timestamp"`
+	CloudWatchMetrics []cloudWatchMetricSet `json:"CloudWatchMetrics"`
+}
+
+type cloudWatchMetricSet struct {
+	Namespace  string     `json:"Namespace"`
+	Dimensions [][]string `json:"Dimensions"`
+	Metrics    []metric   `json:"Metrics"`
+}
+
+type metric struct {
+	Name string `json:"Name"`
+	Unit string `json:"Unit"`
 }
 
 type bootstrapAuthority struct {
@@ -96,7 +116,7 @@ func newSecurityOutcome(event auth.SecurityEvent, stage, actingPrincipal string,
 	if err != nil {
 		outcome = "failure"
 	}
-	return bootstrapOutcome{
+	result := bootstrapOutcome{
 		Timestamp:          time.Now().UTC().Format(time.RFC3339),
 		Event:              event,
 		Outcome:            outcome,
@@ -109,6 +129,23 @@ func newSecurityOutcome(event auth.SecurityEvent, stage, actingPrincipal string,
 			Role:     string(auth.RoleAdmin),
 		},
 		Correlation: bootstrapCorrelation{ID: correlationID},
+	}
+	if event == auth.EventBootstrapReconciled && outcome == "failure" {
+		result.Component = "admin-bootstrap"
+		result.Operation = "bootstrap"
+		result.Events = 1
+		result.EMF = authenticationEMF()
+	}
+	return result
+}
+
+func authenticationEMF() *embeddedMetric {
+	return &embeddedMetric{
+		Timestamp: time.Now().UTC().UnixMilli(),
+		CloudWatchMetrics: []cloudWatchMetricSet{{
+			Namespace: "BoltMonitor/Auth", Dimensions: [][]string{{"stage", "component", "operation", "outcome"}},
+			Metrics: []metric{{Name: "AuthenticationEvents", Unit: "Count"}},
+		}},
 	}
 }
 

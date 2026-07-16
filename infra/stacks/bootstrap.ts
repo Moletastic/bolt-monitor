@@ -1,5 +1,13 @@
 import { lifecyclePolicy, type DeploymentTarget } from '../deployment-target'
 
+const authLogRetention = '2 weeks' as const
+const authMetricNamespace = 'BoltMonitor/Auth'
+const authMetricName = 'AuthenticationEvents'
+const authAlarmPeriodSeconds = 300
+const authAlarmEvaluationPeriods = 3
+const authRefreshFailureThreshold = 5
+const authInfrastructureErrorThreshold = 3
+
 export function createBootstrapStack(target: DeploymentTarget) {
   const policy = lifecyclePolicy(target)
   const disposableOptions = { retainOnDelete: false }
@@ -259,6 +267,7 @@ export function createBootstrapStack(target: DeploymentTarget) {
   const monitorHandler = {
     runtime: 'go' as const,
     handler: '../services/monitor-api',
+    logging: { retention: authLogRetention },
     link: [table],
     permissions: [
       {
@@ -330,6 +339,7 @@ export function createBootstrapStack(target: DeploymentTarget) {
     'Dashboard',
     {
       path: '../apps/dashboard',
+      transform: { server: { logging: { retention: authLogRetention } } },
       environment: {
         NEXT_PUBLIC_MONITOR_API_BASE_URL: api.url,
         DASHBOARD_ORIGIN: target.dashboardOrigin,
@@ -370,6 +380,47 @@ export function createBootstrapStack(target: DeploymentTarget) {
     },
     disposableOptions
   )
+
+  const authAlarmArgs = {
+    namespace: authMetricNamespace,
+    metricName: authMetricName,
+    statistic: 'Sum',
+    period: authAlarmPeriodSeconds,
+    evaluationPeriods: authAlarmEvaluationPeriods,
+    datapointsToAlarm: authAlarmEvaluationPeriods,
+    comparisonOperator: 'GreaterThanOrEqualToThreshold',
+    treatMissingData: 'notBreaching',
+    tags: policy.tags,
+  } as const
+
+  new aws.cloudwatch.MetricAlarm('AuthRefreshFailureAlarm', {
+    ...authAlarmArgs,
+    alarmDescription: `Dashboard refresh failures exceeded ${authRefreshFailureThreshold} events per five-minute period for 15 minutes in ${target.stage}.`,
+    threshold: authRefreshFailureThreshold,
+    dimensions: {
+      stage: target.stage,
+      component: 'dashboard-auth',
+      operation: 'refresh',
+      outcome: 'failure',
+    },
+  })
+
+  for (const [name, operation] of [
+    ['AuthStorageFailureAlarm', 'storage'],
+    ['AuthKeyLoadingFailureAlarm', 'key_loading'],
+  ] as const) {
+    new aws.cloudwatch.MetricAlarm(name, {
+      ...authAlarmArgs,
+      alarmDescription: `Dashboard auth ${operation} failures exceeded ${authInfrastructureErrorThreshold} events per five-minute period for 15 minutes in ${target.stage}.`,
+      threshold: authInfrastructureErrorThreshold,
+      dimensions: {
+        stage: target.stage,
+        component: 'dashboard-auth',
+        operation,
+        outcome: 'failure',
+      },
+    })
+  }
 
   return {
     apiUrl: api.url,

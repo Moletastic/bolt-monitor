@@ -22,6 +22,7 @@ import { createCognitoIdentityProviderFromEnv } from './auth/cognito'
 import { parseJson, tryCatch } from './server-action'
 
 const ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 60
+const CORRELATION_ID_HEADER = 'X-Correlation-ID'
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 type SuccessfulApiResponse<T> = ApiResponse<T> & { readonly data: T }
@@ -73,10 +74,13 @@ export function createAuthenticatedMonitorApiClient(
       if (!accessToken.ok) return accessToken
 
       const headers = new Headers(init?.headers)
+      const correlationId = crypto.randomUUID()
       headers.set('Content-Type', 'application/json')
       // Never forward caller-controlled authorization or browser credentials.
       headers.delete('Cookie')
       headers.set('Authorization', `Bearer ${accessToken.value}`)
+      // This opaque server-generated ID links dashboard and API audit events.
+      headers.set(CORRELATION_ID_HEADER, correlationId)
 
       return requestResponse<T>(
         fetchImpl,
@@ -89,6 +93,7 @@ export function createAuthenticatedMonitorApiClient(
             event: securityEvents.sessionTerminated,
             outcome: 'success',
             subject: sessionSubject,
+            correlationId,
           })
         }
       )

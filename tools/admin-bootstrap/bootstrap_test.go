@@ -313,6 +313,13 @@ func TestBootstrapOutcomeExcludesFailureAndCredentialValues(t *testing.T) {
 	if outcome.Outcome != "failure" {
 		t.Fatalf("outcome = %q, want failure", outcome.Outcome)
 	}
+	if outcome.Component != "admin-bootstrap" || outcome.Operation != "bootstrap" || outcome.Events != 1 || outcome.EMF == nil {
+		t.Fatalf("outcome = %+v, want bounded bootstrap failure metric", outcome)
+	}
+	metricSet := outcome.EMF.CloudWatchMetrics[0]
+	if metricSet.Namespace != "BoltMonitor/Auth" || !reflect.DeepEqual(metricSet.Dimensions, [][]string{{"stage", "component", "operation", "outcome"}}) || !reflect.DeepEqual(metricSet.Metrics, []metric{{Name: "AuthenticationEvents", Unit: "Count"}}) {
+		t.Fatalf("metric = %#v, want fixed auth dimensions and counter", metricSet)
+	}
 }
 
 func TestBootstrapEmitsAuthorityChangesOnlyWhenCreatingMembership(t *testing.T) {

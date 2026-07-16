@@ -3,6 +3,8 @@ import 'server-only'
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm'
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
+
 type ParameterClient = Pick<SSMClient, 'send'>
 
 export interface EncryptionKey {
@@ -10,22 +12,30 @@ export interface EncryptionKey {
   readonly value: Buffer
 }
 
+export class AuthKeyLoadError extends Error {}
+
 export function createSsmKeyLoader(
   client?: ParameterClient,
   parameterName = ''
 ): () => Promise<EncryptionKey> {
   const ssm = client ?? new SSMClient({})
   return async () => {
-    if (!parameterName) throw new Error('missing auth encryption key parameter')
-    const response = await ssm.send(
-      new GetParameterCommand({ Name: parameterName, WithDecryption: true })
-    )
-    const value = response.Parameter?.Value
-    const version = response.Parameter?.Version
-    if (!value || !version) throw new Error('missing auth encryption key')
-    const key = Buffer.from(value, 'base64')
-    if (key.length !== 32) throw new Error('invalid auth encryption key')
-    return { generation: String(version), value: key }
+    try {
+      if (!parameterName) throw new AuthKeyLoadError('missing auth encryption key parameter')
+      const response = await ssm.send(
+        new GetParameterCommand({ Name: parameterName, WithDecryption: true })
+      )
+      const value = response.Parameter?.Value
+      const version = response.Parameter?.Version
+      if (!value || !version) throw new AuthKeyLoadError('missing auth encryption key')
+      const key = Buffer.from(value, 'base64')
+      if (key.length !== 32) throw new AuthKeyLoadError('invalid auth encryption key')
+      return { generation: String(version), value: key }
+    } catch (cause) {
+      emitSecurityEvent({ event: securityEvents.keyLoadingFailed, outcome: 'failure' })
+      if (cause instanceof AuthKeyLoadError) throw cause
+      throw new AuthKeyLoadError('load auth encryption key')
+    }
   }
 }
 

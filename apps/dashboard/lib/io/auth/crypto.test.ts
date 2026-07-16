@@ -38,6 +38,21 @@ describe('auth encryption key loading', () => {
     await expect(loader()).rejects.toThrow(/auth encryption key/)
   })
 
+  it('records a bounded key-loading metric without key material', async () => {
+    const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const loader = createSsmKeyLoader(
+      { send: vi.fn().mockRejectedValue(new Error('key-value')) },
+      '/bolt/auth-key'
+    )
+
+    await expect(loader()).rejects.toThrow(/load auth encryption key/)
+
+    const serialized = String(output.mock.calls[0]?.[0])
+    expect(serialized).toContain('"operation":"key_loading"')
+    expect(serialized).toContain('"AuthenticationEvents":1')
+    expect(serialized).not.toContain('key-value')
+  })
+
   it('requires the exact authenticated context and does not expose plaintext after tampering', () => {
     const key = Buffer.alloc(32, 7)
     const context = encryptionContext('bolt-monitor', 'staging', 'SESSION', '42', 'record-hash')
