@@ -53,6 +53,33 @@ describe('Dynamo dashboard session store', () => {
     expect(command.input.ConditionExpression).toBe('attribute_not_exists(PK)')
   })
 
+  it('issues distinct 256-bit cookie values without persisting raw identifiers or token material', async () => {
+    const client = { send: vi.fn().mockResolvedValue({}) }
+    const store = createDynamoDashboardSessionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: client,
+      loadKey,
+    })
+
+    const first = await store.create(session())
+    const second = await store.create(session())
+
+    expect(isOk(first) && isOk(second)).toBe(true)
+    if (!isOk(first) || !isOk(second)) throw new Error('expected created sessions')
+    expect(first.value).not.toBe(second.value)
+    expect(Buffer.from(first.value, 'base64url')).toHaveLength(32)
+    expect(Buffer.from(second.value, 'base64url')).toHaveLength(32)
+    for (const [command] of client.send.mock.calls) {
+      const item = putItemFromCall(command)
+      expect(JSON.stringify(item)).not.toContain(first.value)
+      expect(JSON.stringify(item)).not.toContain(second.value)
+      expect(JSON.stringify(item)).not.toContain(session().tokens.accessToken)
+      expect(JSON.stringify(item)).not.toContain(session().tokens.idToken)
+      expect(JSON.stringify(item)).not.toContain(session().tokens.refreshToken)
+    }
+  })
+
   it('defines a compliant host-only HttpOnly cookie policy', () => {
     expect(DASHBOARD_SESSION_COOKIE).toEqual({
       name: '__Host-bolt-session',
@@ -130,6 +157,26 @@ describe('Dynamo dashboard session store', () => {
     })
   })
 
+  it('rejects ciphertext copied to a different session record without re-encrypting it', async () => {
+    const { reference, item } = await persistedSession()
+    const differentReference = 'different-session-reference' as never
+    const client = { send: vi.fn().mockResolvedValue({ Item: item }) }
+    const store = createDynamoDashboardSessionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: client,
+      loadKey,
+    })
+
+    await expect(store.read(differentReference)).resolves.toEqual({
+      ok: false,
+      error: { kind: 'session-invalid' },
+    })
+    expect(client.send).toHaveBeenCalledWith(expect.any(GetItemCommand))
+    expect(client.send).not.toHaveBeenCalledWith(expect.any(UpdateItemCommand))
+    expect(reference).not.toBe(differentReference)
+  })
+
   it('rejects records at their explicit expiry even when DynamoDB TTL has not removed them', async () => {
     const client = { send: vi.fn().mockResolvedValue({}) }
     const store = createDynamoDashboardSessionStore({
@@ -172,6 +219,77 @@ describe('Dynamo dashboard session store', () => {
     expect(persist.input.UpdateExpression).toContain('Version = :nextVersion')
     expect(persist.input.UpdateExpression).toContain('REMOVE RefreshOwner, RefreshLeaseUntil')
     expect(JSON.stringify(persist.input)).not.toContain('rotated-refresh-token')
+  })
+
+  it('coordinates concurrent refreshes so one winner persists tokens and a waiting reader uses them', async () => {
+    const { reference, item } = await persistedSession()
+    const client = concurrentRefreshClient(item)
+    const providerStarted = deferred<void>()
+    const finishProvider = deferred<void>()
+    const winnerProvider = {
+      refresh: vi.fn().mockImplementation(async () => {
+        providerStarted.resolve()
+        await finishProvider.promise
+        return { ok: true as const, value: refreshedTokens() }
+      }),
+    }
+    const readerProvider = { refresh: vi.fn() }
+    const readerWait = deferred<void>()
+    const winner = refreshStore(client).refresh(reference, winnerProvider)
+
+    await providerStarted.promise
+    const reader = refreshStore(client, { waitForRefresh: () => readerWait.promise }).refresh(
+      reference,
+      readerProvider
+    )
+    await vi.waitFor(() => expect(client.leaseFailures).toBe(1))
+
+    finishProvider.resolve()
+    await winner
+    readerWait.resolve()
+
+    const readerResult = await reader
+    expect(isOk(readerResult)).toBe(true)
+    if (!isOk(readerResult)) throw new Error('expected reader to use the winning refresh')
+    expect(readerResult.value.tokens).toEqual(refreshedTokens())
+    expect(readerResult.value.version).toBe(2)
+    expect(winnerProvider.refresh).toHaveBeenCalledTimes(1)
+    expect(readerProvider.refresh).not.toHaveBeenCalled()
+    expect(client.item.Version?.N).toBe('2')
+    expect(client.item.RefreshOwner).toBeUndefined()
+    expect(client.item.RefreshLeaseUntil).toBeUndefined()
+  })
+
+  it('persists rotated tokens so a later reader decrypts the winning bundle', async () => {
+    const { reference, item } = await persistedSession()
+    const client = { send: vi.fn().mockResolvedValueOnce({ Item: item }).mockResolvedValue({}) }
+    const store = refreshStore(client)
+
+    await expect(
+      store.refresh(reference, {
+        refresh: vi.fn().mockResolvedValue({ ok: true, value: refreshedTokens() }),
+      })
+    ).resolves.toMatchObject({ ok: true, value: { version: 2 } })
+
+    const persisted = structuredClone(item)
+    const update = updateCommandFromCall(client.send.mock.calls[2]?.[0])
+    const encryptedTokens = update.input.ExpressionAttributeValues?.[':tokens']
+    if (!encryptedTokens) throw new Error('expected rotated token ciphertext')
+    persisted.EncryptedTokens = encryptedTokens
+    persisted.Version = { N: '2' }
+    const reader = createDynamoDashboardSessionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: { send: vi.fn().mockResolvedValue({ Item: persisted }) },
+      loadKey,
+    })
+
+    const read = await reader.read(reference)
+    expect(isOk(read)).toBe(true)
+    if (!isOk(read)) throw new Error('expected persisted rotated tokens')
+    if (!read.value) throw new Error('expected persisted rotated session')
+    expect(read.value.tokens).toEqual(refreshedTokens())
+    expect(read.value.version).toBe(2)
   })
 
   it('bounds loser rereads and accepts the newer winning version without refreshing', async () => {
@@ -248,6 +366,25 @@ describe('Dynamo dashboard session store', () => {
     expect(deletion.input.ConditionExpression).toBe('Version = :version AND RefreshOwner = :owner')
   })
 
+  it('releases the lease and fails only the current request after a transient refresh failure', async () => {
+    const { reference, item } = await persistedSession()
+    const client = { send: vi.fn().mockResolvedValueOnce({ Item: item }).mockResolvedValue({}) }
+    const store = refreshStore(client)
+
+    await expect(
+      store.refresh(reference, {
+        refresh: vi
+          .fn()
+          .mockResolvedValue({ ok: false, error: { kind: 'refresh-failed', retryable: true } }),
+      })
+    ).resolves.toEqual({ ok: false, error: { kind: 'refresh-failed', retryable: true } })
+
+    const release = updateCommandFromCall(client.send.mock.calls.at(-1)?.[0])
+    expect(release.input.UpdateExpression).toBe('REMOVE RefreshOwner, RefreshLeaseUntil')
+    expect(release.input.ConditionExpression).toBe('Version = :version AND RefreshOwner = :owner')
+    expect(client.send).not.toHaveBeenCalledWith(expect.any(DeleteItemCommand))
+  })
+
   it('invalidates a missing session idempotently', async () => {
     const client = { send: vi.fn().mockResolvedValue({}) }
     const store = createDynamoDashboardSessionStore({
@@ -264,6 +401,61 @@ describe('Dynamo dashboard session store', () => {
     for (const [command] of client.send.mock.calls) {
       expect(command).toBeInstanceOf(DeleteItemCommand)
       expect((command as DeleteItemCommand).input.ConditionExpression).toBeUndefined()
+    }
+  })
+
+  it('fails closed without leaking tokens when key loading or storage fails', async () => {
+    const keyFailure = new Error('key value must not escape')
+    const keyStore = createDynamoDashboardSessionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: { send: vi.fn() },
+      loadKey: async () => Promise.reject(keyFailure),
+    })
+    const storageStore = createDynamoDashboardSessionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: { send: vi.fn().mockRejectedValue(new Error('dynamodb unavailable')) },
+      loadKey,
+    })
+
+    await expect(keyStore.create(session())).resolves.toEqual({
+      ok: false,
+      error: { kind: 'storage-unavailable' },
+    })
+    await expect(storageStore.create(session())).resolves.toEqual({
+      ok: false,
+      error: { kind: 'storage-unavailable' },
+    })
+  })
+
+  it('rejects every prior-generation session using only the active key and no write fallback', async () => {
+    const first = await persistedSession()
+    const second = await persistedSession()
+    const client = {
+      send: vi
+        .fn()
+        .mockResolvedValueOnce({ Item: first.item })
+        .mockResolvedValueOnce({ Item: second.item }),
+    }
+    const activeGenerationStore = createDynamoDashboardSessionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: client,
+      loadKey: async () => ({ generation: '43', value: Buffer.alloc(32, 8) }),
+    })
+
+    await expect(activeGenerationStore.read(first.reference)).resolves.toEqual({
+      ok: false,
+      error: { kind: 'session-invalid' },
+    })
+    await expect(activeGenerationStore.read(second.reference)).resolves.toEqual({
+      ok: false,
+      error: { kind: 'session-invalid' },
+    })
+    expect(client.send).toHaveBeenCalledTimes(2)
+    for (const [command] of client.send.mock.calls) {
+      expect(command).toBeInstanceOf(GetItemCommand)
     }
   })
 
@@ -354,4 +546,58 @@ function refreshedTokens() {
     refreshToken: 'rotated-refresh-token',
     accessTokenExpiresAt: timestamp + 600,
   }
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined
+  const promise = new Promise<T>((complete) => {
+    resolve = complete
+  })
+  return { promise, resolve }
+}
+
+function concurrentRefreshClient(initialItem: Record<string, AttributeValue>) {
+  const item = structuredClone(initialItem)
+  let leaseFailures = 0
+
+  return {
+    get item() {
+      return item
+    },
+    get leaseFailures() {
+      return leaseFailures
+    },
+    send: vi.fn().mockImplementation(async (command: unknown) => {
+      if (command instanceof GetItemCommand) return { Item: structuredClone(item) }
+      if (!(command instanceof UpdateItemCommand)) throw new Error('expected session update')
+
+      const values = command.input.ExpressionAttributeValues
+      const expression = command.input.UpdateExpression
+      if (!values) throw new Error('expected update values')
+      if (!expression) throw new Error('expected update expression')
+      if (expression.startsWith('SET RefreshOwner')) {
+        const leaseUntil = Number(values[':leaseUntil']?.N)
+        const now = Number(values[':now']?.N)
+        if (item.RefreshLeaseUntil && Number(item.RefreshLeaseUntil.N) > now) {
+          leaseFailures += 1
+          throw conditionalFailure()
+        }
+        item.RefreshOwner = values[':owner']
+        item.RefreshLeaseUntil = { N: String(leaseUntil) }
+        return {}
+      }
+      if (expression.startsWith('SET EncryptedTokens')) {
+        item.EncryptedTokens = values[':tokens']
+        item.Version = values[':nextVersion']
+        delete item.RefreshOwner
+        delete item.RefreshLeaseUntil
+        return {}
+      }
+      throw new Error('unexpected session update')
+    }),
+  }
+}
+
+function conditionalFailure(): Error {
+  return Object.assign(new Error('conditional'), { name: 'ConditionalCheckFailedException' })
 }

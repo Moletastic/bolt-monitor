@@ -42,8 +42,8 @@ These sections are reviewable internal implementation milestones. Completing or 
 - [x] 5.4 Implement `AuthTable` dashboard-session creation and lookup using 256-bit opaque IDs, `__Host-bolt-session` attributes, SHA-256 DynamoDB lookup keys, context-bound AES-256-GCM encrypted token bundles, 12-hour explicit expiry, TTL-only cleanup, and the sole active key generation.
 - [x] 5.5 Implement conditional version/lease refresh coordination, winner token rotation, bounded loser rereads, stale-writer rejection, expired-lease takeover, and terminal-refresh session invalidation.
 - [x] 5.6 Implement idempotent logout/session invalidation and cookie expiry, including replacement of any prior auth transaction or authenticated session after successful authentication.
-- [ ] 5.7 Add tests proving cookie entropy/attributes, absence of raw IDs in storage, explicit expiry before TTL deletion, authenticated encryption context/generation enforcement, token and secret-value non-exposure, fixation prevention, logout idempotency, key-loading/storage fail-closed behavior, and rotation invalidation of all sessions/transactions with no previous-key fallback or online re-encryption.
-- [ ] 5.8 Add deterministic concurrency tests for one-winner refresh, waiting readers, stale winner, expired lease takeover, transient failure, rotated-token persistence, and invalid refresh termination.
+- [x] 5.7 Add tests proving cookie entropy/attributes, absence of raw IDs in storage, explicit expiry before TTL deletion, authenticated encryption context/generation enforcement, token and secret-value non-exposure, fixation prevention, logout idempotency, key-loading/storage fail-closed behavior, and rotation invalidation of all sessions/transactions with no previous-key fallback or online re-encryption.
+- [x] 5.8 Add deterministic concurrency tests for one-winner refresh, waiting readers, stale winner, expired lease takeover, transient failure, rotated-token persistence, and invalid refresh termination.
 
 ## 6. Custom Next.js Authentication Flows
 

@@ -89,6 +89,35 @@ describe('Dynamo auth transaction store', () => {
     })
   })
 
+  it('rejects ciphertext copied to another transaction and never writes a re-encrypted record', async () => {
+    const writerClient = { send: vi.fn().mockResolvedValue({}) }
+    const writer = createDynamoAuthTransactionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: writerClient,
+      loadKey,
+    })
+    const created = await writer.create(draft())
+    if (!isOk(created)) throw new Error('expected created transaction')
+    const copiedItem = putItemFromCall(writerClient.send.mock.calls[0]?.[0])
+    const readerClient = { send: vi.fn().mockResolvedValue({ Item: copiedItem }) }
+    const reader = createDynamoAuthTransactionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: readerClient,
+      loadKey,
+    })
+
+    await expect(
+      reader.read('different-transaction-reference' as never, 'sign-in')
+    ).resolves.toEqual({
+      ok: false,
+      error: { kind: 'transaction-invalid' },
+    })
+    expect(readerClient.send).toHaveBeenCalledWith(expect.any(GetItemCommand))
+    expect(readerClient.send).not.toHaveBeenCalledWith(expect.any(UpdateItemCommand))
+  })
+
   it('enforces flow, attempts, explicit expiry, and conditional single use', async () => {
     const client = { send: vi.fn().mockResolvedValue({}) }
     const store = createDynamoAuthTransactionStore({
@@ -136,6 +165,70 @@ describe('Dynamo auth transaction store', () => {
       error: { kind: 'transaction-expired' },
     })
     expect(client.send.mock.calls.at(-1)?.[0]).toBeInstanceOf(GetItemCommand)
+  })
+
+  it('fails closed without exposing provider state when key loading or storage fails', async () => {
+    const keyStore = createDynamoAuthTransactionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: { send: vi.fn() },
+      loadKey: async () => Promise.reject(new Error('secret value must not escape')),
+    })
+    const storageStore = createDynamoAuthTransactionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: { send: vi.fn().mockRejectedValue(new Error('dynamodb unavailable')) },
+      loadKey,
+    })
+
+    await expect(keyStore.create(draft())).resolves.toEqual({
+      ok: false,
+      error: { kind: 'storage-unavailable' },
+    })
+    await expect(storageStore.create(draft())).resolves.toEqual({
+      ok: false,
+      error: { kind: 'storage-unavailable' },
+    })
+  })
+
+  it('rejects every prior-generation transaction with no previous-key fallback or re-encryption', async () => {
+    const writerClient = { send: vi.fn().mockResolvedValue({}) }
+    const writer = createDynamoAuthTransactionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: writerClient,
+      loadKey,
+    })
+    const first = await writer.create(draft())
+    const second = await writer.create(draft())
+    if (!isOk(first) || !isOk(second)) throw new Error('expected created transactions')
+    const firstItem = putItemFromCall(writerClient.send.mock.calls[0]?.[0])
+    const secondItem = putItemFromCall(writerClient.send.mock.calls[1]?.[0])
+    const client = {
+      send: vi
+        .fn()
+        .mockResolvedValueOnce({ Item: firstItem })
+        .mockResolvedValueOnce({ Item: secondItem }),
+    }
+    const activeGenerationStore = createDynamoAuthTransactionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: client,
+      loadKey: async () => ({ generation: '43', value: Buffer.alloc(32, 8) }),
+    })
+
+    await expect(activeGenerationStore.read(first.value, 'sign-in')).resolves.toEqual({
+      ok: false,
+      error: { kind: 'transaction-invalid' },
+    })
+    await expect(activeGenerationStore.read(second.value, 'sign-in')).resolves.toEqual({
+      ok: false,
+      error: { kind: 'transaction-invalid' },
+    })
+    expect(client.send).toHaveBeenCalledTimes(2)
+    for (const [command] of client.send.mock.calls) {
+      expect(command).toBeInstanceOf(GetItemCommand)
+    }
   })
 })
 
