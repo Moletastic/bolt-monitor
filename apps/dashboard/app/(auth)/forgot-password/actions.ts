@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { beginPasswordRecovery } from '@/lib/auth/password-recovery'
+import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -15,6 +16,7 @@ import {
 } from '@/lib/io/auth/transactions'
 
 export async function beginPasswordRecoveryAction(formData: FormData): Promise<void> {
+  await redirectIfDashboardSession()
   const outcome = await beginPasswordRecovery({
     username: String(formData.get('email') ?? '').trim(),
     provider: createCognitoIdentityProviderFromEnv(),

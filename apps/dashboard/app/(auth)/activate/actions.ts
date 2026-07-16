@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 
 import { completeNewPasswordChallenge } from '@/lib/auth/sign-in'
 import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
+import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import type { AuthTransactionReference, DashboardSessionReference } from '@/lib/auth/contracts'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
@@ -26,6 +27,7 @@ export async function activateInvitationAction(
   _previousState: ActivateFormState,
   formData: FormData
 ): Promise<ActivateFormState> {
+  await redirectIfDashboardSession()
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
   if (!reference)
