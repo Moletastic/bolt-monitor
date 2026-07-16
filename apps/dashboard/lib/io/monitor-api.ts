@@ -11,6 +11,7 @@ import type {
 } from '@/lib/auth/contracts'
 import { now } from '@/lib/clock'
 import { ApiError, ApiErrorCode, fromEnvelope } from '@/lib/errors'
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
 import {
   DASHBOARD_SESSION_COOKIE,
   createDynamoDashboardSessionStoreFromEnv,
@@ -62,6 +63,7 @@ export function createAuthenticatedMonitorApiClient(
       const session = await options.readSession()
       if (!session.ok || !session.value) return err(authenticationRequired())
       const sessionReference = session.value.reference
+      const sessionSubject = session.value.subject
 
       const accessToken = await usableAccessToken(
         session.value,
@@ -83,6 +85,11 @@ export function createAuthenticatedMonitorApiClient(
         { ...init, headers },
         async () => {
           await options.sessionStore.invalidate(sessionReference)
+          emitSecurityEvent({
+            event: securityEvents.sessionTerminated,
+            outcome: 'success',
+            subject: sessionSubject,
+          })
         }
       )
     },
@@ -140,7 +147,11 @@ async function usableAccessToken(
     return ok(session.tokens.accessToken)
 
   const refreshed = await store.refresh(session.reference, identityProvider)
-  return refreshed.ok ? ok(refreshed.value.tokens.accessToken) : err(authenticationRequired())
+  if (!refreshed.ok) {
+    emitSecurityEvent({ event: securityEvents.refreshFailed, outcome: 'failure' })
+    return err(authenticationRequired())
+  }
+  return ok(refreshed.value.tokens.accessToken)
 }
 
 async function requestResponse<T>(

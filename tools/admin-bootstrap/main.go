@@ -76,7 +76,10 @@ func main() {
 		emitOutcomeOrFatal(os.Stdout, newBootstrapOutcome(resolvedStage, actingPrincipal, "", correlationID, err))
 		log.Fatal("bootstrap administrator failed while creating DynamoDB client")
 	}
-	subject, err := (bootstrapper{cognito: cognito, dynamo: dynamo, userPoolID: *userPoolID, authTable: *authTable, now: time.Now, membershipID: newMembershipID}).bootstrap(ctx, *email)
+	bootstrap := bootstrapper{cognito: cognito, dynamo: dynamo, userPoolID: *userPoolID, authTable: *authTable, now: time.Now, membershipID: newMembershipID}
+	subject, err := bootstrap.bootstrapWithEvents(ctx, *email, func(event auth.SecurityEvent, subject auth.Subject) {
+		emitOutcomeOrFatal(os.Stdout, newSecurityOutcome(event, resolvedStage, actingPrincipal, subject, correlationID, nil))
+	})
 	if err != nil {
 		emitOutcomeOrFatal(os.Stdout, newBootstrapOutcome(resolvedStage, actingPrincipal, subject, correlationID, err))
 		log.Fatal("bootstrap administrator failed")
@@ -85,13 +88,17 @@ func main() {
 }
 
 func newBootstrapOutcome(stage, actingPrincipal string, subject auth.Subject, correlationID string, err error) bootstrapOutcome {
+	return newSecurityOutcome(auth.EventBootstrapReconciled, stage, actingPrincipal, subject, correlationID, err)
+}
+
+func newSecurityOutcome(event auth.SecurityEvent, stage, actingPrincipal string, subject auth.Subject, correlationID string, err error) bootstrapOutcome {
 	outcome := "success"
 	if err != nil {
 		outcome = "failure"
 	}
 	return bootstrapOutcome{
 		Timestamp:          time.Now().UTC().Format(time.RFC3339),
-		Event:              auth.EventBootstrapReconciled,
+		Event:              event,
 		Outcome:            outcome,
 		Stage:              stage,
 		ActingAWSPrincipal: actingPrincipal,

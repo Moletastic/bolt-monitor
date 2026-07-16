@@ -59,6 +59,27 @@ describe('dashboard CSRF validation', () => {
     ).toEqual({ ok: false, reason: 'effective-origin' })
   })
 
+  it('does not trust a caller-controlled Host header in place of the platform proxy', () => {
+    expect(
+      validateDashboardCsrf(
+        new Headers({ Host: 'dashboard.example.com', Origin: dashboardOrigin }),
+        dashboardOrigin
+      )
+    ).toEqual({ ok: false, reason: 'effective-origin' })
+  })
+
+  it('rejects multi-valued proxy authority evidence', () => {
+    expect(
+      validateDashboardCsrf(
+        cloudFrontHeaders({
+          'x-forwarded-host': 'dashboard.example.com, attacker.example',
+          Origin: dashboardOrigin,
+        }),
+        dashboardOrigin
+      )
+    ).toEqual({ ok: false, reason: 'effective-origin' })
+  })
+
   it('permits a missing Origin only for same-origin Fetch Metadata', () => {
     expect(
       validateDashboardCsrf(cloudFrontHeaders({ 'sec-fetch-site': 'same-origin' }), dashboardOrigin)

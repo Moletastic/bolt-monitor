@@ -40,6 +40,10 @@ type membershipRecord struct {
 }
 
 func (b bootstrapper) bootstrap(ctx context.Context, email string) (auth.Subject, error) {
+	return b.bootstrapWithEvents(ctx, email, nil)
+}
+
+func (b bootstrapper) bootstrapWithEvents(ctx context.Context, email string, emit func(auth.SecurityEvent, auth.Subject)) (auth.Subject, error) {
 	normalizedEmail, err := normalizeEmail(email)
 	if err != nil {
 		return "", err
@@ -78,6 +82,10 @@ func (b bootstrapper) bootstrap(ctx context.Context, email string) (auth.Subject
 	membershipCreated, err := b.ensureMembership(ctx, subject)
 	if err != nil {
 		return subject, err
+	}
+	if membershipCreated && emit != nil {
+		emit(auth.EventMembershipStatusChanged, subject)
+		emit(auth.EventAuthValidAfterAdvanced, subject)
 	}
 	if membershipCreated && user.UserStatus == sharedaws.CognitoUserStatusForceChangePassword {
 		if _, err := b.cognito.AdminCreateUser(ctx, &sharedaws.CognitoAdminCreateUserInput{

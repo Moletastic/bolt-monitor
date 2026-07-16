@@ -9,6 +9,7 @@ import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { sanitizeReturnTarget } from '@/lib/auth/return-target'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
 import type { AuthTransactionReference, DashboardSessionReference } from '@/lib/auth/contracts'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
@@ -34,8 +35,10 @@ export async function activateInvitationAction(
   const returnTarget = sanitizeReturnTarget(formData.get('returnTo'))
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
-  if (!reference)
+  if (!reference) {
+    emitSecurityEvent({ event: securityEvents.signInFailed, outcome: 'failure' })
     return { feedback: feedbackForAuthFailure({ kind: 'transaction-invalid' }, 'activation') }
+  }
 
   const outcome = await completeNewPasswordChallenge({
     reference: reference as AuthTransactionReference,
@@ -50,6 +53,16 @@ export async function activateInvitationAction(
   })
 
   if (outcome.kind === 'authenticated') {
+    emitSecurityEvent({
+      event: securityEvents.signInSucceeded,
+      outcome: 'success',
+      subject: outcome.subject,
+    })
+    emitSecurityEvent({
+      event: securityEvents.sessionCreated,
+      outcome: 'success',
+      subject: outcome.subject,
+    })
     cookieStore.set(DASHBOARD_SESSION_COOKIE.name, outcome.sessionReference, {
       httpOnly: DASHBOARD_SESSION_COOKIE.httpOnly,
       secure: DASHBOARD_SESSION_COOKIE.secure,
@@ -66,5 +79,6 @@ export async function activateInvitationAction(
     redirect(returnTarget)
   }
 
+  emitSecurityEvent({ event: securityEvents.signInFailed, outcome: 'failure' })
   return { feedback: feedbackForAuthFailure(outcome.failure, 'activation') }
 }

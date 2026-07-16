@@ -18,6 +18,7 @@ import {
 } from '@/lib/io/auth/sessions'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
 import { loginPath, sanitizeReturnTarget } from '@/lib/auth/return-target'
 
 // This route deliberately bypasses RSC: the TOTP secret exists only in this immediate HTML response.
@@ -33,7 +34,12 @@ export async function GET(request: Request) {
     provider: createCognitoIdentityProviderFromEnv(),
     transactionStore: createDynamoAuthTransactionStoreFromEnv(),
   })
-  if (enrollment.kind !== 'enrollment-ready') return failure(request)
+  if (enrollment.kind !== 'enrollment-ready') {
+    emitSecurityEvent({ event: securityEvents.totpEnrollmentFailed, outcome: 'failure' })
+    return failure(request)
+  }
+
+  emitSecurityEvent({ event: securityEvents.totpEnrollmentSucceeded, outcome: 'success' })
 
   const response = new NextResponse(enrollmentHtml(enrollment.enrollment), {
     headers: { 'Cache-Control': 'no-store', 'Content-Type': 'text/html; charset=utf-8' },
@@ -61,7 +67,20 @@ export async function POST(request: Request) {
     transactionStore: createDynamoAuthTransactionStoreFromEnv(),
     sessionStore: createDynamoDashboardSessionStoreFromEnv(),
   })
-  if (completed.kind !== 'authenticated') return failure(request)
+  if (completed.kind !== 'authenticated') {
+    emitSecurityEvent({ event: securityEvents.totpEnrollmentFailed, outcome: 'failure' })
+    return failure(request)
+  }
+  emitSecurityEvent({
+    event: securityEvents.totpEnrollmentSucceeded,
+    outcome: 'success',
+    subject: completed.subject,
+  })
+  emitSecurityEvent({
+    event: securityEvents.sessionCreated,
+    outcome: 'success',
+    subject: completed.subject,
+  })
   const response = NextResponse.redirect(new URL(returnTarget, request.url), 303)
   response.cookies.set(
     DASHBOARD_SESSION_COOKIE.name,

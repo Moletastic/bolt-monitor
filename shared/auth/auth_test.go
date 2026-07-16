@@ -60,4 +60,7 @@ func TestSecurityEventsUseKnownSecretSafeNames(t *testing.T) {
 	if IsSecurityEvent("auth.token.eyJhbGciOiJIUzI1NiJ9") {
 		t.Fatal("unknown event accepted")
 	}
+	if !IsSecurityEvent(EventTOTPEnrollmentFailed) {
+		t.Fatal("TOTP enrollment failure event rejected")
+	}
 }

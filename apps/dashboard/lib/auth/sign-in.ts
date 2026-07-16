@@ -11,7 +11,7 @@ import type { AuthFailure } from '@/lib/auth/feedback'
 import { establishDashboardSession } from '@/lib/io/auth/authentication-state'
 
 export type PasswordSignInResult =
-  | { readonly kind: 'authenticated'; readonly sessionReference: string }
+  | { readonly kind: 'authenticated'; readonly sessionReference: string; readonly subject: string }
   | {
       readonly kind: 'challenge-required'
       readonly challenge: 'new-password-required' | 'software-token-mfa' | 'software-token-setup'
@@ -20,7 +20,7 @@ export type PasswordSignInResult =
   | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 export type NewPasswordResult =
-  | { readonly kind: 'authenticated'; readonly sessionReference: string }
+  | { readonly kind: 'authenticated'; readonly sessionReference: string; readonly subject: string }
   | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 /**
@@ -69,7 +69,7 @@ export async function signInWithPassword(input: {
   }
   const created = await input.sessionStore.create(session)
   return created.ok
-    ? { kind: 'authenticated', sessionReference: created.value }
+    ? { kind: 'authenticated', sessionReference: created.value, subject: signIn.value.subject }
     : { kind: 'failed', failure: created.error }
 }
 
@@ -120,6 +120,10 @@ export async function completeNewPasswordChallenge(input: {
     priorSession: input.priorSession,
   })
   return established.ok
-    ? { kind: 'authenticated', sessionReference: established.value }
+    ? {
+        kind: 'authenticated',
+        sessionReference: established.value,
+        subject: completed.value.subject,
+      }
     : { kind: 'failed', failure: established.error }
 }

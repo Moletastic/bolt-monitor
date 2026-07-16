@@ -10,6 +10,7 @@ import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { sanitizeReturnTarget } from '@/lib/auth/return-target'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -33,8 +34,10 @@ export async function completeTotpChallengeAction(
   const returnTarget = sanitizeReturnTarget(formData.get('returnTo'))
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
-  if (!reference)
+  if (!reference) {
+    emitSecurityEvent({ event: securityEvents.totpChallengeFailed, outcome: 'failure' })
     return { feedback: feedbackForAuthFailure({ kind: 'transaction-invalid' }, 'totp') }
+  }
 
   const outcome = await completeTotpChallenge({
     reference: reference as AuthTransactionReference,
@@ -47,9 +50,21 @@ export async function completeTotpChallengeAction(
       | DashboardSessionReference
       | undefined,
   })
-  if (outcome.kind !== 'authenticated')
+  if (outcome.kind !== 'authenticated') {
+    emitSecurityEvent({ event: securityEvents.totpChallengeFailed, outcome: 'failure' })
     return { feedback: feedbackForAuthFailure(outcome.failure, 'totp') }
+  }
 
+  emitSecurityEvent({
+    event: securityEvents.totpChallengeSucceeded,
+    outcome: 'success',
+    subject: outcome.subject,
+  })
+  emitSecurityEvent({
+    event: securityEvents.sessionCreated,
+    outcome: 'success',
+    subject: outcome.subject,
+  })
   cookieStore.set(DASHBOARD_SESSION_COOKIE.name, outcome.sessionReference, DASHBOARD_SESSION_COOKIE)
   cookieStore.delete(AUTH_TRANSACTION_COOKIE.name)
   redirect(returnTarget)

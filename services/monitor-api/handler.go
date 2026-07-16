@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bolt-monitor/shared/api/response"
+	"bolt-monitor/shared/auth"
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/dynamodbrecord"
@@ -84,6 +85,7 @@ type monitorHandler struct {
 	repo               monitorRepository
 	principalResolver  PrincipalResolver
 	membershipResolver MembershipResolver
+	securityEvents     securityEventEmitter
 	tenantID           string
 	now                func() time.Time
 	senders            notifications.SenderRegistry
@@ -94,6 +96,7 @@ func newAuthorizedMonitorHandler(repo monitorRepository, principalResolver Princ
 		repo:               repo,
 		principalResolver:  principalResolver,
 		membershipResolver: membershipResolver,
+		securityEvents:     emitMonitorSecurityEvent,
 		now:                time.Now,
 		senders:            defaultNotificationSenderRegistry(),
 	}
@@ -123,6 +126,7 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	if err != nil {
 		if typed, ok := sharederrors.As(err); ok && typed.Code == sharederrors.CodeAuthorizationDenied {
 			// Do not disclose why a current membership check denied this subject.
+			h.emitSecurityEvent(auth.EventAuthorizationDenied, "failure", identity.Subject, request.RequestContext.RequestID)
 			return respondAPIGateway(authorizationDenied())
 		}
 		return respondAPIGateway(err)
@@ -232,6 +236,12 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 		return h.reactivateService(ctx, serviceID)
 	default:
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeNotFound, nil))
+	}
+}
+
+func (h monitorHandler) emitSecurityEvent(event auth.SecurityEvent, outcome string, subject auth.Subject, correlationID string) {
+	if h.securityEvents != nil {
+		h.securityEvents(newMonitorSecurityEvent(event, outcome, subject, correlationID))
 	}
 }
 

@@ -62,12 +62,12 @@ These sections are reviewable internal implementation milestones. Completing or 
 - [x] 7.4 Implement centralized CSRF validation for every state-changing auth, session, and application action using canonical Origin plus effective Host/protocol and tightly bounded missing-Origin Fetch Metadata handling.
 - [x] 7.5 Implement one return-target sanitizer that accepts only normalized safe root-relative paths, rejects external/authority/encoded/control/backslash/auth-loop targets, and defaults to `/`.
 - [x] 7.6 Configure nonce-capable production CSP, frame/base/form/object restrictions, `nosniff`, restrictive referrer and permissions policies, and production HTTPS HSTS for auth and protected responses.
-- [ ] 7.7 Add tests for unauthenticated render/action denial, no protected-data leak, Bearer forwarding without browser token exposure, non-active/old-epoch membership invalidation, CSRF Origin/Host/proxy cases, redirect attacks, and exact security headers.
-- [ ] 7.8 Add static/serialization guard tests that reject Cognito tokens, challenge sessions, passwords/codes, TOTP secrets, cookie values, or session records in client modules, RSC props, browser storage, URLs, logs, and telemetry fixtures.
+- [x] 7.7 Add tests for unauthenticated render/action denial, no protected-data leak, Bearer forwarding without browser token exposure, non-active/old-epoch membership invalidation, CSRF Origin/Host/proxy cases, redirect attacks, and exact security headers.
+- [x] 7.8 Add static/serialization guard tests that reject Cognito tokens, challenge sessions, passwords/codes, TOTP secrets, cookie values, or session records in client modules, RSC props, browser storage, URLs, logs, and telemetry fixtures.
 
 ## 8. Authentication Audit And Telemetry
 
-- [ ] 8.1 Implement the structured security-event catalog across dashboard auth handlers, API authorization, and bootstrap for all required success/failure, membership status, and `AuthValidAfter` authority-change events.
+- [x] 8.1 Implement the structured security-event catalog across dashboard auth handlers, API authorization, and bootstrap for all required success/failure, membership status, and `AuthValidAfter` authority-change events.
 - [ ] 8.2 Add correlation propagation and secret-redaction tests proving audit/log output excludes credentials, codes, TOTP secrets, transaction/session identifiers and hashes, JWTs, refresh tokens, cookies, encryption-key material, request bodies, and unsafe provider payloads.
 - [ ] 8.3 Add bounded CloudWatch metrics or metric filters for sign-in failure, recovery request, refresh failure, authorization denial, bootstrap failure, and auth storage/key-loading errors without per-user dimensions.
 - [ ] 8.4 Configure finite log retention and actionable alarms for sustained refresh failure and auth infrastructure errors, with infrastructure tests for thresholds, dimensions, tags, and cost-bearing resources.

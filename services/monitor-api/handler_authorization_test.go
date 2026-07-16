@@ -129,3 +129,30 @@ func TestHandleRequestStopsBeforeDispatchWhenMembershipAuthorizationFails(t *tes
 		})
 	}
 }
+
+func TestHandleRequestEmitsSecretSafeAuthorizationDenial(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	identity := &stubPrincipalResolver{identity: auth.AuthenticatedIdentity{Subject: "operator", AuthTime: 2}}
+	membership := &stubMembershipResolver{err: sharederrors.New(sharederrors.CodeAuthorizationDenied, nil)}
+	handler := newAuthorizedMonitorHandler(repo, identity, membership)
+	var emitted []securityEvent
+	handler.securityEvents = func(event securityEvent) { emitted = append(emitted, event) }
+
+	_, err := handler.handleRequest(context.Background(), events.APIGatewayV2HTTPRequest{
+		RawPath:        "/api/v1/services",
+		RequestContext: events.APIGatewayV2HTTPRequestContext{RequestID: "request-1", HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}},
+	})
+	if err != nil {
+		t.Fatalf("handleRequest() error = %v", err)
+	}
+	if len(emitted) != 1 {
+		t.Fatalf("events = %d, want 1", len(emitted))
+	}
+	event := emitted[0]
+	if event.Event != auth.EventAuthorizationDenied || event.Outcome != "failure" || event.Subject != "operator" || event.CorrelationID != "request-1" {
+		t.Fatalf("event = %#v, want authorization-denial context", event)
+	}
+	if event.Component != "monitor-api" || event.Stage == "" || event.Timestamp == "" {
+		t.Fatalf("event = %#v, want complete fixed schema", event)
+	}
+}

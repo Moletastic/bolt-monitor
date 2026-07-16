@@ -21,7 +21,7 @@ export type TotpEnrollmentResult =
   | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 export type TotpChallengeResult =
-  | { readonly kind: 'authenticated'; readonly sessionReference: string }
+  | { readonly kind: 'authenticated'; readonly sessionReference: string; readonly subject: string }
   | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 /**
@@ -120,6 +120,10 @@ export async function completeTotpChallenge(input: {
     priorSession: input.priorSession,
   })
   return established.ok
-    ? { kind: 'authenticated', sessionReference: established.value }
+    ? {
+        kind: 'authenticated',
+        sessionReference: established.value,
+        subject: completed.value.subject,
+      }
     : { kind: 'failed', failure: established.error }
 }
