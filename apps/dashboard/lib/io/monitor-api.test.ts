@@ -21,6 +21,23 @@ const session: DashboardSession = {
 }
 
 describe('authenticated monitor API adapter', () => {
+  it('denies an unauthenticated request before it can fetch protected data', async () => {
+    const fetch = vi.fn()
+    const client = createAuthenticatedMonitorApiClient({
+      baseUrl: 'https://api.example.test',
+      fetch,
+      readSession: vi.fn().mockResolvedValue(ok(null)),
+      sessionStore: { refresh: vi.fn(), invalidate: vi.fn() },
+      identityProvider: { refresh: vi.fn() },
+    })
+
+    await expect(client.request('/api/v1/services')).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'AUTHENTICATION_REQUIRED', status: 401 },
+    })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('reads the server session and forwards only its Bearer access token', async () => {
     const fetch = vi
       .fn()
@@ -84,32 +101,35 @@ describe('authenticated monitor API adapter', () => {
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer rotated-access-token')
   })
 
-  it('invalidates the local session and returns sign-in-required for application authorization denial', async () => {
-    const invalidate = vi.fn().mockResolvedValue(ok(undefined))
-    const client = createAuthenticatedMonitorApiClient({
-      baseUrl: 'https://api.example.test',
-      fetch: vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            status: 'error',
-            reason: { code: 'AUTHORIZATION_DENIED', details: {} },
-          }),
-          { status: 403 }
-        )
-      ),
-      readSession: vi.fn().mockResolvedValue(ok(session)),
-      sessionStore: { refresh: vi.fn(), invalidate },
-      identityProvider: { refresh: vi.fn() },
-    })
+  it.each(['a non-active membership', 'an access token older than the membership epoch'])(
+    'invalidates the local session and returns sign-in-required for %s',
+    async () => {
+      const invalidate = vi.fn().mockResolvedValue(ok(undefined))
+      const client = createAuthenticatedMonitorApiClient({
+        baseUrl: 'https://api.example.test',
+        fetch: vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              status: 'error',
+              reason: { code: 'AUTHORIZATION_DENIED', details: {} },
+            }),
+            { status: 403 }
+          )
+        ),
+        readSession: vi.fn().mockResolvedValue(ok(session)),
+        sessionStore: { refresh: vi.fn(), invalidate },
+        identityProvider: { refresh: vi.fn() },
+      })
 
-    const result = await client.request('/api/v1/services')
+      const result = await client.request('/api/v1/services')
 
-    expect(result).toMatchObject({
-      ok: false,
-      error: { code: 'AUTHENTICATION_REQUIRED', status: 401 },
-    })
-    expect(invalidate).toHaveBeenCalledWith(session.reference)
-  })
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: 'AUTHENTICATION_REQUIRED', status: 401 },
+      })
+      expect(invalidate).toHaveBeenCalledWith(session.reference)
+    }
+  )
 
   it('returns sign-in-required for a non-envelope Gateway 401 without invalidating the session', async () => {
     const invalidate = vi.fn()

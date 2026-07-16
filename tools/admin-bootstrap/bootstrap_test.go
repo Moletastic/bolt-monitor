@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -311,6 +312,20 @@ func TestBootstrapOutcomeExcludesFailureAndCredentialValues(t *testing.T) {
 	}
 	if outcome.Outcome != "failure" {
 		t.Fatalf("outcome = %q, want failure", outcome.Outcome)
+	}
+}
+
+func TestBootstrapEmitsAuthorityChangesOnlyWhenCreatingMembership(t *testing.T) {
+	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
+	bootstrap := testBootstrapper(&fakeCognito{users: []sharedaws.CognitoUser{user}}, &fakeDynamo{})
+	var events []auth.SecurityEvent
+	if _, err := bootstrap.bootstrapWithEvents(context.Background(), "operator@example.com", func(event auth.SecurityEvent, _ auth.Subject) {
+		events = append(events, event)
+	}); err != nil {
+		t.Fatalf("bootstrapWithEvents() error = %v", err)
+	}
+	if got, want := events, []auth.SecurityEvent{auth.EventMembershipStatusChanged, auth.EventAuthValidAfterAdvanced}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
 	}
 }
 

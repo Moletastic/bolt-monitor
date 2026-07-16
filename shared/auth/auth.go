@@ -113,6 +113,7 @@ const (
 	EventRecoveryRequested       SecurityEvent = "auth.recovery.requested"
 	EventRecoveryCompleted       SecurityEvent = "auth.recovery.completed"
 	EventTOTPEnrollmentSucceeded SecurityEvent = "auth.totp_enrollment.succeeded"
+	EventTOTPEnrollmentFailed    SecurityEvent = "auth.totp_enrollment.failed"
 	EventTOTPChallengeSucceeded  SecurityEvent = "auth.totp_challenge.succeeded"
 	EventTOTPChallengeFailed     SecurityEvent = "auth.totp_challenge.failed"
 	EventSessionCreated          SecurityEvent = "auth.session.created"
@@ -127,7 +128,7 @@ func IsSecurityEvent(event SecurityEvent) bool {
 	switch event {
 	case EventBootstrapReconciled, EventSignInSucceeded, EventSignInFailed,
 		EventRecoveryRequested, EventRecoveryCompleted, EventTOTPEnrollmentSucceeded,
-		EventTOTPChallengeSucceeded, EventTOTPChallengeFailed, EventSessionCreated,
+		EventTOTPEnrollmentFailed, EventTOTPChallengeSucceeded, EventTOTPChallengeFailed, EventSessionCreated,
 		EventSessionTerminated, EventRefreshFailed, EventAuthorizationDenied,
 		EventMembershipStatusChanged, EventAuthValidAfterAdvanced:
 		return true

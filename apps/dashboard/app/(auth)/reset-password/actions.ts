@@ -7,6 +7,7 @@ import { confirmPasswordRecovery } from '@/lib/auth/password-recovery'
 import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
 import type { AuthTransactionReference } from '@/lib/auth/contracts'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -25,8 +26,10 @@ export async function resetPasswordAction(
   await redirectIfDashboardSession()
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
-  if (!reference)
+  if (!reference) {
+    emitSecurityEvent({ event: securityEvents.recoveryCompleted, outcome: 'failure' })
     return { feedback: feedbackForAuthFailure({ kind: 'transaction-invalid' }, 'password-reset') }
+  }
 
   const outcome = await confirmPasswordRecovery({
     reference: reference as AuthTransactionReference,
@@ -35,9 +38,12 @@ export async function resetPasswordAction(
     provider: createCognitoIdentityProviderFromEnv(),
     transactionStore: createDynamoAuthTransactionStoreFromEnv(),
   })
-  if (outcome.kind !== 'completed')
+  if (outcome.kind !== 'completed') {
+    emitSecurityEvent({ event: securityEvents.recoveryCompleted, outcome: 'failure' })
     return { feedback: feedbackForAuthFailure(outcome.failure, 'password-reset') }
+  }
 
+  emitSecurityEvent({ event: securityEvents.recoveryCompleted, outcome: 'success' })
   cookieStore.set(AUTH_TRANSACTION_EXPIRY_COOKIE.name, '', {
     httpOnly: AUTH_TRANSACTION_EXPIRY_COOKIE.httpOnly,
     secure: AUTH_TRANSACTION_EXPIRY_COOKIE.secure,

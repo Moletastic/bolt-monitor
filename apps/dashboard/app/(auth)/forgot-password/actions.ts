@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { beginPasswordRecovery } from '@/lib/auth/password-recovery'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -25,6 +26,7 @@ export async function beginPasswordRecoveryAction(formData: FormData): Promise<v
     transactionStore: createDynamoAuthTransactionStoreFromEnv(),
     transactionExpiresAt: getUnixTime(now()) + AUTH_TRANSACTION_LIFETIME_SECONDS,
   })
+  emitSecurityEvent({ event: securityEvents.recoveryRequested, outcome: 'success' })
   const cookieStore = await cookies()
 
   if (outcome.transactionReference) {

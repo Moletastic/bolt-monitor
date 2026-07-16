@@ -86,7 +86,11 @@ describe('TOTP authentication', () => {
       sessionStore,
     })
 
-    expect(result).toEqual({ kind: 'authenticated', sessionReference: 'new-session' })
+    expect(result).toEqual({
+      kind: 'authenticated',
+      sessionReference: 'new-session',
+      subject: 'subject',
+    })
     expect(transactionStore.consume).toHaveBeenCalledWith(reference, 'sign-in')
     expect(sessionStore.create).toHaveBeenCalledWith({ subject: 'subject', tokens, expiresAt: 900 })
   })

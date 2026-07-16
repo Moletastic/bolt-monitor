@@ -41,6 +41,12 @@ describe('dashboard server protection', () => {
   it('validates the authoritative session before monitoring content renders', () => {
     const layout = source('app/(monitoring)/layout.tsx')
     expect(layout).toContain('await requireDashboardSession()')
+    expect(layout.indexOf('await requireDashboardSession()')).toBeLessThan(
+      layout.indexOf('<PollingProvider')
+    )
+    expect(layout.indexOf('await requireDashboardSession()')).toBeLessThan(
+      layout.indexOf('{children}')
+    )
 
     for (const route of [
       'app/(monitoring)/page.tsx',
@@ -64,6 +70,9 @@ describe('dashboard server protection', () => {
 
       expect(start).toBeGreaterThan(-1)
       expect(body).toContain('await requireDashboardSession()')
+      expect(body.indexOf('await requireDashboardSession()')).toBeLessThan(
+        body.indexOf('await runServerAction')
+      )
     }
   })
 

@@ -37,7 +37,11 @@ describe('signInWithPassword', () => {
         transactionStore,
         transactionExpiresAt: 1_784_117_700,
       })
-    ).resolves.toEqual({ kind: 'authenticated', sessionReference: 'opaque-session-reference' })
+    ).resolves.toEqual({
+      kind: 'authenticated',
+      sessionReference: 'opaque-session-reference',
+      subject: 'subject-1',
+    })
 
     expect(sessionStore.create).toHaveBeenCalledWith({
       subject: 'subject-1',
@@ -168,7 +172,11 @@ describe('signInWithPassword', () => {
         sessionStore,
         priorSession: 'old-session-reference' as DashboardSessionReference,
       })
-    ).resolves.toEqual({ kind: 'authenticated', sessionReference: 'fresh-session-reference' })
+    ).resolves.toEqual({
+      kind: 'authenticated',
+      sessionReference: 'fresh-session-reference',
+      subject: 'subject-1',
+    })
 
     expect(transactionStore.consume).toHaveBeenCalledWith('opaque-transaction-reference', 'sign-in')
     expect(transactionStore.invalidate).toHaveBeenCalledWith('opaque-transaction-reference')

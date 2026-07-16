@@ -9,6 +9,7 @@ import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
 import { sanitizeReturnTarget } from '@/lib/auth/return-target'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
+import { emitSecurityEvent, securityEvents } from '@/lib/auth/security-events'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -42,6 +43,16 @@ export async function signInAction(
   })
 
   if (outcome.kind === 'authenticated') {
+    emitSecurityEvent({
+      event: securityEvents.signInSucceeded,
+      outcome: 'success',
+      subject: outcome.subject,
+    })
+    emitSecurityEvent({
+      event: securityEvents.sessionCreated,
+      outcome: 'success',
+      subject: outcome.subject,
+    })
     const cookieStore = await cookies()
     cookieStore.set(DASHBOARD_SESSION_COOKIE.name, outcome.sessionReference, {
       httpOnly: DASHBOARD_SESSION_COOKIE.httpOnly,
@@ -64,6 +75,7 @@ export async function signInAction(
     redirect(`${challengePath(outcome.challenge)}?returnTo=${encodeURIComponent(returnTarget)}`)
   }
 
+  emitSecurityEvent({ event: securityEvents.signInFailed, outcome: 'failure' })
   return {
     feedback: feedbackForAuthFailure(outcome.failure, 'sign-in'),
   }
