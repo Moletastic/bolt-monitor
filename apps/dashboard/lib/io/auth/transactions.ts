@@ -52,6 +52,20 @@ export interface DynamoAuthTransactionStoreOptions {
 /** The only transaction lifetime accepted by the server-side storage boundary. */
 export { AUTH_TRANSACTION_LIFETIME_SECONDS, MAX_AUTH_TRANSACTION_ATTEMPTS }
 
+/** Opaque browser reference for a server-held authentication transaction. */
+export const AUTH_TRANSACTION_COOKIE = {
+  name: '__Host-bolt-auth-transaction',
+  httpOnly: true,
+  secure: true,
+  sameSite: 'lax',
+  path: '/',
+} as const
+
+export const AUTH_TRANSACTION_EXPIRY_COOKIE = {
+  ...AUTH_TRANSACTION_COOKIE,
+  maxAge: 0,
+} as const
+
 /**
  * Creates the authoritative AuthTable transaction store. Raw browser references
  * never enter DynamoDB; only their SHA-256 digests form primary keys.
@@ -204,7 +218,10 @@ function isValidDraft(draft: AuthTransactionDraft, timestamp: number): boolean {
 }
 
 function isFlowChallengePair(flow: AuthFlow, challenge: AuthChallenge['kind']): boolean {
-  return flow === 'sign-in' || challenge === 'new-password-required'
+  return (
+    (flow === 'sign-in' && challenge !== 'password-recovery') ||
+    (flow === 'password-recovery' && challenge === 'password-recovery')
+  )
 }
 
 function parseRecord(item: Record<string, AttributeValue>): ParsedRecord | null {
@@ -218,7 +235,8 @@ function parseRecord(item: Record<string, AttributeValue>): ParsedRecord | null 
     (flow !== 'sign-in' && flow !== 'password-recovery') ||
     (challenge !== 'new-password-required' &&
       challenge !== 'software-token-mfa' &&
-      challenge !== 'software-token-setup') ||
+      challenge !== 'software-token-setup' &&
+      challenge !== 'password-recovery') ||
     !encryptedState ||
     !generation ||
     !Number.isInteger(attempts) ||

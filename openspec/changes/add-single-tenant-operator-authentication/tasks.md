@@ -47,10 +47,10 @@ These sections are reviewable internal implementation milestones. Completing or 
 
 ## 6. Custom Next.js Authentication Flows
 
-- [ ] 6.1 Create the public `(auth)` route group and custom sign-in page/handler outside the polling and protected operator shell.
-- [ ] 6.2 Implement invitation activation and `NEW_PASSWORD_REQUIRED` pages using only the opaque server-held transaction reference and rotate into a new dashboard session on success.
-- [ ] 6.3 Implement non-enumerating forgot-password acknowledgement and reset-password confirmation pages without placing email, code, or password material in URLs or returned component state.
-- [ ] 6.4 Implement optional TOTP enrollment and challenge pages that show enrollment material only for immediate setup, verify before continuation, and never persist the TOTP secret in browser/RSC/application storage.
+- [x] 6.1 Create the public `(auth)` route group and custom sign-in page/handler outside the polling and protected operator shell.
+- [x] 6.2 Implement invitation activation and `NEW_PASSWORD_REQUIRED` pages using only the opaque server-held transaction reference and rotate into a new dashboard session on success.
+- [x] 6.3 Implement non-enumerating forgot-password acknowledgement and reset-password confirmation pages without placing email, code, or password material in URLs or returned component state.
+- [x] 6.4 Implement optional TOTP enrollment and challenge pages that show enrollment material only for immediate setup, verify before continuation, and never persist the TOTP secret in browser/RSC/application storage.
 - [ ] 6.5 Map Cognito and validation outcomes to typed, operator-safe auth feedback without raw exception text or account-state disclosure.
 - [ ] 6.6 Add page/action tests for established sign-in, invalid credentials, invitation activation, reused/expired/wrong-flow transaction, recovery enumeration resistance, reset, TOTP enrollment/challenge, established-session auth-page redirect, and zero `/api/v1/**` reads from public auth pages.
 

@@ -25,7 +25,10 @@ const provider: IdentityProvider = {
   answerNewPassword: async () => ok({ kind: 'authenticated', subject: 'subject', tokens }),
   answerTotpChallenge: async () => ok({ kind: 'authenticated', subject: 'subject', tokens }),
   associateTotp: async () =>
-    ok({ secret: 'secret', issuer: 'Bolt Monitor', accountName: 'operator' }),
+    ok({
+      enrollment: { secret: 'secret', issuer: 'Bolt Monitor', accountName: 'operator' },
+      continuation: { session: 'opaque' },
+    }),
   verifyTotpEnrollment: async () => ok({ kind: 'authenticated', subject: 'subject', tokens }),
   beginPasswordRecovery: async () => ok(undefined),
   confirmPasswordRecovery: async () => ok(undefined),
