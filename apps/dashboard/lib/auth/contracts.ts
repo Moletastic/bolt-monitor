@@ -134,14 +134,21 @@ export interface IdentityProvider {
 
 export interface AuthTransactionStore {
   create(draft: AuthTransactionDraft): Promise<AuthResult<AuthTransactionReference>>
-  read(reference: AuthTransactionReference): Promise<AuthResult<AuthTransaction | null>>
-  consume(reference: AuthTransactionReference): Promise<AuthResult<void>>
+  read(
+    reference: AuthTransactionReference,
+    flow: AuthFlow
+  ): Promise<AuthResult<AuthTransaction | null>>
+  consume(reference: AuthTransactionReference, flow: AuthFlow): Promise<AuthResult<void>>
   invalidate(reference: AuthTransactionReference): Promise<AuthResult<void>>
 }
 
 export interface DashboardSessionStore {
   create(session: NewDashboardSession): Promise<AuthResult<DashboardSessionReference>>
   read(reference: DashboardSessionReference): Promise<AuthResult<DashboardSession | null>>
+  refresh(
+    reference: DashboardSessionReference,
+    provider: Pick<IdentityProvider, 'refresh'>
+  ): Promise<AuthResult<DashboardSession>>
   replace(
     reference: DashboardSessionReference,
     session: NewDashboardSession
