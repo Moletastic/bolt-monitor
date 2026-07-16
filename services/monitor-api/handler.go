@@ -126,7 +126,7 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	if err != nil {
 		if typed, ok := sharederrors.As(err); ok && typed.Code == sharederrors.CodeAuthorizationDenied {
 			// Do not disclose why a current membership check denied this subject.
-			h.emitSecurityEvent(auth.EventAuthorizationDenied, "failure", identity.Subject, request.RequestContext.RequestID)
+			h.emitSecurityEvent(auth.EventAuthorizationDenied, "failure", identity.Subject, monitorCorrelationID(request.RequestContext.RequestID, requestHeader(request.Headers, "X-Correlation-ID")))
 			return respondAPIGateway(authorizationDenied())
 		}
 		return respondAPIGateway(err)
@@ -237,6 +237,15 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	default:
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeNotFound, nil))
 	}
+}
+
+func requestHeader(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
 }
 
 func (h monitorHandler) emitSecurityEvent(event auth.SecurityEvent, outcome string, subject auth.Subject, correlationID string) {

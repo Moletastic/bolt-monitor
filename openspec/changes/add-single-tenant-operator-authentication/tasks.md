@@ -68,9 +68,9 @@ These sections are reviewable internal implementation milestones. Completing or 
 ## 8. Authentication Audit And Telemetry
 
 - [x] 8.1 Implement the structured security-event catalog across dashboard auth handlers, API authorization, and bootstrap for all required success/failure, membership status, and `AuthValidAfter` authority-change events.
-- [ ] 8.2 Add correlation propagation and secret-redaction tests proving audit/log output excludes credentials, codes, TOTP secrets, transaction/session identifiers and hashes, JWTs, refresh tokens, cookies, encryption-key material, request bodies, and unsafe provider payloads.
-- [ ] 8.3 Add bounded CloudWatch metrics or metric filters for sign-in failure, recovery request, refresh failure, authorization denial, bootstrap failure, and auth storage/key-loading errors without per-user dimensions.
-- [ ] 8.4 Configure finite log retention and actionable alarms for sustained refresh failure and auth infrastructure errors, with infrastructure tests for thresholds, dimensions, tags, and cost-bearing resources.
+- [x] 8.2 Add correlation propagation and secret-redaction tests proving audit/log output excludes credentials, codes, TOTP secrets, transaction/session identifiers and hashes, JWTs, refresh tokens, cookies, encryption-key material, request bodies, and unsafe provider payloads.
+- [x] 8.3 Add bounded CloudWatch metrics or metric filters for sign-in failure, recovery request, refresh failure, authorization denial, bootstrap failure, and auth storage/key-loading errors without per-user dimensions.
+- [x] 8.4 Configure finite log retention and actionable alarms for sustained refresh failure and auth infrastructure errors, with infrastructure tests for thresholds, dimensions, tags, and cost-bearing resources.
 
 ## 9. Direct Client, API Contract, And Operations Documentation
 

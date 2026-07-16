@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -154,5 +157,58 @@ func TestHandleRequestEmitsSecretSafeAuthorizationDenial(t *testing.T) {
 	}
 	if event.Component != "monitor-api" || event.Stage == "" || event.Timestamp == "" {
 		t.Fatalf("event = %#v, want complete fixed schema", event)
+	}
+	if event.Operation != "authorization" || event.Events != 1 || event.EMF == nil {
+		t.Fatalf("event = %#v, want bounded authorization metric", event)
+	}
+	metricSet := event.EMF.CloudWatchMetrics[0]
+	if metricSet.Namespace != "BoltMonitor/Auth" || !reflect.DeepEqual(metricSet.Dimensions, [][]string{{"stage", "component", "operation", "outcome"}}) || !reflect.DeepEqual(metricSet.Metrics, []metric{{Name: "AuthenticationEvents", Unit: "Count"}}) {
+		t.Fatalf("metric = %#v, want fixed auth dimensions and counter", metricSet)
+	}
+}
+
+func TestHandleRequestPropagatesDashboardCorrelationWithoutLoggingSensitiveRequestData(t *testing.T) {
+	const correlationID = "a1b2c3d4-e5f6-4789-abcd-0123456789ab"
+	sensitive := []string{
+		"password-value", "recovery-code-value", "totp-secret-value", "transaction-id-value",
+		"session-hash-value", "eyJhbGciOiJIUzI1NiJ9.payload.signature", "access-token-value",
+		"refresh-token-value", "cookie-value", "encryption-key-value", "request-body-value", "provider-session-value",
+	}
+	repo := newFakeMonitorRepository()
+	identity := &stubPrincipalResolver{identity: auth.AuthenticatedIdentity{Subject: "operator", AuthTime: 2}}
+	membership := &stubMembershipResolver{err: sharederrors.New(sharederrors.CodeAuthorizationDenied, nil)}
+	handler := newAuthorizedMonitorHandler(repo, identity, membership)
+	var output bytes.Buffer
+	previousOutput := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previousOutput) })
+
+	_, err := handler.handleRequest(context.Background(), events.APIGatewayV2HTTPRequest{
+		RawPath: "/api/v1/services",
+		Body:    `{"password":"password-value","code":"recovery-code-value","totpSecret":"totp-secret-value","transactionId":"transaction-id-value","sessionHash":"session-hash-value","encryptionKey":"encryption-key-value","requestBody":"request-body-value","providerPayload":{"Session":"provider-session-value"}}`,
+		Headers: map[string]string{
+			"x-correlation-id": correlationID,
+			"authorization":    "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
+			"cookie":           "session=cookie-value; refresh=refresh-token-value; access=access-token-value",
+		},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{RequestID: "gateway-request-id", HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}},
+	})
+	if err != nil {
+		t.Fatalf("handleRequest() error = %v", err)
+	}
+	serialized := output.String()
+	if !strings.Contains(serialized, correlationID) {
+		t.Fatalf("log = %s, want propagated correlation ID", serialized)
+	}
+	for _, value := range sensitive {
+		if strings.Contains(serialized, value) {
+			t.Fatalf("security event leaked sensitive request value %q: %s", value, serialized)
+		}
+	}
+}
+
+func TestMonitorCorrelationIDFallsBackToGatewayRequestIDForUnsafeHeader(t *testing.T) {
+	if got := monitorCorrelationID("gateway-request-id", "Bearer access-token-value"); got != "gateway-request-id" {
+		t.Fatalf("correlation ID = %q, want gateway request ID", got)
 	}
 }

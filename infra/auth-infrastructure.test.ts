@@ -99,3 +99,41 @@ test('auth configuration and permissions are scoped to monitor API and dashboard
   assert.match(outputs, /authEncryptionKeyParameterName: authEncryptionKey\.name/)
   assert.doesNotMatch(outputs, /dashboardUserPoolClientId|directOperatorUserPoolClientId/)
 })
+
+test('auth logs and alarms have finite retention, bounded metrics, tags, and thresholds', () => {
+  const monitorHandler = stackSource.slice(
+    stackSource.indexOf('const monitorHandler'),
+    stackSource.indexOf('const protectedV1Routes')
+  )
+  const dashboard = stackSource.slice(
+    stackSource.indexOf("'Dashboard'"),
+    stackSource.indexOf('\n  return {')
+  )
+
+  assert.match(stackSource, /const authLogRetention = '2 weeks'/)
+  assert.match(monitorHandler, /logging: \{ retention: authLogRetention \}/)
+  assert.match(
+    dashboard,
+    /transform: \{ server: \{ logging: \{ retention: authLogRetention \} \} \}/
+  )
+  assert.match(stackSource, /const authMetricNamespace = 'BoltMonitor\/Auth'/)
+  assert.match(stackSource, /const authMetricName = 'AuthenticationEvents'/)
+  assert.match(stackSource, /const authAlarmPeriodSeconds = 300/)
+  assert.match(stackSource, /const authAlarmEvaluationPeriods = 3/)
+  assert.match(stackSource, /const authRefreshFailureThreshold = 5/)
+  assert.match(stackSource, /const authInfrastructureErrorThreshold = 3/)
+  assert.match(stackSource, /new aws\.cloudwatch\.MetricAlarm\('AuthRefreshFailureAlarm'/)
+  assert.match(stackSource, /\['AuthStorageFailureAlarm', 'storage'\]/)
+  assert.match(stackSource, /\['AuthKeyLoadingFailureAlarm', 'key_loading'\]/)
+  assert.match(stackSource, /datapointsToAlarm: authAlarmEvaluationPeriods/)
+  assert.match(stackSource, /treatMissingData: 'notBreaching'/)
+  assert.match(stackSource, /tags: policy\.tags/)
+  assert.match(
+    stackSource,
+    /dimensions: \{\s+stage: target\.stage,\s+component: 'dashboard-auth',\s+operation: 'refresh',\s+outcome: 'failure',\s+\}/
+  )
+  assert.match(
+    stackSource,
+    /dimensions: \{\s+stage: target\.stage,\s+component: 'dashboard-auth',\s+operation,\s+outcome: 'failure',\s+\}/
+  )
+})
