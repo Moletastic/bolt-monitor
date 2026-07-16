@@ -41,7 +41,7 @@ export interface AuthenticatedMonitorApiClientOptions {
   readonly baseUrl: string
   readonly fetch?: Fetch
   readonly readSession: () => Promise<Result<DashboardSession | null, ApiError>>
-  readonly sessionStore: Pick<DashboardSessionStore, 'refresh'>
+  readonly sessionStore: Pick<DashboardSessionStore, 'refresh' | 'invalidate'>
   readonly identityProvider: Pick<IdentityProvider, 'refresh'>
 }
 
@@ -61,6 +61,7 @@ export function createAuthenticatedMonitorApiClient(
     ): Promise<Result<SuccessfulApiResponse<T>, ApiError>> {
       const session = await options.readSession()
       if (!session.ok || !session.value) return err(authenticationRequired())
+      const sessionReference = session.value.reference
 
       const accessToken = await usableAccessToken(
         session.value,
@@ -75,7 +76,15 @@ export function createAuthenticatedMonitorApiClient(
       headers.delete('Cookie')
       headers.set('Authorization', `Bearer ${accessToken.value}`)
 
-      return requestResponse<T>(fetchImpl, options.baseUrl, path, { ...init, headers })
+      return requestResponse<T>(
+        fetchImpl,
+        options.baseUrl,
+        path,
+        { ...init, headers },
+        async () => {
+          await options.sessionStore.invalidate(sessionReference)
+        }
+      )
     },
     async request<T>(path: string, init?: RequestInit): Promise<Result<T, ApiError>> {
       const response = await this.requestResponse<T>(path, init)
@@ -138,7 +147,8 @@ async function requestResponse<T>(
   fetchImpl: Fetch,
   baseUrl: string,
   path: string,
-  init: RequestInit
+  init: RequestInit,
+  onAuthorizationDenied?: () => Promise<void>
 ): Promise<Result<SuccessfulApiResponse<T>, ApiError>> {
   const response = await tryCatch(
     () => fetchImpl(`${baseUrl.replace(/\/$/, '')}${path}`, { ...init, cache: 'no-store' }),
@@ -152,16 +162,24 @@ async function requestResponse<T>(
   )
   if (!body.ok) return body
   const parsed = body.value ? parseJson<ApiResponse<T>>(body.value) : err('empty response')
-  if (!parsed.ok) return err(internalError())
+  // Gateway rejects invalid access credentials before Lambda, so its 401 has
+  // no application envelope to parse.
+  if (!parsed.ok)
+    return response.value.status === 401 ? err(authenticationRequired()) : err(internalError())
 
   if (!response.value.ok) {
-    if (isError(parsed.value))
-      return err(
-        attachMessage(
-          fromEnvelope(parsed.value.reason, response.value.status),
-          parsed.value.message
-        )
+    if (isError(parsed.value)) {
+      const error = attachMessage(
+        fromEnvelope(parsed.value.reason, response.value.status),
+        parsed.value.message
       )
+      if (error.code === ApiErrorCode.AuthorizationDenied) {
+        if (onAuthorizationDenied) await onAuthorizationDenied()
+        return err(authenticationRequired())
+      }
+      return err(error)
+    }
+    if (response.value.status === 401) return err(authenticationRequired())
     return err(internalError(response.value.status))
   }
   if (parsed.value.status !== Status.Success || parsed.value.data === undefined)

@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { signInWithPassword } from '@/lib/auth/sign-in'
 import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
+import { requireDashboardCsrf } from '@/lib/auth/csrf'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -26,6 +27,7 @@ export async function signInAction(
   _previousState: SignInFormState,
   formData: FormData
 ): Promise<SignInFormState> {
+  await requireDashboardCsrf()
   await redirectIfDashboardSession()
   const outcome = await signInWithPassword({
     username: String(formData.get('email') ?? '').trim(),

@@ -32,7 +32,7 @@ describe('authenticated monitor API adapter', () => {
       baseUrl: 'https://api.example.test/',
       fetch,
       readSession,
-      sessionStore: { refresh: vi.fn() },
+      sessionStore: { refresh: vi.fn(), invalidate: vi.fn() },
       identityProvider: { refresh: vi.fn() },
     })
 
@@ -73,7 +73,7 @@ describe('authenticated monitor API adapter', () => {
         .mockResolvedValue(
           ok({ ...session, tokens: { ...session.tokens, accessTokenExpiresAt: 0 } })
         ),
-      sessionStore: { refresh },
+      sessionStore: { refresh, invalidate: vi.fn() },
       identityProvider: { refresh: vi.fn() },
     })
 
@@ -82,6 +82,52 @@ describe('authenticated monitor API adapter', () => {
     expect(refresh).toHaveBeenCalledWith(session.reference, expect.any(Object))
     const [, init] = fetch.mock.calls[0] as [string, RequestInit]
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer rotated-access-token')
+  })
+
+  it('invalidates the local session and returns sign-in-required for application authorization denial', async () => {
+    const invalidate = vi.fn().mockResolvedValue(ok(undefined))
+    const client = createAuthenticatedMonitorApiClient({
+      baseUrl: 'https://api.example.test',
+      fetch: vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            status: 'error',
+            reason: { code: 'AUTHORIZATION_DENIED', details: {} },
+          }),
+          { status: 403 }
+        )
+      ),
+      readSession: vi.fn().mockResolvedValue(ok(session)),
+      sessionStore: { refresh: vi.fn(), invalidate },
+      identityProvider: { refresh: vi.fn() },
+    })
+
+    const result = await client.request('/api/v1/services')
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'AUTHENTICATION_REQUIRED', status: 401 },
+    })
+    expect(invalidate).toHaveBeenCalledWith(session.reference)
+  })
+
+  it('returns sign-in-required for a non-envelope Gateway 401 without invalidating the session', async () => {
+    const invalidate = vi.fn()
+    const client = createAuthenticatedMonitorApiClient({
+      baseUrl: 'https://api.example.test',
+      fetch: vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 })),
+      readSession: vi.fn().mockResolvedValue(ok(session)),
+      sessionStore: { refresh: vi.fn(), invalidate },
+      identityProvider: { refresh: vi.fn() },
+    })
+
+    const result = await client.request('/api/v1/services')
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'AUTHENTICATION_REQUIRED', status: 401 },
+    })
+    expect(invalidate).not.toHaveBeenCalled()
   })
 })
 
