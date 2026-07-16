@@ -17,9 +17,11 @@ import {
   createDynamoDashboardSessionStoreFromEnv,
 } from '@/lib/io/auth/sessions'
 import { redirectIfDashboardSession } from '@/lib/auth/session-guard'
+import { requireDashboardCsrf } from '@/lib/auth/csrf'
 
 // This route deliberately bypasses RSC: the TOTP secret exists only in this immediate HTML response.
 export async function GET(request: Request) {
+  await requireDashboardCsrf()
   await redirectIfDashboardSession()
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
@@ -43,6 +45,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  await requireDashboardCsrf()
   await redirectIfDashboardSession()
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value

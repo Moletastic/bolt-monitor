@@ -33,6 +33,10 @@ const protectedActions = [
   'testNotificationChannelStateAction',
 ]
 
+const stateChangingActions = protectedActions.filter(
+  (action) => action !== 'loadMonitorHistoryPageAction'
+)
+
 describe('dashboard server protection', () => {
   it('validates the authoritative session before monitoring content renders', () => {
     const layout = source('app/(monitoring)/layout.tsx')
@@ -63,6 +67,19 @@ describe('dashboard server protection', () => {
     }
   })
 
+  it('validates CSRF evidence before every state-changing dashboard action', () => {
+    for (const action of stateChangingActions) {
+      const start = actionSource.indexOf(`export async function ${action}`)
+      const next = actionSource.indexOf('export async function ', start + 1)
+      const body = actionSource.slice(start, next === -1 ? undefined : next)
+
+      expect(body).toContain('await requireDashboardCsrf()')
+      expect(body.indexOf('await requireDashboardCsrf()')).toBeLessThan(
+        body.indexOf('await requireDashboardSession()')
+      )
+    }
+  })
+
   it('redirects established sessions away from auth pages and auth route handlers', () => {
     expect(source('app/(auth)/layout.tsx')).toContain('await redirectIfDashboardSession()')
     const enrollmentRoute = source('app/(auth)/totp/enroll/route.ts')
@@ -76,6 +93,8 @@ describe('dashboard server protection', () => {
       'app/(auth)/totp/challenge/actions.ts',
     ]) {
       expect(source(action)).toContain('await redirectIfDashboardSession()')
+      expect(source(action)).toContain('await requireDashboardCsrf()')
     }
+    expect(enrollmentRoute).toContain('await requireDashboardCsrf()')
   })
 })
