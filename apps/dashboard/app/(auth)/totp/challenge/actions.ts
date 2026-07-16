@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 
 import type { AuthTransactionReference, DashboardSessionReference } from '@/lib/auth/contracts'
 import { completeTotpChallenge } from '@/lib/auth/totp'
+import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -18,9 +19,7 @@ import {
   createDynamoDashboardSessionStoreFromEnv,
 } from '@/lib/io/auth/sessions'
 
-export type TotpChallengeFormState = { readonly message: string | null }
-
-const TOTP_FAILED_MESSAGE = 'Unable to verify that code. Start again from sign in.'
+export type TotpChallengeFormState = { readonly feedback: AuthFeedback | null }
 
 export async function completeTotpChallengeAction(
   _previousState: TotpChallengeFormState,
@@ -28,7 +27,8 @@ export async function completeTotpChallengeAction(
 ): Promise<TotpChallengeFormState> {
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
-  if (!reference) return { message: TOTP_FAILED_MESSAGE }
+  if (!reference)
+    return { feedback: feedbackForAuthFailure({ kind: 'transaction-invalid' }, 'totp') }
 
   const outcome = await completeTotpChallenge({
     reference: reference as AuthTransactionReference,
@@ -41,7 +41,8 @@ export async function completeTotpChallengeAction(
       | DashboardSessionReference
       | undefined,
   })
-  if (outcome.kind !== 'authenticated') return { message: TOTP_FAILED_MESSAGE }
+  if (outcome.kind !== 'authenticated')
+    return { feedback: feedbackForAuthFailure(outcome.failure, 'totp') }
 
   cookieStore.set(DASHBOARD_SESSION_COOKIE.name, outcome.sessionReference, DASHBOARD_SESSION_COOKIE)
   cookieStore.delete(AUTH_TRANSACTION_COOKIE.name)

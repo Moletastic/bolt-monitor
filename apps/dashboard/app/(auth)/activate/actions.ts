@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { completeNewPasswordChallenge } from '@/lib/auth/sign-in'
+import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import type { AuthTransactionReference, DashboardSessionReference } from '@/lib/auth/contracts'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
@@ -19,9 +20,7 @@ import {
   createDynamoDashboardSessionStoreFromEnv,
 } from '@/lib/io/auth/sessions'
 
-export type ActivateFormState = { readonly message: string | null }
-
-const ACTIVATION_FAILED_MESSAGE = 'Unable to activate this invitation. Start again from sign in.'
+export type ActivateFormState = { readonly feedback: AuthFeedback | null }
 
 export async function activateInvitationAction(
   _previousState: ActivateFormState,
@@ -29,7 +28,8 @@ export async function activateInvitationAction(
 ): Promise<ActivateFormState> {
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
-  if (!reference) return { message: ACTIVATION_FAILED_MESSAGE }
+  if (!reference)
+    return { feedback: feedbackForAuthFailure({ kind: 'transaction-invalid' }, 'activation') }
 
   const outcome = await completeNewPasswordChallenge({
     reference: reference as AuthTransactionReference,
@@ -60,5 +60,5 @@ export async function activateInvitationAction(
     redirect('/')
   }
 
-  return { message: ACTIVATION_FAILED_MESSAGE }
+  return { feedback: feedbackForAuthFailure(outcome.failure, 'activation') }
 }

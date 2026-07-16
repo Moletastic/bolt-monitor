@@ -21,4 +21,10 @@ describe('public sign-in route', () => {
     expect(loginAction).not.toContain('/api/v1/')
     expect(loginPage).not.toContain('/api/v1/')
   })
+
+  it('redirects after establishing an authenticated dashboard session', () => {
+    expect(loginAction).toContain('DASHBOARD_SESSION_COOKIE.name')
+    expect(loginAction).toContain('cookieStore.set')
+    expect(loginAction).toContain("redirect('/')")
+  })
 })

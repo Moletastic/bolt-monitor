@@ -76,7 +76,7 @@ describe('signInWithPassword', () => {
         transactionStore,
         transactionExpiresAt: 1_784_117_700,
       })
-    ).resolves.toEqual({ kind: 'failed' })
+    ).resolves.toEqual({ kind: 'failed', failure: { kind: 'authentication-failed' } })
     await expect(
       signInWithPassword({
         username: 'operator@example.com',
@@ -197,8 +197,34 @@ describe('signInWithPassword', () => {
         transactionStore,
         sessionStore,
       })
-    ).resolves.toEqual({ kind: 'failed' })
+    ).resolves.toEqual({ kind: 'failed', failure: { kind: 'transaction-consumed' } })
 
     expect(sessionStore.create).not.toHaveBeenCalled()
   })
+
+  it.each(['transaction-expired', 'transaction-invalid'] as const)(
+    'does not establish a session for a %s activation transaction',
+    async (failure) => {
+      const sessionStore = { create: vi.fn(), invalidate: vi.fn() }
+      const transactionStore = {
+        read: vi.fn().mockResolvedValue({ ok: false, error: { kind: failure } }),
+        consume: vi.fn(),
+        invalidate: vi.fn(),
+      }
+
+      await expect(
+        completeNewPasswordChallenge({
+          reference: 'invalid-transaction-reference' as AuthTransactionReference,
+          newPassword: 'new-password',
+          sessionExpiresAt: 1_784_160_000,
+          provider: { answerNewPassword: vi.fn() },
+          transactionStore,
+          sessionStore,
+        })
+      ).resolves.toEqual({ kind: 'failed', failure: { kind: failure } })
+
+      expect(sessionStore.create).not.toHaveBeenCalled()
+      expect(transactionStore.consume).not.toHaveBeenCalled()
+    }
+  )
 })

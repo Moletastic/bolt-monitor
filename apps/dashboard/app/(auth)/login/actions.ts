@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { signInWithPassword } from '@/lib/auth/sign-in'
+import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import { now } from '@/lib/clock'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -18,9 +19,7 @@ import {
   createDynamoDashboardSessionStoreFromEnv,
 } from '@/lib/io/auth/sessions'
 
-export type SignInFormState = { readonly message: string | null }
-
-const INVALID_CREDENTIALS_MESSAGE = 'Unable to sign in with those credentials.'
+export type SignInFormState = { readonly feedback: AuthFeedback | null }
 
 export async function signInAction(
   _previousState: SignInFormState,
@@ -60,7 +59,7 @@ export async function signInAction(
   }
 
   return {
-    message: INVALID_CREDENTIALS_MESSAGE,
+    feedback: feedbackForAuthFailure(outcome.failure, 'sign-in'),
   }
 }
 

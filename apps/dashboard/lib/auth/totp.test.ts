@@ -114,7 +114,31 @@ describe('TOTP authentication', () => {
       sessionStore,
     })
 
-    expect(result).toEqual({ kind: 'failed' })
+    expect(result).toEqual({ kind: 'failed', failure: { kind: 'totp-failed' } })
     expect(sessionStore.create).not.toHaveBeenCalled()
   })
+
+  it.each(['transaction-expired', 'transaction-invalid'] as const)(
+    'does not start TOTP enrollment from a %s transaction',
+    async (failure) => {
+      const provider = { associateTotp: vi.fn() }
+      const transactionStore = {
+        read: vi.fn().mockResolvedValue({ ok: false, error: { kind: failure } }),
+        create: vi.fn(),
+        invalidate: vi.fn(),
+      }
+
+      await expect(
+        beginTotpEnrollment({
+          reference,
+          transactionExpiresAt: 700,
+          provider,
+          transactionStore,
+        })
+      ).resolves.toEqual({ kind: 'failed', failure: { kind: failure } })
+
+      expect(provider.associateTotp).not.toHaveBeenCalled()
+      expect(transactionStore.create).not.toHaveBeenCalled()
+    }
+  )
 })

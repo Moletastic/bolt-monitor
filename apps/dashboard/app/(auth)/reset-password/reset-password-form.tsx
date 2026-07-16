@@ -4,10 +4,11 @@ import { useActionState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { messageForAuthFeedback } from '@/lib/auth/feedback'
 
 import { resetPasswordAction, type ResetPasswordFormState } from './actions'
 
-const initialState: ResetPasswordFormState = { message: null }
+const initialState: ResetPasswordFormState = { feedback: null }
 
 export function ResetPasswordForm() {
   const [state, formAction, pending] = useActionState(resetPasswordAction, initialState)
@@ -32,12 +33,12 @@ export function ResetPasswordForm() {
           type="password"
         />
       </div>
-      {state.message ? (
+      {state.feedback ? (
         <p
           aria-live="polite"
           className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
         >
-          {state.message}
+          {messageForAuthFeedback(state.feedback)}
         </p>
       ) : null}
       <Button disabled={pending} type="submit">

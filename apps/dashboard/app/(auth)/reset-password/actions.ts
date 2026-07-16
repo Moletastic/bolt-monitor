@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { confirmPasswordRecovery } from '@/lib/auth/password-recovery'
+import { feedbackForAuthFailure, type AuthFeedback } from '@/lib/auth/feedback'
 import type { AuthTransactionReference } from '@/lib/auth/contracts'
 import { createCognitoIdentityProviderFromEnv } from '@/lib/io/auth/cognito'
 import {
@@ -12,10 +13,7 @@ import {
   createDynamoAuthTransactionStoreFromEnv,
 } from '@/lib/io/auth/transactions'
 
-export type ResetPasswordFormState = { readonly message: string | null }
-
-const RESET_FAILED_MESSAGE =
-  'Unable to reset your password. Request new recovery instructions and try again.'
+export type ResetPasswordFormState = { readonly feedback: AuthFeedback | null }
 
 export async function resetPasswordAction(
   _previousState: ResetPasswordFormState,
@@ -23,7 +21,8 @@ export async function resetPasswordAction(
 ): Promise<ResetPasswordFormState> {
   const cookieStore = await cookies()
   const reference = cookieStore.get(AUTH_TRANSACTION_COOKIE.name)?.value
-  if (!reference) return { message: RESET_FAILED_MESSAGE }
+  if (!reference)
+    return { feedback: feedbackForAuthFailure({ kind: 'transaction-invalid' }, 'password-reset') }
 
   const outcome = await confirmPasswordRecovery({
     reference: reference as AuthTransactionReference,
@@ -32,7 +31,8 @@ export async function resetPasswordAction(
     provider: createCognitoIdentityProviderFromEnv(),
     transactionStore: createDynamoAuthTransactionStoreFromEnv(),
   })
-  if (outcome.kind !== 'completed') return { message: RESET_FAILED_MESSAGE }
+  if (outcome.kind !== 'completed')
+    return { feedback: feedbackForAuthFailure(outcome.failure, 'password-reset') }
 
   cookieStore.set(AUTH_TRANSACTION_EXPIRY_COOKIE.name, '', {
     httpOnly: AUTH_TRANSACTION_EXPIRY_COOKIE.httpOnly,

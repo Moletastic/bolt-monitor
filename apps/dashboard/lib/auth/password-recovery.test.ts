@@ -75,4 +75,29 @@ describe('password recovery', () => {
       newPassword: 'new-password',
     })
   })
+
+  it.each(['transaction-expired', 'transaction-invalid'] as const)(
+    'rejects a %s recovery transaction without confirming a password',
+    async (failure) => {
+      const provider = { confirmPasswordRecovery: vi.fn() }
+      const transactionStore = {
+        read: vi.fn().mockResolvedValue({ ok: false, error: { kind: failure } }),
+        consume: vi.fn(),
+        invalidate: vi.fn(),
+      }
+
+      await expect(
+        confirmPasswordRecovery({
+          reference: 'wrong-flow-reference' as AuthTransactionReference,
+          code: '123456',
+          newPassword: 'new-password',
+          provider,
+          transactionStore,
+        })
+      ).resolves.toEqual({ kind: 'failed', failure: { kind: failure } })
+
+      expect(provider.confirmPasswordRecovery).not.toHaveBeenCalled()
+      expect(transactionStore.consume).not.toHaveBeenCalled()
+    }
+  )
 })

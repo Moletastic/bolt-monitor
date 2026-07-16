@@ -4,10 +4,11 @@ import { useActionState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { messageForAuthFeedback } from '@/lib/auth/feedback'
 
 import { signInAction, type SignInFormState } from './actions'
 
-const initialState: SignInFormState = { message: null }
+const initialState: SignInFormState = { feedback: null }
 
 export function SignInForm() {
   const [state, formAction, pending] = useActionState(signInAction, initialState)
@@ -32,12 +33,12 @@ export function SignInForm() {
           type="password"
         />
       </div>
-      {state.message ? (
+      {state.feedback ? (
         <p
           aria-live="polite"
           className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
         >
-          {state.message}
+          {messageForAuthFeedback(state.feedback)}
         </p>
       ) : null}
       <Button disabled={pending} type="submit">
