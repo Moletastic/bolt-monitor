@@ -7,6 +7,7 @@ import type {
   IdentityProvider,
   NewDashboardSession,
 } from '@/lib/auth/contracts'
+import type { AuthFailure } from '@/lib/auth/feedback'
 import { establishDashboardSession } from '@/lib/io/auth/authentication-state'
 
 export type PasswordSignInResult =
@@ -16,11 +17,11 @@ export type PasswordSignInResult =
       readonly challenge: 'new-password-required' | 'software-token-mfa' | 'software-token-setup'
       readonly transactionReference: AuthTransactionReference
     }
-  | { readonly kind: 'failed' }
+  | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 export type NewPasswordResult =
   | { readonly kind: 'authenticated'; readonly sessionReference: string }
-  | { readonly kind: 'failed' }
+  | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 /**
  * Keeps password submission at the server boundary and turns only completed
@@ -35,15 +36,16 @@ export async function signInWithPassword(input: {
   readonly transactionStore: Pick<AuthTransactionStore, 'create'>
   readonly transactionExpiresAt: number
 }): Promise<PasswordSignInResult> {
-  if (!input.username || !input.password) return { kind: 'failed' }
+  if (!input.username || !input.password) return { kind: 'failed', failure: 'validation-failed' }
 
   const signIn = await input.provider.beginSignIn({
     username: input.username,
     password: input.password,
   })
-  if (!signIn.ok) return { kind: 'failed' }
+  if (!signIn.ok) return { kind: 'failed', failure: signIn.error }
   if (signIn.value.kind === 'challenge') {
-    if (signIn.value.challenge.kind === 'password-recovery') return { kind: 'failed' }
+    if (signIn.value.challenge.kind === 'password-recovery')
+      return { kind: 'failed', failure: { kind: 'challenge-failed' } }
     const transaction = await input.transactionStore.create({
       flow: 'sign-in',
       challenge: signIn.value.challenge.kind,
@@ -57,7 +59,7 @@ export async function signInWithPassword(input: {
           challenge: signIn.value.challenge.kind,
           transactionReference: transaction.value,
         }
-      : { kind: 'failed' }
+      : { kind: 'failed', failure: transaction.error }
   }
 
   const session: NewDashboardSession = {
@@ -68,7 +70,7 @@ export async function signInWithPassword(input: {
   const created = await input.sessionStore.create(session)
   return created.ok
     ? { kind: 'authenticated', sessionReference: created.value }
-    : { kind: 'failed' }
+    : { kind: 'failed', failure: created.error }
 }
 
 /** Completes an invitation's server-held Cognito challenge into a new session. */
@@ -81,7 +83,7 @@ export async function completeNewPasswordChallenge(input: {
   readonly sessionStore: Pick<DashboardSessionStore, 'create' | 'invalidate'>
   readonly priorSession?: import('@/lib/auth/contracts').DashboardSessionReference
 }): Promise<NewPasswordResult> {
-  if (!input.newPassword) return { kind: 'failed' }
+  if (!input.newPassword) return { kind: 'failed', failure: 'validation-failed' }
 
   const transaction = await input.transactionStore.read(input.reference, 'sign-in')
   if (
@@ -89,16 +91,21 @@ export async function completeNewPasswordChallenge(input: {
     !transaction.value ||
     transaction.value.challenge !== 'new-password-required'
   )
-    return { kind: 'failed' }
+    return {
+      kind: 'failed',
+      failure: transaction.ok ? { kind: 'transaction-invalid' } : transaction.error,
+    }
 
   const completed = await input.provider.answerNewPassword({
     continuation: transaction.value.providerState,
     newPassword: input.newPassword,
   })
-  if (!completed.ok || completed.value.kind !== 'authenticated') return { kind: 'failed' }
+  if (!completed.ok) return { kind: 'failed', failure: completed.error }
+  if (completed.value.kind !== 'authenticated')
+    return { kind: 'failed', failure: { kind: 'challenge-failed' } }
 
   const consumed = await input.transactionStore.consume(input.reference, 'sign-in')
-  if (!consumed.ok) return { kind: 'failed' }
+  if (!consumed.ok) return { kind: 'failed', failure: consumed.error }
 
   const session: NewDashboardSession = {
     subject: completed.value.subject,
@@ -114,5 +121,5 @@ export async function completeNewPasswordChallenge(input: {
   })
   return established.ok
     ? { kind: 'authenticated', sessionReference: established.value }
-    : { kind: 'failed' }
+    : { kind: 'failed', failure: established.error }
 }

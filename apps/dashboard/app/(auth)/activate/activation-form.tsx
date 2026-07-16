@@ -4,10 +4,11 @@ import { useActionState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { messageForAuthFeedback } from '@/lib/auth/feedback'
 
 import { activateInvitationAction, type ActivateFormState } from './actions'
 
-const initialState: ActivateFormState = { message: null }
+const initialState: ActivateFormState = { feedback: null }
 
 export function ActivationForm() {
   const [state, formAction, pending] = useActionState(activateInvitationAction, initialState)
@@ -26,12 +27,12 @@ export function ActivationForm() {
           type="password"
         />
       </div>
-      {state.message ? (
+      {state.feedback ? (
         <p
           aria-live="polite"
           className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-foreground"
         >
-          {state.message}
+          {messageForAuthFeedback(state.feedback)}
         </p>
       ) : null}
       <Button disabled={pending} type="submit">

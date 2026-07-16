@@ -21,4 +21,10 @@ describe('invitation activation route', () => {
     expect(activationAction).not.toContain('searchParams')
     expect(activationAction).not.toContain('/api/v1/')
   })
+
+  it('replaces the authentication transaction with an established session before redirecting', () => {
+    expect(activationAction).toContain('DASHBOARD_SESSION_COOKIE.name')
+    expect(activationAction).toContain('AUTH_TRANSACTION_EXPIRY_COOKIE.name')
+    expect(activationAction).toContain("redirect('/')")
+  })
 })

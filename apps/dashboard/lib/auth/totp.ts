@@ -9,6 +9,7 @@ import type {
   NewDashboardSession,
   TotpEnrollment,
 } from '@/lib/auth/contracts'
+import type { AuthFailure } from '@/lib/auth/feedback'
 import { establishDashboardSession } from '@/lib/io/auth/authentication-state'
 
 export type TotpEnrollmentResult =
@@ -17,11 +18,11 @@ export type TotpEnrollmentResult =
       readonly enrollment: TotpEnrollment
       readonly transactionReference: AuthTransactionReference
     }
-  | { readonly kind: 'failed' }
+  | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 export type TotpChallengeResult =
   | { readonly kind: 'authenticated'; readonly sessionReference: string }
-  | { readonly kind: 'failed' }
+  | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 /**
  * The secret is returned only to the immediate non-RSC enrollment response.
@@ -39,12 +40,15 @@ export async function beginTotpEnrollment(input: {
     !transaction.value ||
     transaction.value.challenge !== 'software-token-setup'
   )
-    return { kind: 'failed' }
+    return {
+      kind: 'failed',
+      failure: transaction.ok ? { kind: 'transaction-invalid' } : transaction.error,
+    }
 
   const association = await input.provider.associateTotp({
     continuation: transaction.value.providerState,
   })
-  if (!association.ok) return { kind: 'failed' }
+  if (!association.ok) return { kind: 'failed', failure: association.error }
 
   const replacement = await input.transactionStore.create({
     flow: 'sign-in',
@@ -53,9 +57,9 @@ export async function beginTotpEnrollment(input: {
     attempts: 0,
     expiresAt: input.transactionExpiresAt,
   })
-  if (!replacement.ok) return { kind: 'failed' }
+  if (!replacement.ok) return { kind: 'failed', failure: replacement.error }
   const invalidated = await input.transactionStore.invalidate(input.reference)
-  if (!invalidated.ok) return { kind: 'failed' }
+  if (!invalidated.ok) return { kind: 'failed', failure: invalidated.error }
 
   return {
     kind: 'enrollment-ready',
@@ -74,7 +78,7 @@ export async function completeTotpChallenge(input: {
   readonly sessionStore: Pick<DashboardSessionStore, 'create' | 'invalidate'>
   readonly priorSession?: DashboardSessionReference
 }): Promise<TotpChallengeResult> {
-  if (!input.code) return { kind: 'failed' }
+  if (!input.code) return { kind: 'failed', failure: 'validation-failed' }
   const transaction = await input.transactionStore.read(input.reference, 'sign-in')
   if (
     !transaction.ok ||
@@ -82,7 +86,10 @@ export async function completeTotpChallenge(input: {
     (transaction.value.challenge !== 'software-token-mfa' &&
       transaction.value.challenge !== 'software-token-setup')
   )
-    return { kind: 'failed' }
+    return {
+      kind: 'failed',
+      failure: transaction.ok ? { kind: 'transaction-invalid' } : transaction.error,
+    }
 
   const completed =
     transaction.value.challenge === 'software-token-mfa'
@@ -94,10 +101,12 @@ export async function completeTotpChallenge(input: {
           continuation: transaction.value.providerState,
           code: input.code,
         })
-  if (!completed.ok || completed.value.kind !== 'authenticated') return { kind: 'failed' }
+  if (!completed.ok) return { kind: 'failed', failure: completed.error }
+  if (completed.value.kind !== 'authenticated')
+    return { kind: 'failed', failure: { kind: 'totp-failed' } }
 
   const consumed = await input.transactionStore.consume(input.reference, 'sign-in')
-  if (!consumed.ok) return { kind: 'failed' }
+  if (!consumed.ok) return { kind: 'failed', failure: consumed.error }
   const session: NewDashboardSession = {
     subject: completed.value.subject,
     tokens: completed.value.tokens,
@@ -112,5 +121,5 @@ export async function completeTotpChallenge(input: {
   })
   return established.ok
     ? { kind: 'authenticated', sessionReference: established.value }
-    : { kind: 'failed' }
+    : { kind: 'failed', failure: established.error }
 }

@@ -5,9 +5,12 @@ import type {
   AuthTransactionStore,
   IdentityProvider,
 } from '@/lib/auth/contracts'
+import type { AuthFailure } from '@/lib/auth/feedback'
 
 export type PasswordRecoveryResult = { readonly kind: 'acknowledged' }
-export type PasswordResetResult = { readonly kind: 'completed' } | { readonly kind: 'failed' }
+export type PasswordResetResult =
+  | { readonly kind: 'completed' }
+  | { readonly kind: 'failed'; readonly failure: AuthFailure }
 
 type RecoveryState = { readonly username: string }
 
@@ -46,7 +49,7 @@ export async function confirmPasswordRecovery(input: {
   readonly provider: Pick<IdentityProvider, 'confirmPasswordRecovery'>
   readonly transactionStore: Pick<AuthTransactionStore, 'read' | 'consume' | 'invalidate'>
 }): Promise<PasswordResetResult> {
-  if (!input.code || !input.newPassword) return { kind: 'failed' }
+  if (!input.code || !input.newPassword) return { kind: 'failed', failure: 'validation-failed' }
 
   const transaction = await input.transactionStore.read(input.reference, 'password-recovery')
   if (
@@ -55,17 +58,20 @@ export async function confirmPasswordRecovery(input: {
     transaction.value.challenge !== 'password-recovery' ||
     !isRecoveryState(transaction.value.providerState)
   )
-    return { kind: 'failed' }
+    return {
+      kind: 'failed',
+      failure: transaction.ok ? { kind: 'transaction-invalid' } : transaction.error,
+    }
 
   const confirmed = await input.provider.confirmPasswordRecovery({
     username: transaction.value.providerState.username,
     code: input.code,
     newPassword: input.newPassword,
   })
-  if (!confirmed.ok) return { kind: 'failed' }
+  if (!confirmed.ok) return { kind: 'failed', failure: confirmed.error }
 
   const consumed = await input.transactionStore.consume(input.reference, 'password-recovery')
-  if (!consumed.ok) return { kind: 'failed' }
+  if (!consumed.ok) return { kind: 'failed', failure: consumed.error }
   await input.transactionStore.invalidate(input.reference)
   return { kind: 'completed' }
 }

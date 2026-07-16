@@ -4,10 +4,11 @@ import { useActionState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { messageForAuthFeedback } from '@/lib/auth/feedback'
 
 import { completeTotpChallengeAction, type TotpChallengeFormState } from './actions'
 
-const initialState: TotpChallengeFormState = { message: null }
+const initialState: TotpChallengeFormState = { feedback: null }
 
 export function TotpChallengeForm() {
   const [state, formAction, pending] = useActionState(completeTotpChallengeAction, initialState)
@@ -19,9 +20,9 @@ export function TotpChallengeForm() {
         </label>
         <Input autoComplete="one-time-code" id="code" inputMode="numeric" name="code" required />
       </div>
-      {state.message ? (
+      {state.feedback ? (
         <p aria-live="polite" className="text-sm text-destructive">
-          {state.message}
+          {messageForAuthFeedback(state.feedback)}
         </p>
       ) : null}
       <Button disabled={pending} type="submit">
