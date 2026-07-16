@@ -45,7 +45,8 @@ export function createBootstrapStack(target: DeploymentTarget) {
 
   const userPoolClientArgs = {
     userPoolId: operatorUserPool.id,
-    explicitAuthFlows: ['ALLOW_USER_PASSWORD_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'],
+    // Cognito refresh rotation requires GetTokensFromRefreshToken, not the legacy flow.
+    explicitAuthFlows: ['ALLOW_USER_PASSWORD_AUTH'],
     enableTokenRevocation: true,
     refreshTokenRotation: { feature: 'ENABLED', retryGracePeriodSeconds: 10 },
     accessTokenValidity: 60,
