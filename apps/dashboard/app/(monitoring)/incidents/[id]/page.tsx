@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { Suspense } from 'react'
 
 import { AppShell } from '@/components/app-shell'
 import { EmptyState } from '@/components/empty-state'
@@ -135,18 +136,30 @@ export default async function IncidentDetailPage({
                   { label: 'Audit', href: `/incidents/${incident.incidentId}?tab=audit` },
                 ]}
               />
-              {activeTab === 'timeline' ? <TimelineTab incidentId={incident.incidentId} /> : null}
+              {activeTab === 'timeline' ? (
+                <Suspense
+                  fallback={<TabLoadingFallback title="Timeline" message="Loading timeline…" />}
+                >
+                  <TimelineTab incidentId={incident.incidentId} />
+                </Suspense>
+              ) : null}
               {activeTab === 'escalation' ? (
                 <EscalationStateTab incidentId={incident.incidentId} />
               ) : null}
               {activeTab === 'alerts' && incident.serviceId ? (
-                <AlertHistoryTab
-                  monitorId={incident.monitorId}
-                  openedAt={incident.openedAt}
-                  acknowledgedAt={incident.acknowledgedAt}
-                  resolvedAt={incident.resolvedAt}
-                  serviceId={incident.serviceId}
-                />
+                <Suspense
+                  fallback={
+                    <TabLoadingFallback title="Alert History" message="Loading alert history…" />
+                  }
+                >
+                  <AlertHistoryTab
+                    monitorId={incident.monitorId}
+                    openedAt={incident.openedAt}
+                    acknowledgedAt={incident.acknowledgedAt}
+                    resolvedAt={incident.resolvedAt}
+                    serviceId={incident.serviceId}
+                  />
+                </Suspense>
               ) : null}
               {activeTab === 'alerts' && !incident.serviceId ? (
                 <Card>
@@ -159,7 +172,11 @@ export default async function IncidentDetailPage({
                 </Card>
               ) : null}
               {activeTab === 'audit' && incident.serviceId ? (
-                <AuditTab monitorId={incident.monitorId} serviceId={incident.serviceId} />
+                <Suspense
+                  fallback={<TabLoadingFallback title="Audit" message="Loading audit trail…" />}
+                >
+                  <AuditTab monitorId={incident.monitorId} serviceId={incident.serviceId} />
+                </Suspense>
               ) : null}
               {activeTab === 'audit' && !incident.serviceId ? (
                 <Card>
@@ -193,4 +210,17 @@ export default async function IncidentDetailPage({
       </AppShell>
     )
   }
+}
+
+function TabLoadingFallback({ title, message }: { title: string; message: string }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">{message}</p>
+      </CardContent>
+    </Card>
+  )
 }

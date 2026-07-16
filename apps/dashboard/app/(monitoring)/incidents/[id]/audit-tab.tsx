@@ -1,7 +1,3 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-
 import { EmptyState } from '@/components/empty-state'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -21,61 +17,28 @@ interface AuditTabProps {
   monitorId: string
 }
 
-export function AuditTab({ serviceId, monitorId }: AuditTabProps) {
-  const [monitorEvents, setMonitorEvents] = useState<AuditEvent[]>([])
-  const [serviceEvents, setServiceEvents] = useState<AuditEvent[]>([])
-  const [monitorError, setMonitorError] = useState<string | null>(null)
-  const [serviceError, setServiceError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+export async function AuditTab({ serviceId, monitorId }: AuditTabProps) {
+  const [monitorResult, serviceResult] = await Promise.allSettled([
+    listMonitorAuditEvents(serviceId, monitorId),
+    listServiceAuditEvents(serviceId),
+  ])
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadAudit() {
-      setLoading(true)
-      setMonitorError(null)
-      setServiceError(null)
-
-      const [monitorResult, serviceResult] = await Promise.allSettled([
-        listMonitorAuditEvents(serviceId, monitorId),
-        listServiceAuditEvents(serviceId),
-      ])
-
-      if (cancelled) {
-        return
-      }
-
-      if (monitorResult.status === 'fulfilled') {
-        setMonitorEvents(monitorResult.value)
-      } else {
-        setMonitorEvents([])
-        setMonitorError(
-          monitorResult.reason instanceof Error
-            ? monitorResult.reason.message
-            : 'Unable to load monitor audit.'
-        )
-      }
-
-      if (serviceResult.status === 'fulfilled') {
-        setServiceEvents(serviceResult.value)
-      } else {
-        setServiceEvents([])
-        setServiceError(
-          serviceResult.reason instanceof Error
-            ? serviceResult.reason.message
-            : 'Unable to load service audit.'
-        )
-      }
-
-      setLoading(false)
-    }
-
-    void loadAudit()
-
-    return () => {
-      cancelled = true
-    }
-  }, [monitorId, serviceId])
+  const monitorEvents: AuditEvent[] =
+    monitorResult.status === 'fulfilled' ? monitorResult.value : []
+  const serviceEvents: AuditEvent[] =
+    serviceResult.status === 'fulfilled' ? serviceResult.value : []
+  const monitorError =
+    monitorResult.status === 'rejected'
+      ? monitorResult.reason instanceof Error
+        ? monitorResult.reason.message
+        : 'Unable to load monitor audit.'
+      : null
+  const serviceError =
+    serviceResult.status === 'rejected'
+      ? serviceResult.reason instanceof Error
+        ? serviceResult.reason.message
+        : 'Unable to load service audit.'
+      : null
 
   const events = [...monitorEvents, ...serviceEvents].sort((a, b) =>
     a.occurredAt.localeCompare(b.occurredAt)
@@ -87,7 +50,6 @@ export function AuditTab({ serviceId, monitorId }: AuditTabProps) {
         <CardTitle>Audit</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {loading ? <p className="text-sm text-muted-foreground">Loading audit trail…</p> : null}
         {monitorError ? (
           <div className="rounded-md border border-status-down/30 bg-status-down/10 px-3 py-2 text-sm text-status-down">
             Monitor audit unavailable: {monitorError}
@@ -98,13 +60,13 @@ export function AuditTab({ serviceId, monitorId }: AuditTabProps) {
             Service audit unavailable: {serviceError}
           </div>
         ) : null}
-        {!loading && events.length === 0 ? (
+        {events.length === 0 ? (
           <EmptyState
             description="No audit events recorded for this incident scope."
             title="No audit events"
           />
         ) : null}
-        {!loading && events.length > 0 ? (
+        {events.length > 0 ? (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>

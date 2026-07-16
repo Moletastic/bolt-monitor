@@ -1,6 +1,3 @@
-'use client'
-
-import { useEffect, useState } from 'react'
 import { differenceInMilliseconds, isValid, parseISO } from 'date-fns'
 
 import { EmptyState } from '@/components/empty-state'
@@ -66,58 +63,31 @@ function getTransitionRunMap(
   return labelsByRunId
 }
 
-export function AlertHistoryTab({
+export async function AlertHistoryTab({
   serviceId,
   monitorId,
   openedAt,
   acknowledgedAt,
   resolvedAt,
 }: AlertHistoryTabProps) {
-  const [runs, setRuns] = useState<CheckRun[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  let runs: CheckRun[] = []
+  let error: string | null = null
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadRuns() {
-      setLoading(true)
-      setError(null)
-      try {
-        const next = await listMonitorRuns(serviceId, monitorId)
-        if (cancelled) {
-          return
+  try {
+    runs = (await listMonitorRuns(serviceId, monitorId))
+      .filter((run) => {
+        if (run.finishedAt < openedAt) {
+          return false
         }
-        const filtered = next
-          .filter((run) => {
-            if (run.finishedAt < openedAt) {
-              return false
-            }
-            if (resolvedAt && run.finishedAt > resolvedAt) {
-              return false
-            }
-            return true
-          })
-          .sort((a, b) => a.finishedAt.localeCompare(b.finishedAt))
-        setRuns(filtered)
-      } catch (err) {
-        if (cancelled) {
-          return
+        if (resolvedAt && run.finishedAt > resolvedAt) {
+          return false
         }
-        setError(err instanceof Error ? err.message : 'Unable to load alert history.')
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    void loadRuns()
-
-    return () => {
-      cancelled = true
-    }
-  }, [monitorId, openedAt, resolvedAt, serviceId])
+        return true
+      })
+      .sort((a, b) => a.finishedAt.localeCompare(b.finishedAt))
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : 'Unable to load alert history.'
+  }
 
   const transitionRuns = getTransitionRunMap(runs, [
     { label: 'Opened', timestamp: openedAt },
@@ -131,9 +101,7 @@ export function AlertHistoryTab({
         <CardTitle>Alert History</CardTitle>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading alert history…</p>
-        ) : error ? (
+        {error ? (
           <div className="rounded-md border border-status-down/30 bg-status-down/10 px-3 py-2 text-sm text-status-down">
             {error}
           </div>
