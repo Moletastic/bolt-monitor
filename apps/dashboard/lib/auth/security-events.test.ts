@@ -97,13 +97,18 @@ describe('security events', () => {
     [securityEvents.storageFailed, 'storage'],
     [securityEvents.keyLoadingFailed, 'key_loading'],
   ] as const)('emits bounded CloudWatch EMF for %s', (event, operation) => {
-    const output = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    let output = ''
+    vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+      output = String(message)
+    })
 
     emitSecurityEvent({ event, outcome: 'failure', subject: 'operator-1' })
 
-    const record = JSON.parse(String(output.mock.calls[0][0])) as Record<string, unknown>
+    const parsed: unknown = JSON.parse(output)
+    if (!isRecord(parsed)) throw new Error('expected structured security event')
+    const record = parsed
+    expect(typeof record.stage).toBe('string')
     expect(record).toMatchObject({
-      stage: expect.any(String),
       component: 'dashboard-auth',
       operation,
       outcome: 'failure',
@@ -121,3 +126,7 @@ describe('security events', () => {
     expect(JSON.stringify(record._aws)).not.toContain('operator-1')
   })
 })
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}

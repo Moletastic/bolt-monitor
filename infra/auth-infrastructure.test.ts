@@ -100,6 +100,63 @@ test('auth configuration and permissions are scoped to monitor API and dashboard
   assert.doesNotMatch(outputs, /dashboardUserPoolClientId|directOperatorUserPoolClientId/)
 })
 
+test('Gateway rejects protected-route requests before Lambda and keeps health public', () => {
+  const healthRoute = stackSource.slice(
+    stackSource.indexOf("api.route('GET /api/health'"),
+    stackSource.indexOf('const operatorAuthorizer')
+  )
+  const protectedRoutes = stackSource.slice(
+    stackSource.indexOf('const protectedV1Routes'),
+    stackSource.indexOf('const dashboard = new sst.aws.Nextjs')
+  )
+
+  assert.match(healthRoute, /handler: '\.\.\/services\/api-health'/)
+  assert.doesNotMatch(healthRoute, /auth:\s*\{/)
+  assert.match(protectedRoutes, /api\.route\(route, monitorHandler, \{\s*auth:/)
+  assert.match(protectedRoutes, /authorizer: operatorAuthorizer\.id/)
+  assert.match(protectedRoutes, /scopes: \['aws\.cognito\.signin\.user\.admin'\]/)
+  assert.match(
+    stackSource,
+    /audiences: \[dashboardUserPoolClient\.id, directOperatorUserPoolClient\.id\]/
+  )
+})
+
+test('static deployment configuration keeps the auth boundary complete and dependency-free', () => {
+  const protectedRoutes = stackSource.slice(
+    stackSource.indexOf('const protectedV1Routes'),
+    stackSource.indexOf('const dashboard = new sst.aws.Nextjs')
+  )
+  const routes = [...protectedRoutes.matchAll(/'([A-Z]+ \/api\/v1\/[^']+)'/g)].map(
+    ([, route]) => route
+  )
+
+  assert.ok(routes.length > 0, 'at least one protected v1 route must be declared')
+  assert.ok(routes.every((route) => route.includes(' /api/v1/')))
+  assert.match(
+    protectedRoutes,
+    /for \(const route of protectedV1Routes\)\s+api\.route\(route, monitorHandler, \{\s+auth: \{\s+jwt: \{ authorizer: operatorAuthorizer\.id, scopes: \['aws\.cognito\.signin\.user\.admin'\] \}/
+  )
+
+  assert.doesNotMatch(
+    stackSource,
+    /Amplify|UserPoolDomain|managedLogin|aws\.ses|aws\.route53|customEmailSender/i
+  )
+  assert.doesNotMatch(stackSource, /new aws\.ssm\.Parameter\(/)
+  assert.doesNotMatch(stackSource, /authEncryptionKey\.(?:value|valueString|secretValue)/)
+
+  const userPool = stackSection('OperatorUserPool')
+  const authTable = stackSection('AuthTable')
+  const clients = `${stackSection('DashboardUserPoolClient')}\n${stackSection(
+    'DirectOperatorUserPoolClient'
+  )}`
+  for (const resource of [userPool, authTable, clients]) {
+    assert.match(resource, /durableOptions/)
+  }
+  assert.match(stackSource, /deletionProtection: policy\.retainDurableResources/)
+  assert.match(authTable, /pointInTimeRecovery: \{ enabled: policy\.retainDurableResources \}/)
+  assert.match(stackSource, /const disposableOptions = \{ retainOnDelete: false \}/)
+})
+
 test('auth logs and alarms have finite retention, bounded metrics, tags, and thresholds', () => {
   const monitorHandler = stackSource.slice(
     stackSource.indexOf('const monitorHandler'),
