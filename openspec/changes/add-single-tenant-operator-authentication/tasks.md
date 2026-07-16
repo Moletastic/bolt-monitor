@@ -57,7 +57,7 @@ These sections are reviewable internal implementation milestones. Completing or 
 ## 7. Dashboard Protection And API Token Forwarding
 
 - [x] 7.1 Guard the `(monitoring)` server layout, protected route handlers, and every server action independently with server-side session validation before rendering data or causing side effects.
-- [ ] 7.2 Refactor dashboard API I/O through one server-only authenticated adapter that obtains a usable access token, forwards only Bearer access tokens, and keeps public health access separate.
+- [x] 7.2 Refactor dashboard API I/O through one server-only authenticated adapter that obtains a usable access token, forwards only Bearer access tokens, and keeps public health access separate.
 - [ ] 7.3 Invalidate the local dashboard session on `AUTHORIZATION_DENIED`, handle API Gateway non-envelope 401 separately from application envelopes, and return safe sign-in-required navigation/results.
 - [ ] 7.4 Implement centralized CSRF validation for every state-changing auth, session, and application action using canonical Origin plus effective Host/protocol and tightly bounded missing-Origin Fetch Metadata handling.
 - [ ] 7.5 Implement one return-target sanitizer that accepts only normalized safe root-relative paths, rejects external/authority/encoded/control/backslash/auth-loop targets, and defaults to `/`.
