@@ -18,6 +18,11 @@
 rollback evidence, and measured restore drills belong to
 `establish-data-recovery-and-capacity-guardrails`.
 
+For retained Cognito, `AuthTable`, and AES key material, capture the auth
+inventory and follow the auth-specific recovery and break-glass controls in
+[auth-operations.md](./auth-operations.md). `AuthTable` PITR restores into a
+recovery table; it does not authorize an unreviewed traffic cutover.
+
 ## Retire a persistent installation
 
 1. Record target preflight and fresh retained-resource inventory.

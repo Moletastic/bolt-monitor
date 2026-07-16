@@ -23,7 +23,7 @@ local work. Never omit a target and never use a unique persistent smoke stage.
 | Resource | Persistent | Ephemeral | Inventory / cleanup |
 | --- | --- | --- | --- |
 | `AppTable` | PITR, deletion protection, retain on delete | no protection, no retain | retained table name and ARN / remove and verify tag ownership |
-| `AuthTable`, Cognito, durable parameters and secrets | future auth modules consume durable policy | future auth modules consume removable policy | identifiers only, never values |
+| `AuthTable`, Cognito, durable parameters and secrets | `AuthTable` PITR/deletion protection/retain; Cognito protection/retain; AES parameter retained | no protection/PITR/retention; delete with stage | identifiers only, never values; auth details in `docs/auth-operations.md` |
 | Bucket | removable; object expiry remains bounded | removable; object expiry remains bounded | ownership tags and SST state |
 | Queues, schedules, API, functions, log groups, subscriptions | removable, not durable installation state | removable | ownership tags and SST state |
 | Dashboard and generated SST support resources | removable | removable | SST state plus ownership tags where supported |

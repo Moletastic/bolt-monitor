@@ -78,10 +78,11 @@ check-auth-routes:
 	node scripts/check-auth-routes.mjs
 
 test-api-contract:
-	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/rotate-auth-key.test.mjs
+	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/check-openapi-auth.test.mjs scripts/rotate-auth-key.test.mjs
 
 check-api-contract: test-api-contract
 	node scripts/check-api-contract.mjs
+	node scripts/check-openapi-auth.mjs
 
 test-sst-target:
 	node --test scripts/check-sst-target.test.mjs
