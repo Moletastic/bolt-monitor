@@ -115,7 +115,7 @@ describe('Cognito identity provider', () => {
     const enrollment = await identity.associateTotp({
       continuation: challenge.value.challenge.continuation,
     })
-    expect(isOk(enrollment) && enrollment.value.secret).toBe('totp-secret')
+    expect(isOk(enrollment) && enrollment.value.enrollment.secret).toBe('totp-secret')
     const verified = await identity.verifyTotpEnrollment({
       continuation: challenge.value.challenge.continuation,
       code: '123456',

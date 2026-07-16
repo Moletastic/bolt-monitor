@@ -21,6 +21,7 @@ export type AuthChallenge =
   | { readonly kind: 'new-password-required'; readonly continuation: unknown }
   | { readonly kind: 'software-token-mfa'; readonly continuation: unknown }
   | { readonly kind: 'software-token-setup'; readonly continuation: unknown }
+  | { readonly kind: 'password-recovery'; readonly continuation: unknown }
 
 export interface TokenBundle {
   readonly accessToken: string
@@ -38,6 +39,12 @@ export interface TotpEnrollment {
   readonly secret: string
   readonly issuer: string
   readonly accountName: string
+}
+
+export interface TotpAssociation {
+  readonly enrollment: TotpEnrollment
+  /** Server-only Cognito continuation after software-token association. */
+  readonly continuation: unknown
 }
 
 export interface AuthTransaction {
@@ -117,7 +124,7 @@ export interface IdentityProvider {
     readonly continuation: unknown
     readonly code: string
   }): Promise<AuthResult<SignInOutcome>>
-  associateTotp(input: { readonly continuation: unknown }): Promise<AuthResult<TotpEnrollment>>
+  associateTotp(input: { readonly continuation: unknown }): Promise<AuthResult<TotpAssociation>>
   verifyTotpEnrollment(input: {
     readonly continuation: unknown
     readonly code: string

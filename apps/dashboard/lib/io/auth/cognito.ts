@@ -23,7 +23,6 @@ import type {
   IdentityProvider,
   SignInOutcome,
   TokenBundle,
-  TotpEnrollment,
 } from '@/lib/auth/contracts'
 import { err, ok } from '@/lib/result'
 
@@ -136,12 +135,14 @@ export function createCognitoIdentityProvider(
         if (!response.SecretCode || !response.Session) return err({ kind: 'provider-unavailable' })
         // The server-held continuation advances to the association session.
         state.session = response.Session
-        const enrollment: TotpEnrollment = {
-          secret: response.SecretCode,
-          issuer: 'Bolt Monitor',
-          accountName: state.username,
-        }
-        return ok(enrollment)
+        return ok({
+          enrollment: {
+            secret: response.SecretCode,
+            issuer: 'Bolt Monitor',
+            accountName: state.username,
+          },
+          continuation: state,
+        })
       }, 'totp-failed')
     },
     async verifyTotpEnrollment({ continuation: value, code }) {
