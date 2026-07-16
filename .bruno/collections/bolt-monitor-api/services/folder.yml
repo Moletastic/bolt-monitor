@@ -3,4 +3,8 @@ info:
   type: folder
   seq: 7
 
-request: {}
+request:
+  auth:
+    mode: bearer
+    bearer:
+      token: "{{accessToken}}"

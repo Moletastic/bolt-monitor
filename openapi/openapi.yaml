@@ -2,10 +2,21 @@ openapi: 3.1.0
 info:
   title: Bolt Monitor API
   version: 1.0.0
-  description: Deployed SST API contract. Versioned routes are unauthenticated until the authentication change supplies route metadata.
+  description: |
+    Deployed SST API contract. Every `/api/v1/**` operation requires a Cognito
+    Bearer access token with the `aws.cognito.signin.user.admin` scope. ID
+    tokens and dashboard session cookies are not API credentials.
+
+    API Gateway can reject missing, invalid, expired, or insufficient-scope
+    credentials before Lambda invocation with a non-envelope `401` or `403`.
+    Lambda-originated authentication and membership authorization failures use
+    the application error envelope with `AUTHENTICATION_REQUIRED` (`401`) or
+    `AUTHORIZATION_DENIED` (`403`), respectively.
 servers:
   - url: http://127.0.0.1:3000
     description: Replace with current SST API URL.
+security:
+  - CognitoBearer: []
 paths:
   /api/health:
     get:
@@ -67,7 +78,18 @@ paths:
     get: {operationId: getSchedulerConfig, responses: {'200': {$ref: '#/components/responses/Success'}}}
     patch: {operationId: updateSchedulerConfig, responses: {'200': {$ref: '#/components/responses/Success'}}}
 components:
+  securitySchemes:
+    CognitoBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cognito access token. The required access-token scope is `aws.cognito.signin.user.admin`.
+      x-required-cognito-scope: aws.cognito.signin.user.admin
   responses:
+    AuthenticationFailure:
+      description: API Gateway may return a non-envelope 401 before Lambda for missing or invalid credentials. Lambda-originated authentication failures return the standard error envelope with reason.code `AUTHENTICATION_REQUIRED`.
+    AuthorizationFailure:
+      description: API Gateway may return a non-envelope 403 before Lambda for insufficient scope. Lambda-originated membership authorization failures return the standard error envelope with reason.code `AUTHORIZATION_DENIED`.
     Success:
       description: Standard API success envelope
       content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { execFileSync } from 'node:child_process';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 
@@ -65,12 +66,39 @@ export function parseBrunoRequest(source, filePath) {
   };
 }
 
+function authMode(source) {
+  if (
+    /^\s+auth:\s*$/m.test(source) &&
+    /^\s+mode:\s+bearer\s*$/m.test(source) &&
+    /^\s+token:\s+["']?\{\{accessToken\}\}["']?\s*$/m.test(source)
+  ) {
+    return 'access-token';
+  }
+  return /^\s+auth:\s*/m.test(source) ? 'other' : 'none';
+}
+
 export function readBrunoRequests(collectionsDirectory) {
-  return walk(collectionsDirectory)
+  const files = walk(collectionsDirectory)
     .filter((filePath) => filePath.endsWith('.yml'))
-    .map((filePath) => ({ filePath, source: fs.readFileSync(filePath, 'utf8') }))
+    .map((filePath) => ({ filePath, source: fs.readFileSync(filePath, 'utf8') }));
+  const folderAuth = new Map(
+    files
+      .filter(({ filePath }) => path.basename(filePath) === 'folder.yml')
+      .map(({ filePath, source }) => [path.dirname(filePath), authMode(source)])
+  );
+
+  return files
     .filter(({ source }) => /^\s*type:\s*http\s*$/m.test(source))
-    .map(({ filePath, source }) => parseBrunoRequest(source, filePath));
+    .map(({ filePath, source }) => {
+      const request = parseBrunoRequest(source, filePath);
+      let directory = path.dirname(filePath);
+      let auth = authMode(source);
+      while (auth === 'none' && directory.startsWith(collectionsDirectory)) {
+        auth = folderAuth.get(directory) ?? 'none';
+        directory = path.dirname(directory);
+      }
+      return { ...request, auth };
+    });
 }
 
 function routeKey(route) {
@@ -106,6 +134,12 @@ export function validate({ bootstrapSource, requests, specRoutes = new Set() }) 
       continue;
     }
     const expectedRoute = expected.get(key);
+    if (expectedRoute.path.startsWith('/api/v1/') && request.auth !== 'access-token') {
+      errors.push(`${request.filePath}: versioned routes require Bearer {{accessToken}} authentication`);
+    }
+    if (expectedRoute.path === '/api/health' && request.auth !== 'none') {
+      errors.push(`${request.filePath}: health must not send authentication`);
+    }
     const routeVariables = expectedVariables(expectedRoute.path);
     if (JSON.stringify(request.variables) !== JSON.stringify(routeVariables)) {
       errors.push(`${request.filePath}: route variables must be ${routeVariables.join(', ') || 'none'}`);
@@ -134,6 +168,39 @@ export function validate({ bootstrapSource, requests, specRoutes = new Set() }) 
   return { errors, specOnly, routeCount: expected.size, requestCount: requests.length };
 }
 
+const authSecretKey = /(?:access|id|refresh)[_-]?token|(?:cognito[_-]?)?(?:new|temporary)?password|challenge[_-]?session|recovery[_-]?code|(?:dashboard[_-]?)?session(?:[_-]?(?:id|value))?|client[_-]?secret/i;
+const placeholder = /^(?:\{\{[A-Za-z][A-Za-z0-9_]*\}\}|replace-with-[\w-]+|<[^>]+>)$/;
+
+export function validateNoCommittedAuthSecrets(files) {
+  const errors = [];
+  for (const { filePath, source } of files) {
+    for (const [lineNumber, line] of source.split('\n').entries()) {
+      const match = line.match(/^\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*["']?([^"'#]+)["']?\s*(?:#.*)?$/);
+      if (!match || !authSecretKey.test(match[1].trim())) continue;
+      const value = match[2].trim();
+      if (value && !placeholder.test(value)) {
+        errors.push(`${filePath}:${lineNumber + 1}: committed auth secret in ${match[1].trim()}`);
+      }
+    }
+    for (const [lineNumber, line] of source.split('\n').entries()) {
+      if (/authorization\s*:\s*bearer\s+(?!\{\{accessToken\}\}\s*$)\S+/i.test(line)) {
+        errors.push(`${filePath}:${lineNumber + 1}: committed auth secret in Authorization header`);
+      }
+    }
+  }
+  return errors;
+}
+
+function readTrackedBrunoFiles() {
+  return execFileSync('git', ['ls-files', '-z', '--', '.bruno'], { cwd: root, encoding: 'utf8' })
+    .split('\0')
+    .filter((filePath) => filePath.endsWith('.yml') || filePath.endsWith('.md'))
+    .map((filePath) => {
+      const absolutePath = path.join(root, filePath);
+      return { filePath: absolutePath, source: fs.readFileSync(absolutePath, 'utf8') };
+    });
+}
+
 function main() {
   const bootstrapPath = path.join(root, 'infra', 'stacks', 'bootstrap.ts');
   const collectionsPath = path.join(root, '.bruno', 'collections');
@@ -143,6 +210,9 @@ function main() {
     requests: readBrunoRequests(collectionsPath),
     specRoutes: openSpecRoutes(specsPath),
   });
+  result.errors.push(
+    ...validateNoCommittedAuthSecrets(readTrackedBrunoFiles())
+  );
 
   console.log(`Bruno route coverage: ${result.requestCount}/${result.routeCount}`);
   for (const route of result.specOnly) console.warn(`OpenSpec route not wired in bootstrap: ${route}`);

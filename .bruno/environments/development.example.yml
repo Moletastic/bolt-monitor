@@ -1,3 +1,5 @@
 vars:
   apiUrl: replace-with-api-url
   monitorId: replace-with-monitor-id
+  # Keep Cognito credentials, challenge sessions, and tokens only in
+  # development.local.yml, which is gitignored.

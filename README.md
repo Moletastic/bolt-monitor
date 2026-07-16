@@ -37,7 +37,7 @@ Known limitations today:
 
 - Single built-in tenant ID: `DEFAULT`
 - Single execution environment; regional probe selection is intentionally out of scope for now
-- Authentication, RBAC, and multi-user access are intentionally outside the current single-operator scope
+- Invite-only Cognito authentication protects dashboard and `/api/v1/**` access; v1 authorizes only `ACTIVE` `ADMIN` memberships in `DEFAULT` (user-management and broader RBAC remain follow-on work)
 - SST mutations require an explicit validated deployment target; no stage, lifecycle class, profile, account, or region is inferred
 - No production hardening claims around security, scaling policy, backup policy, or multi-region execution
 
@@ -142,7 +142,8 @@ SST prints resource outputs, including API URL.
 curl <api-url>/api/health
 ```
 
-Expected response. Health stays public; versioned API route authentication lands in a follow-on change.
+Expected response. Health stays public; every `/api/v1/**` route requires a
+Cognito access token after authentication cutover.
 
 ```json
 {"status":"success","data":{"status":"ok"}}
@@ -180,6 +181,7 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 | `NEXT_PUBLIC_MONITOR_API_BASE_URL` | `apps/dashboard` | Yes for dashboard runtime | Base URL for server-side API fetches. Missing value throws `ApiError`. |
 | `TABLE_NAME` | `services/monitor-api`, `services/check-runtime` | Yes in deployed/local Lambda runtime | Injected by SST stack when handlers are wired. |
 | `RUNTIME_MODE` | `services/check-runtime` | Yes for runtime Lambda behavior | Set by SST cron jobs to `scheduler` or `worker`. |
+| `AUTH_TABLE_NAME` | `services/monitor-api`, dashboard server | Yes in auth-enabled runtime | Injected by SST; authoritative membership, session, and auth-transaction table. |
 
 ## ⚡ Common Commands
 
@@ -191,6 +193,9 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 | Review persistent changes | `docs/persistent-resource-operations.md` runbook; SST `4.14.1` has no safe preview command |
 | Deploy infra | `make deploy-infra` with explicit target environment |
 | Remove ephemeral infra | `make remove-infra` with explicit target environment |
+| Bootstrap or invite an administrator | `SST_STAGE=<stage> EMAIL=<email> USER_POOL_ID=<id> AUTH_TABLE_NAME=<name> make bootstrap-admin` |
+| Rotate dashboard auth key | `SST_STAGE=<stage> SST_TARGET_CONFIG=<target> make rotate-auth-key` |
+| Operate auth or cut over | `docs/auth-operations.md` |
 | Test Go services/shared modules | `make test-go-all` |
 | Install dashboard deps | `cd apps/dashboard && pnpm install --frozen-lockfile` |
 | Run dashboard lint | `make lint-dashboard` |
@@ -226,7 +231,7 @@ Docs server runs at `http://127.0.0.1:4173/` with:
 - Monitor execution location is not operator-configurable in the dashboard.
 - `AWS_PROFILE` is optional but never silently defaulted. The target config records only a non-secret credential-source label.
 - Route changes update SST wiring, `services/monitor-api/routes.go`, Bruno, OpenAPI, and affected merged OpenSpec specs. Run `make check-bruno check-api-contract`.
-- Before protected-route refactoring, also run dashboard production build and portable stage/profile checks.
+- Authentication operations, direct-client setup, lifecycle handling, cutover, break glass, and cost posture are in `docs/auth-operations.md`.
 - Archive completed OpenSpec changes only after implementation validation. Archival is maintenance, not runtime or release-gate verification.
 
 ## 🔐 JavaScript Dependency Install Policy
@@ -260,7 +265,9 @@ Expected outputs include:
 
 `dashboardUrl` is the generated CloudFront hostname for the deployed operator console. No custom DNS is required for the first deployment.
 
-The dashboard is currently designed for private or controlled deployments. Until authentication and RBAC land in a follow-on change, place deployed dashboard URLs behind environment-level access controls such as a private network, VPN, SSO proxy, or restricted ingress.
+The dashboard requires an authenticated operator session. Follow
+[`docs/auth-operations.md`](./docs/auth-operations.md) to bootstrap the first
+administrator before using a deployed dashboard or protected API.
 
 ## 🗺️ Roadmap
 
