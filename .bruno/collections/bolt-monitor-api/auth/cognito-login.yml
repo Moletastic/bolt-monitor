@@ -1,0 +1,24 @@
+info:
+  name: Cognito Login
+  type: http
+  seq: 1
+  external: cognito
+  tags:
+    - domain:auth
+    - operation:login
+http:
+  method: POST
+  url: "https://cognito-idp.{{cognitoRegion}}.amazonaws.com/"
+  headers:
+    - name: Content-Type
+      value: application/x-amz-json-1.1
+    - name: X-Amz-Target
+      value: AWSCognitoIdentityProviderService.InitiateAuth
+  body:
+    type: json
+    data: |-
+      {"AuthFlow":"USER_PASSWORD_AUTH","ClientId":"{{cognitoClientId}}","AuthParameters":{"USERNAME":"{{cognitoUsername}}","PASSWORD":"{{cognitoPassword}}"}}
+docs: |-
+  Purpose: Start direct Cognito authentication for API access.
+  Setup: Configure the direct client ID and local operator credentials.
+  Expected result: Returns `AuthenticationResult.AccessToken`, or `SOFTWARE_TOKEN_MFA` with a transient `Session` for the TOTP challenge.
