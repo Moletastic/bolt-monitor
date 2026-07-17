@@ -9,11 +9,13 @@ import {
   RadioTower,
   Github,
   ExternalLink,
+  LogOut,
 } from 'lucide-react'
 
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/breadcrumbs'
 import { GlobalSearch } from '@/components/global-search'
 import { cn } from '@/lib/utils'
+import { logoutAction } from '@/app/(monitoring)/logout-action'
 
 const navItems = [
   { href: '/', label: 'Dashboard', matches: ['/'], icon: LayoutDashboard },
@@ -92,6 +94,15 @@ export function AppShell({
               })}
             </nav>
             <div className="mt-auto border-t border-border pt-4">
+              <form action={logoutAction}>
+                <button
+                  className="flex w-full items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground"
+                  type="submit"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Sign out</span>
+                </button>
+              </form>
               <a
                 aria-label="View source on GitHub (opens in a new tab)"
                 className="flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground"
