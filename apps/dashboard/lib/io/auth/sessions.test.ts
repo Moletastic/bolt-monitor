@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
+const clock = vi.hoisted(() => ({ now: new Date('2026-07-15T12:00:00Z') }))
+
 vi.mock('server-only', () => ({}))
-vi.mock('@/lib/clock', () => ({ now: () => new Date('2026-07-15T12:00:00Z') }))
+vi.mock('@/lib/clock', () => ({ now: () => clock.now }))
 
 import {
   DeleteItemCommand,
@@ -51,6 +53,48 @@ describe('Dynamo dashboard session store', () => {
     expect(item?.KeyGeneration?.S).toBe('42')
     expect(item?.Version?.N).toBe('1')
     expect(command.input.ConditionExpression).toBe('attribute_not_exists(PK)')
+  })
+
+  it('accepts a session with a normal remaining duration after authentication advances time', async () => {
+    const client = { send: vi.fn().mockResolvedValue({}) }
+    const store = createDynamoDashboardSessionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: client,
+      loadKey,
+    })
+    clock.now = new Date('2026-07-15T12:00:01Z')
+
+    try {
+      const created = await store.create(session())
+
+      expect(isOk(created)).toBe(true)
+      expect(client.send).toHaveBeenCalledWith(expect.any(PutItemCommand))
+    } finally {
+      clock.now = new Date('2026-07-15T12:00:00Z')
+    }
+  })
+
+  it('rejects expired and oversized session expiries', async () => {
+    const client = { send: vi.fn().mockResolvedValue({}) }
+    const store = createDynamoDashboardSessionStore({
+      tableName: 'auth-table',
+      stage: 'staging',
+      dynamo: client,
+      loadKey,
+    })
+
+    await expect(store.create({ ...session(), expiresAt: timestamp })).resolves.toEqual({
+      ok: false,
+      error: { kind: 'session-invalid' },
+    })
+    await expect(
+      store.create({
+        ...session(),
+        expiresAt: timestamp + DASHBOARD_SESSION_LIFETIME_SECONDS + 1,
+      })
+    ).resolves.toEqual({ ok: false, error: { kind: 'session-invalid' } })
+    expect(client.send).not.toHaveBeenCalled()
   })
 
   it('issues distinct 256-bit cookie values without persisting raw identifiers or token material', async () => {

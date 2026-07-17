@@ -83,7 +83,7 @@ export interface DynamoDashboardSessionStoreOptions {
   readonly createRefreshOwner?: () => string
 }
 
-/** The only dashboard session lifetime accepted by the server-side storage boundary. */
+/** The maximum dashboard session lifetime accepted by the server-side storage boundary. */
 export { DASHBOARD_SESSION_LIFETIME_SECONDS }
 
 /**
@@ -411,7 +411,9 @@ function isValidNewSession(session: NewDashboardSession, timestamp: number): boo
   return (
     session.subject.length > 0 &&
     isTokenBundle(session.tokens) &&
-    session.expiresAt === timestamp + DASHBOARD_SESSION_LIFETIME_SECONDS
+    Number.isInteger(session.expiresAt) &&
+    session.expiresAt > timestamp &&
+    session.expiresAt <= timestamp + DASHBOARD_SESSION_LIFETIME_SECONDS
   )
 }
 
