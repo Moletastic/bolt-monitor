@@ -69,7 +69,7 @@ export function parseBrunoRequest(source, filePath) {
 function authMode(source) {
   if (
     /^\s+auth:\s*$/m.test(source) &&
-    /^\s+mode:\s+bearer\s*$/m.test(source) &&
+    /^\s+type:\s+bearer\s*$/m.test(source) &&
     /^\s+token:\s+["']?\{\{accessToken\}\}["']?\s*$/m.test(source)
   ) {
     return 'access-token';
