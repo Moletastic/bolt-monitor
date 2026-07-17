@@ -23,3 +23,10 @@ test('rejects undocumented Gateway and envelope error semantics', () => {
   const undocumented = source.replace('API Gateway may return a non-envelope 401 before Lambda', 'Gateway may reject credentials');
   assert.match(validateOpenAPIAuth(undocumented).join('\n'), /Gateway non-envelope 401/);
 });
+
+test('uses SST route classification for OpenAPI security conflicts', () => {
+  const bootstrapSource = "api.route('GET /api/health', { handler: '../services/api-health' })\napi.route('GET /api/v1/search', { handler: '../services/monitor-api', auth: { jwt: {} } })";
+  const conflicting = source.replace('/api/v1/search: {get:', '/api/v1/search: {get: {security: [],');
+  const errors = validateOpenAPIAuth(conflicting, bootstrapSource).join('\n');
+  assert.match(errors, /OpenAPI authentication conflict GET \/api\/v1\/search: SST is protected, OpenAPI is public/);
+});

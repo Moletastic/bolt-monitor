@@ -7,14 +7,14 @@ test('normalizes Bruno variables and removes query strings', () => {
 });
 
 test('extracts SST method and path declarations', () => {
-  assert.deepEqual(extractBootstrapRoutes("api.route('GET /api/health', handler)"), [
+  assert.deepEqual(extractBootstrapRoutes("api.route('GET /api/health', handler)").map(({ method, path }) => ({ method, path })), [
     { method: 'GET', path: '/api/health' },
   ]);
 });
 
 test('extracts shared protected v1 route declarations', () => {
   assert.deepEqual(
-    extractBootstrapRoutes("const protectedV1Routes = [\n  'GET /api/v1/items',\n  'POST /api/v1/items',\n  ]"),
+    extractBootstrapRoutes("const protectedV1Routes = [\n  'GET /api/v1/items',\n  'POST /api/v1/items',\n  ]").map(({ method, path }) => ({ method, path })),
     [
       { method: 'GET', path: '/api/v1/items' },
       { method: 'POST', path: '/api/v1/items' },
@@ -53,9 +53,9 @@ test('reports spec routes missing from bootstrap separately', () => {
   assert.match(result.errors[0], /missing Bruno request/);
 });
 
-test('requires the access token for versioned requests and keeps health public', () => {
+test('uses SST authentication classification without storing credentials', () => {
   const result = validate({
-    bootstrapSource: "api.route('GET /api/health', handler)\nconst protectedV1Routes = [\n  'GET /api/v1/items',\n  ]",
+    bootstrapSource: "api.route('GET /api/health', handler)\napi.route('GET /api/v1/items', { handler: '../services/monitor-api', auth: { jwt: {} } })",
     requests: [
       {
         filePath: 'health.yml',
@@ -82,8 +82,24 @@ test('requires the access token for versioned requests and keeps health public',
     ],
   });
 
-  assert.match(result.errors[0], /health must not send authentication/);
-  assert.match(result.errors[1], /require Bearer \{\{accessToken\}\} authentication/);
+  assert.match(result.errors[0], /SST classifies GET \/api\/health as public; do not send authentication/);
+  assert.match(result.errors[1], /SST classifies GET \/api\/v1\/items as protected; use inherited Bearer \{\{accessToken\}\} authentication/);
+});
+
+test('permits only explicitly marked Cognito authentication helpers outside SST routes', () => {
+  const result = validate({
+    bootstrapSource: "api.route('GET /api/health', handler)",
+    requests: [
+      {
+        filePath: 'auth/login.yml',
+        method: 'POST',
+        path: 'https://cognito-idp.{cognitoRegion}.amazonaws.com/',
+        external: 'cognito',
+      },
+    ],
+  });
+  assert.match(result.errors[0], /missing Bruno request: GET \/api\/health/);
+  assert.equal(result.errors.length, 1);
 });
 
 test('rejects literal auth secrets while allowing local placeholders', () => {

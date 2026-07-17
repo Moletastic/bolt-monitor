@@ -1,0 +1,24 @@
+info:
+  name: Cognito TOTP Challenge
+  type: http
+  seq: 2
+  external: cognito
+  tags:
+    - domain:auth
+    - operation:totp
+http:
+  method: POST
+  url: "https://cognito-idp.{{cognitoRegion}}.amazonaws.com/"
+  headers:
+    - name: Content-Type
+      value: application/x-amz-json-1.1
+    - name: X-Amz-Target
+      value: AWSCognitoIdentityProviderService.RespondToAuthChallenge
+  body:
+    type: json
+    data: |-
+      {"ChallengeName":"SOFTWARE_TOKEN_MFA","ClientId":"{{cognitoClientId}}","Session":"{{cognitoChallengeSession}}","ChallengeResponses":{"USERNAME":"{{cognitoUsername}}","SOFTWARE_TOKEN_MFA_CODE":"{{cognitoMfaCode}}"}}
+docs: |-
+  Purpose: Complete a Cognito TOTP challenge started by Cognito Login.
+  Setup: Copy the returned Session into local `cognitoChallengeSession` and enter a current six-digit code in local `cognitoMfaCode`.
+  Expected result: Returns `AuthenticationResult.AccessToken`; copy it only into local `accessToken` or the smoke command environment.

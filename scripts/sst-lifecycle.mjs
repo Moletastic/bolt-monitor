@@ -58,7 +58,7 @@ export function verifyPersistentDeployment(target, tableName, environment = proc
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const { target, summary } = preflight();
-  console.log(`SST lifecycle target: ${summary}`);
+  if (process.env.SST_LIFECYCLE_QUIET !== '1') console.log(`SST lifecycle target: ${summary}`);
   const action = process.env.SST_LIFECYCLE_ACTION;
   const sstEnvironment = {
     ...process.env,
