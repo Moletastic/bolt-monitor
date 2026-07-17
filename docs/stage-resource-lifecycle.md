@@ -64,6 +64,21 @@ workflow fails closed rather than claiming a no-replacement preview.
 
 ## Credentialed Smoke
 
+On 2026-07-17, the disposable `smoke-auth-20260717` stage deployed the
+current application together with an `AuthTable`, Cognito user pool, and
+stage-scoped AES key parameter. Removal deleted the SST stack and the
+stage-scoped key. The verifier initially detected a stale Cognito tagging
+record, then confirmed through Cognito that the pool no longer existed and
+completed with zero residual resources. The cleanup retry also confirmed that
+an absent key parameter is idempotent.
+
+The persistent `staging` inventory was checked without mutation: AppTable and
+AuthTable retained their physical identifiers and deletion protection, AppTable
+PITR was enabled, and AuthTable and Cognito ownership tags matched the target.
+The key was recorded only as a SecureString parameter name and version. The
+adoption entrypoint failed closed because SST `4.14.1` has no safe automated
+adoption preview; the re-adoption runbook remains required before any mutation.
+
 Credentialed smoke selects exactly one lifecycle: a unique, disposable
 ephemeral target with verified cleanup, or declared persistent `staging` with
 no teardown. Persistent target names beginning with `smoke` are rejected even

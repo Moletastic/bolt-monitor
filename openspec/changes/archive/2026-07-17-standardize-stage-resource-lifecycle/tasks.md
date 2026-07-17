@@ -55,6 +55,6 @@
 - [x] 7.2 Run infrastructure formatting and type checks plus target-validation, lifecycle-policy, output, and cleanup test suites.
 - [x] 7.3 Preview the approved persistent staging change, verify the effective account/region/profile summary, and record evidence that AppTable protection and tags do not replace the existing table.
 - [x] 7.4 Deploy a representative explicitly ephemeral stage containing the current table, queues, schedules, bucket, API, dashboard, and generated resources; remove it through the supported path and record zero-residual inventory evidence.
-- [ ] 7.5 After auth resources are available, repeat ephemeral lifecycle validation with `AuthTable`, Cognito, and SSM/SST secret material and verify none are retained.
-- [ ] 7.6 Exercise persistent retained-inventory and non-destructive adoption preview against staging fixtures, leaving detailed restore drill execution to the recovery/capacity change.
+- [x] 7.5 After auth resources are available, repeat ephemeral lifecycle validation with `AuthTable`, Cognito, and SSM/SST secret material and verify none are retained.
+- [x] 7.6 Exercise persistent retained-inventory and non-destructive adoption preview against staging fixtures, leaving detailed restore drill execution to the recovery/capacity change.
 - [x] 7.7 Run `openspec validate standardize-stage-resource-lifecycle --strict` and confirm the change remains apply-ready after implementation documentation is finalized.

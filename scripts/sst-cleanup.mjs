@@ -42,24 +42,43 @@ function aws(environment, args) {
   return execFileSync('aws', args, { encoding: 'utf8', env: environment }).trim();
 }
 
+function errorText(error) {
+  if (!(error instanceof Error)) return String(error);
+  return `${error.message}\n${String(error.stderr ?? '')}`;
+}
+
+function isLiveCognitoUserPool(arn, environment, query) {
+  const userPoolID = arn.match(/userpool\/([^/]+)$/)?.[1];
+  if (userPoolID === undefined) return true;
+  try {
+    query(environment, ['cognito-idp', 'describe-user-pool', '--user-pool-id', userPoolID]);
+    return true;
+  } catch (error) {
+    if (/ResourceNotFoundException/i.test(errorText(error))) return false;
+    return true;
+  }
+}
+
 export function residualInventory(target, environment = process.env, query = aws) {
   const output = query(environment, [
     'resourcegroupstaggingapi', 'get-resources', '--output', 'json',
     '--tag-filters', `Key=service,Values=${target.service}`, `Key=stage,Values=${target.stage}`,
   ]);
   const resources = JSON.parse(output).ResourceTagMappingList ?? [];
-  return resources.map((resource) => resource.ResourceARN).filter((arn) => typeof arn === 'string');
+  return resources
+    .map((resource) => resource.ResourceARN)
+    .filter((arn) => typeof arn === 'string')
+    .filter((arn) => !arn.includes(':cognito-idp:') || isLiveCognitoUserPool(arn, environment, query));
 }
 
 function removeEphemeralAuthKey(target, environment, execute) {
   const parameterName = `/${target.service}/${target.stage}/auth/aes-256-gcm`;
   try {
     execute('aws', ['ssm', 'delete-parameter', '--name', parameterName], {
-      stdio: 'inherit',
       env: environment,
     });
   } catch (error) {
-    if (error instanceof Error && /ParameterNotFound/i.test(error.message)) return;
+    if (/ParameterNotFound/i.test(errorText(error))) return;
     throw error;
   }
 }

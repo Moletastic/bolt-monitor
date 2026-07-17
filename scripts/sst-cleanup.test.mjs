@@ -22,6 +22,18 @@ test('residual inventory does not select similarly named foreign resources', () 
   assert.deepEqual(seen[0].slice(-2), ['Key=service,Values=bolt-monitor', 'Key=stage,Values=dev-jane']);
 });
 
+test('residual inventory ignores a stale deleted Cognito user pool tag', () => {
+  const query = (_, args) => {
+    if (args[0] === 'cognito-idp') {
+      const error = new Error('Command failed');
+      error.stderr = 'ResourceNotFoundException';
+      throw error;
+    }
+    return JSON.stringify({ ResourceTagMappingList: [{ ResourceARN: 'arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_deleted' }] });
+  };
+  assert.deepEqual(residualInventory(target, {}, query), []);
+});
+
 test('state inventory records non-secret logical identifiers and tolerates missing state', () => {
   const execute = () => JSON.stringify({ deployment: { resources: [
     { urn: 'urn:pulumi:dev::app::aws:s3/bucket:Bucket::owned', type: 'aws:s3/bucket:Bucket' },
@@ -45,7 +57,11 @@ test('cleanup removes the exact ephemeral auth key and tolerates an absent key',
     ['aws', ['ssm', 'delete-parameter', '--name', '/bolt-monitor/dev-jane/auth/aes-256-gcm']]
   );
   assert.doesNotThrow(() => cleanupEphemeral(target, {}, (command) => {
-    if (command === 'aws') throw new Error('ParameterNotFound');
+    if (command === 'aws') {
+      const error = new Error('Command failed');
+      error.stderr = 'ParameterNotFound';
+      throw error;
+    }
   }, empty));
 });
 
