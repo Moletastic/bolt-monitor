@@ -157,6 +157,12 @@ func TestBootstrapFirstCreationCreatesCompleteMembershipBeforeInvitation(t *test
 	if got := cognito.created[0].Username; got == nil || *got != "operator@example.com" {
 		t.Fatalf("initial username = %v, want normalized email", got)
 	}
+	if got := cognito.created[0].UserAttributes; !reflect.DeepEqual(got, []sharedaws.CognitoAttribute{
+		{Name: sharedaws.String("email"), Value: sharedaws.String("operator@example.com")},
+		{Name: sharedaws.String("email_verified"), Value: sharedaws.String("true")},
+	}) {
+		t.Fatalf("initial user attributes = %+v, want normalized verified email", got)
+	}
 	if dynamo.put == nil {
 		t.Fatal("membership was not created before invitation")
 	}

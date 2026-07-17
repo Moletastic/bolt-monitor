@@ -64,7 +64,10 @@ func (b bootstrapper) bootstrapWithEvents(ctx context.Context, email string, emi
 			Username:               sharedaws.String(normalizedEmail),
 			MessageAction:          sharedaws.CognitoMessageActionSuppress,
 			DesiredDeliveryMediums: []sharedaws.CognitoDeliveryMedium{sharedaws.CognitoDeliveryMediumEmail},
-			UserAttributes:         []sharedaws.CognitoAttribute{{Name: sharedaws.String("email"), Value: sharedaws.String(normalizedEmail)}},
+			UserAttributes: []sharedaws.CognitoAttribute{
+				{Name: sharedaws.String("email"), Value: sharedaws.String(normalizedEmail)},
+				{Name: sharedaws.String("email_verified"), Value: sharedaws.String("true")},
+			},
 		}); err != nil {
 			var usernameExists *types.UsernameExistsException
 			if !errors.As(err, &usernameExists) {
