@@ -71,8 +71,8 @@ type fakeDynamo struct {
 	mu      sync.Mutex
 	item    map[string]sharedaws.AttributeValue
 	put     *sharedaws.DynamoDBPutItemInput
+	updates []*sharedaws.DynamoDBUpdateItemInput
 	events  *[]string
-	persist bool
 	getErr  error
 	putErr  error
 }
@@ -96,13 +96,46 @@ func (f *fakeDynamo) PutItem(_ context.Context, input *sharedaws.DynamoDBPutItem
 	if f.putErr != nil {
 		return nil, f.putErr
 	}
-	if f.persist && len(f.item) != 0 {
+	if len(f.item) != 0 {
 		return nil, &ddbtypes.ConditionalCheckFailedException{}
 	}
-	if f.persist {
-		f.item = input.Item
-	}
+	f.item = input.Item
 	return &sharedaws.DynamoDBPutItemOutput{}, nil
+}
+
+func (f *fakeDynamo) UpdateItem(_ context.Context, input *sharedaws.DynamoDBUpdateItemInput) (*sharedaws.DynamoDBUpdateItemOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updates = append(f.updates, input)
+	if f.putErr != nil {
+		return nil, f.putErr
+	}
+	if strings.HasPrefix(sharedaws.ToString(input.UpdateExpression), "SET InvitationLeaseID") {
+		if _, ok := f.item["InvitationPending"]; !ok {
+			return nil, &ddbtypes.ConditionalCheckFailedException{}
+		}
+		if lease, ok := f.item["InvitationLeaseUntil"].(*ddbtypes.AttributeValueMemberN); ok {
+			now := input.ExpressionAttributeValues[":now"].(*ddbtypes.AttributeValueMemberN)
+			if lease.Value > now.Value {
+				return nil, &ddbtypes.ConditionalCheckFailedException{}
+			}
+		}
+		f.item["InvitationLeaseID"] = input.ExpressionAttributeValues[":leaseID"]
+		f.item["InvitationLeaseUntil"] = input.ExpressionAttributeValues[":leaseUntil"]
+		return &sharedaws.DynamoDBUpdateItemOutput{}, nil
+	}
+	if _, ok := f.item["InvitationPending"]; !ok || f.item["InvitationLeaseID"].(*ddbtypes.AttributeValueMemberS).Value != input.ExpressionAttributeValues[":leaseID"].(*ddbtypes.AttributeValueMemberS).Value {
+		return nil, &ddbtypes.ConditionalCheckFailedException{}
+	}
+	if sharedaws.ToString(input.UpdateExpression) == "REMOVE InvitationLeaseID, InvitationLeaseUntil" {
+		delete(f.item, "InvitationLeaseID")
+		delete(f.item, "InvitationLeaseUntil")
+		return &sharedaws.DynamoDBUpdateItemOutput{}, nil
+	}
+	delete(f.item, "InvitationPending")
+	delete(f.item, "InvitationLeaseID")
+	delete(f.item, "InvitationLeaseUntil")
+	return &sharedaws.DynamoDBUpdateItemOutput{}, nil
 }
 
 func TestBootstrapFirstCreationCreatesCompleteMembershipBeforeInvitation(t *testing.T) {
@@ -143,6 +176,13 @@ func TestBootstrapFirstCreationCreatesCompleteMembershipBeforeInvitation(t *test
 	if record.MembershipID != "MEM_test" || record.AuthValidAfter != 100 || record.CreatedAt != "1970-01-01T00:01:40Z" || record.UpdatedAt != record.CreatedAt {
 		t.Fatalf("membership immutable/versioned fields = %+v", record)
 	}
+	var persisted membershipRecord
+	if err := sharedaws.UnmarshalMap(dynamo.item, &persisted); err != nil {
+		t.Fatalf("unmarshal persisted membership: %v", err)
+	}
+	if persisted.InvitationPending {
+		t.Fatal("membership invitation marker was not cleared after successful resend")
+	}
 }
 
 func TestBootstrapCompleteRetryLeavesEstablishedIdentityUntouched(t *testing.T) {
@@ -181,6 +221,97 @@ func TestBootstrapPreservesImmutableMembershipAndPendingCredentials(t *testing.T
 	}
 }
 
+func TestBootstrapRetriesOnlyPersistedPendingInvitation(t *testing.T) {
+	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
+	pending := membershipRecord{PK: "MEMBER#subject-1", SK: auth.MembershipSK, MembershipID: "MEM_existing", Subject: "subject-1", TenantID: "DEFAULT", Status: "ACTIVE", Role: "ADMIN", AuthValidAfter: 1, Version: 1, CreatedAt: "1970-01-01T00:00:01Z", UpdatedAt: "1970-01-01T00:00:01Z", InvitationPending: true}
+	item, err := sharedaws.MarshalMap(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}}
+	dynamo := &fakeDynamo{item: item}
+
+	if _, err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
+		t.Fatalf("bootstrap returned error: %v", err)
+	}
+	if len(cognito.created) != 1 || cognito.created[0].MessageAction != sharedaws.CognitoMessageActionResend {
+		t.Fatalf("invitation calls = %+v, want one resend", cognito.created)
+	}
+	if _, ok := dynamo.item["InvitationPending"]; ok {
+		t.Fatal("pending invitation marker was not cleared")
+	}
+}
+
+func TestBootstrapRetainsPendingInvitationAfterResendFailure(t *testing.T) {
+	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
+	pending := membershipRecord{PK: "MEMBER#subject-1", SK: auth.MembershipSK, MembershipID: "MEM_existing", Subject: "subject-1", TenantID: "DEFAULT", Status: "ACTIVE", Role: "ADMIN", AuthValidAfter: 1, Version: 1, CreatedAt: "1970-01-01T00:00:01Z", UpdatedAt: "1970-01-01T00:00:01Z", InvitationPending: true}
+	item, err := sharedaws.MarshalMap(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}, createErrs: []error{errors.New("delivery failed"), nil}}
+	dynamo := &fakeDynamo{item: item}
+	bootstrap := testBootstrapper(cognito, dynamo)
+
+	if _, err := bootstrap.bootstrap(context.Background(), "operator@example.com"); err == nil {
+		t.Fatal("bootstrap succeeded after resend failure")
+	}
+	if _, ok := dynamo.item["InvitationPending"]; !ok {
+		t.Fatal("resend failure cleared the pending invitation marker")
+	}
+	if _, ok := dynamo.item["InvitationLeaseID"]; ok {
+		t.Fatal("resend failure retained the invitation lease")
+	}
+	if _, err := bootstrap.bootstrap(context.Background(), "operator@example.com"); err != nil {
+		t.Fatalf("bootstrap retry returned error: %v", err)
+	}
+	if len(cognito.created) != 2 {
+		t.Fatalf("invitation calls = %d, want retry after failed resend", len(cognito.created))
+	}
+	if _, ok := dynamo.item["InvitationPending"]; ok {
+		t.Fatal("successful resend did not clear pending invitation marker")
+	}
+}
+
+func TestBootstrapDoesNotReplaceInviteForMarkerlessMembership(t *testing.T) {
+	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
+	record := membershipRecord{PK: "MEMBER#subject-1", SK: auth.MembershipSK, MembershipID: "MEM_existing", Subject: "subject-1", TenantID: "DEFAULT", Status: "ACTIVE", Role: "ADMIN", AuthValidAfter: 1, Version: 1, CreatedAt: "1970-01-01T00:00:01Z", UpdatedAt: "1970-01-01T00:00:01Z"}
+	item, err := sharedaws.MarshalMap(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}}
+	dynamo := &fakeDynamo{item: item}
+
+	if _, err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
+		t.Fatalf("bootstrap returned error: %v", err)
+	}
+	if len(cognito.created) != 0 || len(dynamo.updates) != 0 {
+		t.Fatalf("markerless membership received invitation work: create calls=%d updates=%d", len(cognito.created), len(dynamo.updates))
+	}
+}
+
+func TestBootstrapDoesNotResendPendingInvitationAfterActivation(t *testing.T) {
+	user := cognitoUser("operator@example.com", "subject-1", "CONFIRMED")
+	pending := membershipRecord{PK: "MEMBER#subject-1", SK: auth.MembershipSK, MembershipID: "MEM_existing", Subject: "subject-1", TenantID: "DEFAULT", Status: "ACTIVE", Role: "ADMIN", AuthValidAfter: 1, Version: 1, CreatedAt: "1970-01-01T00:00:01Z", UpdatedAt: "1970-01-01T00:00:01Z", InvitationPending: true}
+	item, err := sharedaws.MarshalMap(pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}}
+	dynamo := &fakeDynamo{item: item}
+
+	if _, err := testBootstrapper(cognito, dynamo).bootstrap(context.Background(), "operator@example.com"); err != nil {
+		t.Fatalf("bootstrap returned error: %v", err)
+	}
+	if len(cognito.created) != 0 || len(dynamo.updates) != 0 {
+		t.Fatalf("activated membership received invitation work: create calls=%d updates=%d", len(cognito.created), len(dynamo.updates))
+	}
+	if _, ok := dynamo.item["InvitationPending"]; !ok {
+		t.Fatal("activated membership cleared the pending invitation marker")
+	}
+}
+
 func TestBootstrapRecoversCognitoOnlyPartialCreation(t *testing.T) {
 	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
 	cognito := &fakeCognito{
@@ -200,7 +331,7 @@ func TestBootstrapRecoversCognitoOnlyPartialCreation(t *testing.T) {
 func TestBootstrapReconcilesConcurrentInvocations(t *testing.T) {
 	user := cognitoUser("operator@example.com", "subject-1", sharedaws.CognitoUserStatusForceChangePassword)
 	cognito := &fakeCognito{users: []sharedaws.CognitoUser{user}}
-	dynamo := &fakeDynamo{persist: true}
+	dynamo := &fakeDynamo{}
 	bootstrap := testBootstrapper(cognito, dynamo)
 
 	var group sync.WaitGroup

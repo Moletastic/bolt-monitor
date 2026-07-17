@@ -26,18 +26,23 @@ type bootstrapper struct {
 }
 
 type membershipRecord struct {
-	PK             string `dynamodbav:"PK"`
-	SK             string `dynamodbav:"SK"`
-	MembershipID   string `dynamodbav:"MembershipID"`
-	Subject        string `dynamodbav:"Subject"`
-	TenantID       string `dynamodbav:"TenantID"`
-	Status         string `dynamodbav:"Status"`
-	Role           string `dynamodbav:"Role"`
-	AuthValidAfter int64  `dynamodbav:"AuthValidAfter"`
-	Version        int64  `dynamodbav:"Version"`
-	CreatedAt      string `dynamodbav:"CreatedAt"`
-	UpdatedAt      string `dynamodbav:"UpdatedAt"`
+	PK                   string `dynamodbav:"PK"`
+	SK                   string `dynamodbav:"SK"`
+	MembershipID         string `dynamodbav:"MembershipID"`
+	Subject              string `dynamodbav:"Subject"`
+	TenantID             string `dynamodbav:"TenantID"`
+	Status               string `dynamodbav:"Status"`
+	Role                 string `dynamodbav:"Role"`
+	AuthValidAfter       int64  `dynamodbav:"AuthValidAfter"`
+	Version              int64  `dynamodbav:"Version"`
+	CreatedAt            string `dynamodbav:"CreatedAt"`
+	UpdatedAt            string `dynamodbav:"UpdatedAt"`
+	InvitationPending    bool   `dynamodbav:"InvitationPending,omitempty"`
+	InvitationLeaseID    string `dynamodbav:"InvitationLeaseID,omitempty"`
+	InvitationLeaseUntil int64  `dynamodbav:"InvitationLeaseUntil,omitempty"`
 }
+
+const invitationLeaseDuration = time.Minute
 
 func (b bootstrapper) bootstrap(ctx context.Context, email string) (auth.Subject, error) {
 	return b.bootstrapWithEvents(ctx, email, nil)
@@ -79,7 +84,7 @@ func (b bootstrapper) bootstrapWithEvents(ctx context.Context, email string, emi
 	if err != nil {
 		return "", err
 	}
-	membershipCreated, err := b.ensureMembership(ctx, subject)
+	membership, membershipCreated, err := b.ensureMembership(ctx, subject)
 	if err != nil {
 		return subject, err
 	}
@@ -87,13 +92,26 @@ func (b bootstrapper) bootstrapWithEvents(ctx context.Context, email string, emi
 		emit(auth.EventMembershipStatusChanged, subject)
 		emit(auth.EventAuthValidAfterAdvanced, subject)
 	}
-	if membershipCreated && user.UserStatus == sharedaws.CognitoUserStatusForceChangePassword {
+	if membership.InvitationPending && user.UserStatus == sharedaws.CognitoUserStatusForceChangePassword {
+		leaseID, claimed, err := b.claimPendingInvitation(ctx, subject)
+		if err != nil {
+			return subject, err
+		}
+		if !claimed {
+			return subject, nil
+		}
 		if _, err := b.cognito.AdminCreateUser(ctx, &sharedaws.CognitoAdminCreateUserInput{
 			UserPoolId:    sharedaws.String(b.userPoolID),
 			Username:      user.Username,
 			MessageAction: sharedaws.CognitoMessageActionResend,
 		}); err != nil {
+			if releaseErr := b.releaseInvitationLease(ctx, subject, leaseID); releaseErr != nil {
+				return subject, fmt.Errorf("send cognito invitation: %w; release invitation lease: %v", err, releaseErr)
+			}
 			return subject, fmt.Errorf("send cognito invitation: %w", err)
+		}
+		if err := b.clearPendingInvitation(ctx, subject, leaseID); err != nil {
+			return subject, err
 		}
 	}
 	return subject, nil
@@ -145,36 +163,37 @@ func (b bootstrapper) getUser(ctx context.Context, username string) (*sharedaws.
 	return &sharedaws.CognitoUser{Username: out.Username, UserStatus: out.UserStatus, Attributes: out.UserAttributes}, nil
 }
 
-func (b bootstrapper) ensureMembership(ctx context.Context, subject auth.Subject) (bool, error) {
+func (b bootstrapper) ensureMembership(ctx context.Context, subject auth.Subject) (membershipRecord, bool, error) {
 	key := map[string]sharedaws.AttributeValue{
 		"PK": &sharedaws.AttributeValueMemberS{Value: auth.MembershipPK(subject)},
 		"SK": &sharedaws.AttributeValueMemberS{Value: auth.MembershipSK},
 	}
 	existing, err := b.dynamo.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{TableName: sharedaws.String(b.authTable), ConsistentRead: sharedaws.Bool(true), Key: key})
 	if err != nil {
-		return false, fmt.Errorf("read membership: %w", err)
+		return membershipRecord{}, false, fmt.Errorf("read membership: %w", err)
 	}
 	if len(existing.Item) != 0 {
 		var record membershipRecord
 		if err := sharedaws.UnmarshalMap(existing.Item, &record); err != nil || !validMembershipRecord(record, subject) {
-			return false, fmt.Errorf("conflicting membership")
+			return membershipRecord{}, false, fmt.Errorf("conflicting membership")
 		}
-		return false, nil
+		return record, false, nil
 	}
 
 	now := b.now().UTC().Truncate(time.Second)
 	membershipID, err := b.membershipID()
 	if err != nil {
-		return false, fmt.Errorf("generate membership id: %w", err)
+		return membershipRecord{}, false, fmt.Errorf("generate membership id: %w", err)
 	}
 	record := membershipRecord{
 		PK: auth.MembershipPK(subject), SK: auth.MembershipSK, MembershipID: string(membershipID), Subject: string(subject),
 		TenantID: string(auth.DefaultTenantID), Status: string(auth.MembershipStatusActive), Role: string(auth.RoleAdmin),
 		AuthValidAfter: now.Unix(), Version: 1, CreatedAt: now.Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339),
+		InvitationPending: true,
 	}
 	item, err := sharedaws.MarshalMap(record)
 	if err != nil {
-		return false, fmt.Errorf("marshal membership: %w", err)
+		return membershipRecord{}, false, fmt.Errorf("marshal membership: %w", err)
 	}
 	if _, err := b.dynamo.PutItem(ctx, &sharedaws.DynamoDBPutItemInput{
 		TableName: sharedaws.String(b.authTable), Item: item,
@@ -184,17 +203,75 @@ func (b bootstrapper) ensureMembership(ctx context.Context, subject auth.Subject
 		if errors.As(err, &conditionFailed) {
 			existing, readErr := b.dynamo.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{TableName: sharedaws.String(b.authTable), ConsistentRead: sharedaws.Bool(true), Key: key})
 			if readErr != nil {
-				return false, fmt.Errorf("read concurrent membership: %w", readErr)
+				return membershipRecord{}, false, fmt.Errorf("read concurrent membership: %w", readErr)
 			}
 			var existingRecord membershipRecord
 			if len(existing.Item) != 0 && sharedaws.UnmarshalMap(existing.Item, &existingRecord) == nil && validMembershipRecord(existingRecord, subject) {
-				return false, nil
+				return existingRecord, false, nil
 			}
-			return false, fmt.Errorf("conflicting membership")
+			return membershipRecord{}, false, fmt.Errorf("conflicting membership")
 		}
-		return false, fmt.Errorf("create membership: %w", err)
+		return membershipRecord{}, false, fmt.Errorf("create membership: %w", err)
 	}
-	return true, nil
+	return record, true, nil
+}
+
+func (b bootstrapper) claimPendingInvitation(ctx context.Context, subject auth.Subject) (string, bool, error) {
+	leaseID, err := newInvitationLeaseID()
+	if err != nil {
+		return "", false, fmt.Errorf("generate invitation lease id: %w", err)
+	}
+	now := b.now().UTC().Truncate(time.Second).Unix()
+	_, err = b.dynamo.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
+		TableName:                 sharedaws.String(b.authTable),
+		Key:                       membershipKey(subject),
+		UpdateExpression:          sharedaws.String("SET InvitationLeaseID = :leaseID, InvitationLeaseUntil = :leaseUntil"),
+		ConditionExpression:       sharedaws.String("attribute_exists(InvitationPending) AND (attribute_not_exists(InvitationLeaseUntil) OR InvitationLeaseUntil <= :now)"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{":leaseID": &ddbtypes.AttributeValueMemberS{Value: leaseID}, ":leaseUntil": &ddbtypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", now+int64(invitationLeaseDuration/time.Second))}, ":now": &ddbtypes.AttributeValueMemberN{Value: fmt.Sprintf("%d", now)}},
+	})
+	if err == nil {
+		return leaseID, true, nil
+	}
+	var conditionFailed *ddbtypes.ConditionalCheckFailedException
+	if errors.As(err, &conditionFailed) {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf("claim pending cognito invitation: %w", err)
+}
+
+func (b bootstrapper) clearPendingInvitation(ctx context.Context, subject auth.Subject, leaseID string) error {
+	_, err := b.dynamo.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
+		TableName:                 sharedaws.String(b.authTable),
+		Key:                       membershipKey(subject),
+		UpdateExpression:          sharedaws.String("REMOVE InvitationPending, InvitationLeaseID, InvitationLeaseUntil"),
+		ConditionExpression:       sharedaws.String("attribute_exists(InvitationPending) AND InvitationLeaseID = :leaseID"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{":leaseID": &ddbtypes.AttributeValueMemberS{Value: leaseID}},
+	})
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("clear pending cognito invitation: %w", err)
+}
+
+func (b bootstrapper) releaseInvitationLease(ctx context.Context, subject auth.Subject, leaseID string) error {
+	_, err := b.dynamo.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
+		TableName:                 sharedaws.String(b.authTable),
+		Key:                       membershipKey(subject),
+		UpdateExpression:          sharedaws.String("REMOVE InvitationLeaseID, InvitationLeaseUntil"),
+		ConditionExpression:       sharedaws.String("attribute_exists(InvitationPending) AND InvitationLeaseID = :leaseID"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{":leaseID": &ddbtypes.AttributeValueMemberS{Value: leaseID}},
+	})
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("release pending cognito invitation lease: %w", err)
+}
+
+func membershipKey(subject auth.Subject) map[string]sharedaws.AttributeValue {
+	return map[string]sharedaws.AttributeValue{
+		"PK": &sharedaws.AttributeValueMemberS{Value: auth.MembershipPK(subject)},
+		"SK": &sharedaws.AttributeValueMemberS{Value: auth.MembershipSK},
+	}
 }
 
 func validMembershipRecord(record membershipRecord, subject auth.Subject) bool {
@@ -234,4 +311,12 @@ func newMembershipID() (auth.MembershipID, error) {
 		return "", err
 	}
 	return auth.MembershipID("MEM_" + hex.EncodeToString(value[:])), nil
+}
+
+func newInvitationLeaseID() (string, error) {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value[:]), nil
 }
