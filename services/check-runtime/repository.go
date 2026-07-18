@@ -9,6 +9,7 @@ import (
 
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
+	"bolt-monitor/shared/domainvalues"
 	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/dynamodbschema"
 	"bolt-monitor/shared/monitorconfig"
@@ -426,9 +427,9 @@ func (r *dynamoRuntimeRepository) buildServiceStatusRecord(ctx context.Context, 
 func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig.Monitor, result checkexecution.ExecutionResult, currentStatus resultstatus.MonitorStatus, thresholdConfig resultstatus.ThresholdConfig, current dynamodbrecord.IncidentRecord, found bool) ([]any, string, string, resultstatus.MonitorStatus, error) {
 	isManual := result.Trigger == checkexecution.TriggerTypeManual
 
-	currentState := strings.ToUpper(currentStatus.CurrentStatus)
+	currentState := domainvalues.MonitorStateFromStored(currentStatus.CurrentStatus)
 	if currentState == "" {
-		currentState = string(resultstatus.MonitorStateUp)
+		currentState = domainvalues.MonitorStateUp
 	}
 
 	failureThreshold := thresholdConfig.FailureThreshold
@@ -452,7 +453,7 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 	var incidentID string
 
 	if isManual {
-		newStatus.CurrentStatus = currentState
+		newStatus.CurrentStatus = currentState.Stored()
 		return incidentRecords, "", "", newStatus, nil
 	}
 
@@ -461,19 +462,19 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 		newStatus.ConsecutiveSuccesses++
 
 		switch currentState {
-		case string(resultstatus.MonitorStateUp):
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateUp)
+		case domainvalues.MonitorStateUp:
+			newStatus.CurrentStatus = domainvalues.MonitorStateUp.Stored()
 
-		case string(resultstatus.MonitorStateDegraded):
+		case domainvalues.MonitorStateDegraded:
 			newStatus.ConsecutiveFailures = 0
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateUp)
+			newStatus.CurrentStatus = domainvalues.MonitorStateUp.Stored()
 
-		case string(resultstatus.MonitorStateDown):
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateRecovering)
+		case domainvalues.MonitorStateDown:
+			newStatus.CurrentStatus = domainvalues.MonitorStateRecovering.Stored()
 
-		case string(resultstatus.MonitorStateRecovering):
+		case domainvalues.MonitorStateRecovering:
 			if newStatus.ConsecutiveSuccesses >= recoveryThreshold {
-				newStatus.CurrentStatus = string(resultstatus.MonitorStateUp)
+				newStatus.CurrentStatus = domainvalues.MonitorStateUp.Stored()
 				newStatus.ConsecutiveSuccesses = 0
 				if found {
 					current.Status = incidentStatusResolved
@@ -484,55 +485,55 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 					incidentID = current.IncidentID
 				}
 			} else {
-				newStatus.CurrentStatus = string(resultstatus.MonitorStateRecovering)
+				newStatus.CurrentStatus = domainvalues.MonitorStateRecovering.Stored()
 			}
 
-		case string(resultstatus.MonitorStateMaintenance):
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateMaintenance)
+		case domainvalues.MonitorStateMaintenance:
+			newStatus.CurrentStatus = domainvalues.MonitorStateMaintenance.Stored()
 
 		default:
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateUp)
+			newStatus.CurrentStatus = domainvalues.MonitorStateUp.Stored()
 		}
 	} else {
 		newStatus.ConsecutiveSuccesses = 0
 		newStatus.ConsecutiveFailures++
 
 		switch currentState {
-		case string(resultstatus.MonitorStateUp):
+		case domainvalues.MonitorStateUp:
 			if failureThreshold == 1 {
-				newStatus.CurrentStatus = string(resultstatus.MonitorStateDown)
+				newStatus.CurrentStatus = domainvalues.MonitorStateDown.Stored()
 			} else {
-				newStatus.CurrentStatus = string(resultstatus.MonitorStateDegraded)
+				newStatus.CurrentStatus = domainvalues.MonitorStateDegraded.Stored()
 			}
 
-		case string(resultstatus.MonitorStateDegraded):
+		case domainvalues.MonitorStateDegraded:
 			if newStatus.ConsecutiveFailures >= failureThreshold {
-				newStatus.CurrentStatus = string(resultstatus.MonitorStateDown)
+				newStatus.CurrentStatus = domainvalues.MonitorStateDown.Stored()
 			} else {
-				newStatus.CurrentStatus = string(resultstatus.MonitorStateDegraded)
+				newStatus.CurrentStatus = domainvalues.MonitorStateDegraded.Stored()
 			}
 
-		case string(resultstatus.MonitorStateDown):
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateDown)
+		case domainvalues.MonitorStateDown:
+			newStatus.CurrentStatus = domainvalues.MonitorStateDown.Stored()
 			if found {
 				current.Summary = incidentSummary(monitor, result)
 				current.UpdatedAt = result.FinishedAt.UTC().Format(time.RFC3339)
 				incidentRecords = buildIncidentRecords(current, "INCIDENT_UPDATED", current.UpdatedAt, result.FinishedAt)
 			}
 
-		case string(resultstatus.MonitorStateRecovering):
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateDown)
+		case domainvalues.MonitorStateRecovering:
+			newStatus.CurrentStatus = domainvalues.MonitorStateDown.Stored()
 			newStatus.ConsecutiveSuccesses = 0
 
-		case string(resultstatus.MonitorStateMaintenance):
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateMaintenance)
+		case domainvalues.MonitorStateMaintenance:
+			newStatus.CurrentStatus = domainvalues.MonitorStateMaintenance.Stored()
 
 		default:
-			newStatus.CurrentStatus = string(resultstatus.MonitorStateDegraded)
+			newStatus.CurrentStatus = domainvalues.MonitorStateDegraded.Stored()
 		}
 	}
 
-	if newStatus.CurrentStatus == string(resultstatus.MonitorStateDown) && currentState != string(resultstatus.MonitorStateDown) {
+	if newStatus.CurrentStatus == domainvalues.MonitorStateDown.Stored() && currentState != domainvalues.MonitorStateDown {
 		if !found {
 			summary := incidentSummary(monitor, result)
 			incident := dynamodbrecord.IncidentRecord{

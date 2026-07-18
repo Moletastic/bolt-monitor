@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"bolt-monitor/shared/domainvalues"
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/outboundhttp"
@@ -96,17 +97,6 @@ var supportedServiceCategories = map[ServiceCategory]struct{}{
 	ServiceCategorySecurity:      {},
 	ServiceCategoryLocation:      {},
 	ServiceCategorySocial:        {},
-}
-
-var allowedIntervalSeconds = map[int]struct{}{
-	60:   {},
-	120:  {},
-	180:  {},
-	300:  {},
-	600:  {},
-	900:  {},
-	1800: {},
-	3600: {},
 }
 
 type Service struct {
@@ -347,17 +337,11 @@ func firstJoinedError(err error) error {
 }
 
 func IsAllowedIntervalSeconds(intervalSeconds int) bool {
-	_, ok := allowedIntervalSeconds[intervalSeconds]
-	return ok
+	return domainvalues.IsAllowedIntervalSeconds(intervalSeconds)
 }
 
 func AllowedIntervalSeconds() []int {
-	values := make([]int, 0, len(allowedIntervalSeconds))
-	for value := range allowedIntervalSeconds {
-		values = append(values, value)
-	}
-	sort.Ints(values)
-	return values
+	return domainvalues.AllowedIntervalSeconds()
 }
 
 func (h HTTPConfiguration) Validate() error {
