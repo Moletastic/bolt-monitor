@@ -32,21 +32,15 @@ func (r *dynamoRuntimeRepository) GetSchedulerConfig(ctx context.Context, tenant
 	if err := r.requireTableName(); err != nil {
 		return checkexecution.SchedulerConfig{}, err
 	}
-	out, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{
-		TableName: sharedaws.String(r.tableName),
-		Key: map[string]sharedaws.AttributeValue{
-			"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)},
-			"SK": &sharedaws.AttributeValueMemberS{Value: "SCHEDULER_CONFIG"},
-		},
-	})
+	item, found, err := sharedaws.GetByPrimaryKey(ctx, r.client, r.tableName, sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "SCHEDULER_CONFIG"))
 	if err != nil {
 		return checkexecution.SchedulerConfig{}, err
 	}
-	if len(out.Item) == 0 {
+	if !found {
 		return checkexecution.SchedulerConfig{}, nil
 	}
 	var record dynamodbrecord.SchedulerConfigItemRecord
-	if err := sharedaws.UnmarshalMap(out.Item, &record); err != nil {
+	if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 		return checkexecution.SchedulerConfig{}, err
 	}
 	return checkexecution.SchedulerConfig{RecurringEnabled: record.RecurringEnabled, StopControlMode: checkexecution.StopControlMode(record.StopControlMode)}, nil
@@ -56,14 +50,10 @@ func (r *dynamoRuntimeRepository) ListMonitors(ctx context.Context, tenantID str
 	if err := r.requireTableName(); err != nil {
 		return nil, err
 	}
-	serviceRefs, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
-		TableName:              sharedaws.String(r.tableName),
-		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
-		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)},
-			":prefix": &sharedaws.AttributeValueMemberS{Value: "SERVICE#"},
-		},
-	})
+	// Scheduler fan-out: bounded by a single page per service partition. The
+	// caller (scheduler tick) treats any continuation key as a hard failure
+	// for that tick and retries next minute.
+	serviceRefs, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "SERVICE#", sharedaws.PageOptions{Limit: 100})
 	if err != nil {
 		return nil, err
 	}
@@ -76,14 +66,7 @@ func (r *dynamoRuntimeRepository) ListMonitors(ctx context.Context, tenantID str
 		if service.EntityType != dynamodbschema.EntityServiceRef {
 			continue
 		}
-		serviceMonitors, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
-			TableName:              sharedaws.String(r.tableName),
-			KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
-			ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-				":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.ServicePK(tenantID, service.ServiceID)},
-				":prefix": &sharedaws.AttributeValueMemberS{Value: "MONITOR#"},
-			},
-		})
+		serviceMonitors, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.ServicePK(tenantID, service.ServiceID), "MONITOR#", sharedaws.PageOptions{Limit: 100})
 		if err != nil {
 			return nil, err
 		}
@@ -161,20 +144,18 @@ func (r *dynamoRuntimeRepository) ListPendingExecutionWork(ctx context.Context, 
 	if err := r.requireTableName(); err != nil {
 		return nil, err
 	}
-	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
-		TableName:              sharedaws.String(r.tableName),
-		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
-		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)},
-			":prefix": &sharedaws.AttributeValueMemberS{Value: "RUN_REQUEST#"},
-		},
-		Limit: sharedaws.Int32(limit),
+	// Bounded worker claim: explicit limit prevents unbounded cost. Any
+	// continuation state beyond the first page is reported as incomplete so
+	// the worker can retry the next SQS message.
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "RUN_REQUEST#", sharedaws.PageOptions{
+		Limit:   limit,
+		Forward: true,
 	})
 	if err != nil {
 		return nil, err
 	}
-	works := make([]checkexecution.ExecutionWork, 0, len(out.Items))
-	for _, item := range out.Items {
+	works := make([]checkexecution.ExecutionWork, 0, len(page.Items))
+	for _, item := range page.Items {
 		var record dynamodbrecord.ExecutionWorkItemRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 			return nil, err
@@ -246,21 +227,15 @@ func (r *dynamoRuntimeRepository) GetMonitor(ctx context.Context, tenantID, serv
 }
 
 func (r *dynamoRuntimeRepository) getMonitorRecord(ctx context.Context, tenantID, serviceID, monitorID string) (dynamodbrecord.MonitorItemRecord, bool, error) {
-	out, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{
-		TableName: sharedaws.String(r.tableName),
-		Key: map[string]sharedaws.AttributeValue{
-			"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.MonitorPK(tenantID, serviceID, monitorID)},
-			"SK": &sharedaws.AttributeValueMemberS{Value: "META"},
-		},
-	})
+	item, found, err := sharedaws.GetByPrimaryKey(ctx, r.client, r.tableName, sharedaws.NewPrimaryKey(dynamodbschema.MonitorPK(tenantID, serviceID, monitorID), "META"))
 	if err != nil {
 		return dynamodbrecord.MonitorItemRecord{}, false, err
 	}
-	if len(out.Item) == 0 {
+	if !found {
 		return dynamodbrecord.MonitorItemRecord{}, false, nil
 	}
 	var record dynamodbrecord.MonitorItemRecord
-	if err := sharedaws.UnmarshalMap(out.Item, &record); err != nil {
+	if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 		return dynamodbrecord.MonitorItemRecord{}, false, err
 	}
 	return record, true, nil
@@ -345,42 +320,30 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 }
 
 func (r *dynamoRuntimeRepository) getService(ctx context.Context, tenantID, serviceID string) (monitorconfig.Service, bool, error) {
-	out, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{
-		TableName: sharedaws.String(r.tableName),
-		Key: map[string]sharedaws.AttributeValue{
-			"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.ServicePK(tenantID, serviceID)},
-			"SK": &sharedaws.AttributeValueMemberS{Value: "META"},
-		},
-	})
+	item, found, err := sharedaws.GetByPrimaryKey(ctx, r.client, r.tableName, sharedaws.NewPrimaryKey(dynamodbschema.ServicePK(tenantID, serviceID), "META"))
 	if err != nil {
 		return monitorconfig.Service{}, false, err
 	}
-	if len(out.Item) == 0 {
+	if !found {
 		return monitorconfig.Service{}, false, nil
 	}
 	var record dynamodbrecord.ServiceItemRecord
-	if err := sharedaws.UnmarshalMap(out.Item, &record); err != nil {
+	if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 		return monitorconfig.Service{}, false, err
 	}
 	return monitorconfig.Service{TenantID: record.TenantID, ServiceID: record.ServiceID, LifecycleState: monitorconfig.ServiceLifecycle(record.LifecycleState), EscalationPolicyID: strings.TrimSpace(record.EscalationPolicyID), BusinessHours: dynamodbrecord.CloneBusinessHoursConfig(record.BusinessHours)}, true, nil
 }
 
 func (r *dynamoRuntimeRepository) getMonitorStatus(ctx context.Context, tenantID, serviceID, monitorID string) (resultstatus.MonitorStatus, bool, error) {
-	out, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{
-		TableName: sharedaws.String(r.tableName),
-		Key: map[string]sharedaws.AttributeValue{
-			"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.MonitorPK(tenantID, serviceID, monitorID)},
-			"SK": &sharedaws.AttributeValueMemberS{Value: "STATUS"},
-		},
-	})
+	item, found, err := sharedaws.GetByPrimaryKey(ctx, r.client, r.tableName, sharedaws.NewPrimaryKey(dynamodbschema.MonitorPK(tenantID, serviceID, monitorID), "STATUS"))
 	if err != nil {
 		return resultstatus.MonitorStatus{}, false, err
 	}
-	if len(out.Item) == 0 {
+	if !found {
 		return resultstatus.MonitorStatus{}, false, nil
 	}
 	var record resultstatus.MonitorStatusRecord
-	if err := sharedaws.UnmarshalMap(out.Item, &record); err != nil {
+	if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 		return resultstatus.MonitorStatus{}, false, err
 	}
 	lastCheckedAt, err := time.Parse(time.RFC3339, firstNonEmpty(record.LastCheckedAt, record.UpdatedAt))
@@ -558,19 +521,18 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 }
 
 func (r *dynamoRuntimeRepository) getOpenIncident(ctx context.Context, tenantID, serviceID, monitorID string) (dynamodbrecord.IncidentRecord, bool, error) {
-	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
-		TableName:              sharedaws.String(r.tableName),
-		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
-		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.MonitorPK(tenantID, serviceID, monitorID)},
-			":prefix": &sharedaws.AttributeValueMemberS{Value: "INCIDENT#"},
-		},
+	// Bounded by a single page: the worker only needs the most recent open
+	// incident for the monitor. If more than one page exists, the older
+	// entries remain for later resolution but do not block the current tick.
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.MonitorPK(tenantID, serviceID, monitorID), "INCIDENT#", sharedaws.PageOptions{
+		Limit:   20,
+		Forward: false,
 	})
 	if err != nil {
 		return dynamodbrecord.IncidentRecord{}, false, err
 	}
-	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(out.Items))
-	for _, item := range out.Items {
+	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(page.Items))
+	for _, item := range page.Items {
 		var record dynamodbrecord.IncidentItemRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 			return dynamodbrecord.IncidentRecord{}, false, err
