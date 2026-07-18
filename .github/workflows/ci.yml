@@ -54,7 +54,8 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@10.33.0 --activate
-          echo "$(dirname "$(command -v corepack)")" >> "$GITHUB_PATH"
+          echo "::add-path::$(dirname "$(command -v corepack)")"
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm --dir apps/dashboard install --frozen-lockfile --reporter=silent
@@ -80,7 +81,8 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@10.33.0 --activate
-          echo "$(dirname "$(command -v corepack)")" >> "$GITHUB_PATH"
+          echo "::add-path::$(dirname "$(command -v corepack)")"
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm --dir infra install --frozen-lockfile --reporter=silent
