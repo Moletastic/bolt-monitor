@@ -108,3 +108,20 @@ components:
       properties:
         status: {type: string, const: success}
         data: {type: object, required: [status], properties: {status: {type: string, const: ok}}}
+    HTTPMonitorConfiguration:
+      type: object
+      required: [target, method, timeoutMs]
+      properties:
+        target: {type: string, format: uri, description: Public HTTP or HTTPS destination.}
+        method: {type: string}
+        timeoutMs: {type: integer, minimum: 1, maximum: 30000}
+    CheckRun:
+      type: object
+      properties:
+        runId: {type: string}
+        outcome: {type: string}
+        error: {type: string}
+        failureCode:
+          type: string
+          description: Sanitized outbound policy failure category when execution cannot reach its destination.
+          example: address_blocked

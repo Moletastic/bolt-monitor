@@ -220,7 +220,7 @@ func (e *Executor) Execute(ctx context.Context, request Request) (Response, erro
 	client := &http.Client{
 		Transport: e.transport(),
 		CheckRedirect: func(next *http.Request, via []*http.Request) error {
-			if len(via) > MaxRedirects {
+			if len(via) >= MaxRedirects {
 				return &Error{Kind: KindRedirectLimit}
 			}
 			previous := via[len(via)-1].URL

@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
+
+	"bolt-monitor/shared/outboundhttp"
 )
 
 var errMissingBotToken = errors.New("telegram bot token is required")
@@ -23,13 +23,11 @@ type TelegramConfig struct {
 }
 
 type TelegramSender struct {
-	httpClient *http.Client
+	executor HTTPExecutor
 }
 
-func NewTelegramSender() *TelegramSender {
-	return &TelegramSender{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-	}
+func NewTelegramSender(executors ...HTTPExecutor) *TelegramSender {
+	return &TelegramSender{executor: senderExecutor(executors)}
 }
 
 func (s *TelegramSender) Send(ctx context.Context, notification Notification) error {
@@ -64,33 +62,21 @@ func (s *TelegramSender) Send(ctx context.Context, notification Notification) er
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.httpClient.Do(req)
+	response, err := s.executor.Execute(ctx, outboundhttp.Request{Method: http.MethodPost, URL: apiURL, Header: http.Header{"Content-Type": {"application/json"}}, Body: bytes.NewReader(body), Timeout: outboundhttp.NotificationTimeout})
 	if err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
+	if response.StatusCode != http.StatusOK {
 		var tgResp telegramResponse
-		if err := json.Unmarshal(respBody, &tgResp); err == nil && strings.Contains(strings.ToLower(tgResp.Description), "chat not found") {
+		if err := json.Unmarshal(response.Body, &tgResp); err == nil && strings.Contains(strings.ToLower(tgResp.Description), "chat not found") {
 			return errors.New("telegram chat not found: use the numeric chat ID and make sure the bot has access to that chat")
 		}
-		return fmt.Errorf("telegram API error: status=%d body=%s", resp.StatusCode, string(respBody))
+		return errors.New("telegram API returned non-success status")
 	}
 
 	var tgResp telegramResponse
-	if err := json.Unmarshal(respBody, &tgResp); err != nil {
+	if err := json.Unmarshal(response.Body, &tgResp); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 	if !tgResp.Ok {
@@ -132,28 +118,17 @@ func escapeMarkdownV2(text string) string {
 func (s *TelegramSender) DetectChatID(ctx context.Context, botToken string) (string, error) {
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates", botToken)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := s.httpClient.Do(req)
+	response, err := s.executor.Execute(ctx, outboundhttp.Request{Method: http.MethodGet, URL: apiURL, Timeout: outboundhttp.NotificationTimeout})
 	if err != nil {
 		return "", fmt.Errorf("failed to get updates: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("telegram API error: status=%d body=%s", resp.StatusCode, string(respBody))
+	if response.StatusCode != http.StatusOK {
+		return "", errors.New("telegram API returned non-success status")
 	}
 
 	var updates telegramGetUpdatesResponse
-	if err := json.Unmarshal(respBody, &updates); err != nil {
+	if err := json.Unmarshal(response.Body, &updates); err != nil {
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
