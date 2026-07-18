@@ -39,3 +39,6 @@ services/*/main
 # Coverage
 coverage/
 *.out
+
+# Local agent tooling
+.opencode/
