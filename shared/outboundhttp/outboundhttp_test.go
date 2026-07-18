@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -15,6 +16,19 @@ import (
 type fakeResolver struct {
 	addresses []netip.Addr
 	err       error
+}
+
+type sequenceResolver struct {
+	answers [][]netip.Addr
+	index   int
+}
+
+func (r *sequenceResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
+	answer := r.answers[r.index]
+	if r.index < len(r.answers)-1 {
+		r.index++
+	}
+	return answer, nil
 }
 
 type scriptedDialer struct {
@@ -197,6 +211,28 @@ func TestExecutorFollowsCredentialFreeRedirectWithFreshDial(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(dialer.calls, ","), "status.example.com") {
 		t.Fatalf("dial must use pinned address: %v", dialer.calls)
+	}
+}
+
+func TestValidateDestinationRejectsDNSChangeBetweenRequests(t *testing.T) {
+	resolver := &sequenceResolver{answers: [][]netip.Addr{{netip.MustParseAddr("8.8.8.8")}, {netip.MustParseAddr("10.0.0.1")}}}
+	executor := &Executor{Resolver: resolver}
+	if _, _, err := executor.ValidateDestination(context.Background(), "https://status.example.com"); err != nil {
+		t.Fatalf("first validation error = %v", err)
+	}
+	if _, _, err := executor.ValidateDestination(context.Background(), "https://status.example.com"); !IsKind(err, KindAddressBlocked) {
+		t.Fatalf("second validation error = %v, want blocked", err)
+	}
+}
+
+func TestExecutorRejectsOversizedResponse(t *testing.T) {
+	approved := netip.MustParseAddr("8.8.8.8")
+	body := strings.Repeat("x", MaxResponseBytes+1)
+	dialer := &scriptedDialer{remote: approved, responses: []string{"HTTP/1.1 200 OK\r\nContent-Length: " + fmt.Sprint(len(body)) + "\r\n\r\n" + body}}
+	executor := &Executor{Resolver: fakeResolver{addresses: []netip.Addr{approved}}, Dialer: dialer}
+	_, err := executor.Execute(context.Background(), Request{Method: http.MethodGet, URL: "http://status.example.com"})
+	if !IsKind(err, KindResponseTooLarge) {
+		t.Fatalf("Execute error = %v, want response too large", err)
 	}
 }
 
