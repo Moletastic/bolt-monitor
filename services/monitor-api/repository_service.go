@@ -25,7 +25,6 @@ type ServiceStore interface {
 	DeleteService(context.Context, string, string) (bool, error)
 	ArchiveService(context.Context, string, string) (monitorconfig.Service, error)
 	ReactivateService(context.Context, string, string) (monitorconfig.Service, error)
-	GetServiceStatus(context.Context, string, string) (dynamodbrecord.ServiceStatusRecord, bool, error)
 	ServiceReferencesEscalationPolicy(context.Context, string, string) (bool, error)
 }
 
