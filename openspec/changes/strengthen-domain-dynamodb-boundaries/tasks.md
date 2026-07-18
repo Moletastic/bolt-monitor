@@ -41,8 +41,8 @@
 
 ## 6. Verify Compatibility And Quality
 
-- [ ] 6.1 Add regression tests that assert unchanged REST response payloads and SQS payload fields for representative monitor, incident, escalation, and channel flows.
-- [ ] 6.2 Add multi-page repository tests that prove callers either continue with a bounded cursor or preserve incompleteness instead of silently truncating data.
-- [ ] 6.3 Run `make test-go-all`.
-- [ ] 6.4 Run `make lint-go`.
-- [ ] 6.5 Run `make check-api-contract` and `make check-bruno` to confirm unchanged API contracts and route coverage.
+- [x] 6.1 Add regression tests that assert unchanged REST response payloads and SQS payload fields for representative monitor, incident, escalation, and channel flows.
+- [x] 6.2 Add multi-page repository tests that prove callers either continue with a bounded cursor or preserve incompleteness instead of silently truncating data.
+- [x] 6.3 Run `make test-go-all`.
+- [x] 6.4 Run `make lint-go`.
+- [x] 6.5 Run `make check-api-contract` and `make check-bruno` to confirm unchanged API contracts and route coverage.
