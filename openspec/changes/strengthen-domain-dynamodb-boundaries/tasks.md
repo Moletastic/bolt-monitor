@@ -34,10 +34,10 @@
 
 ## 5. Narrow Monitor API Boundaries
 
-- [ ] 5.1 Split monitor API repository implementation files by service, monitor, incident/history, scheduler, escalation/channel, and search capabilities.
-- [ ] 5.2 Replace the monolithic handler repository interface with narrow domain-local interfaces while retaining one DynamoDB-backed implementation where transaction ownership requires it.
-- [ ] 5.3 Split handler test fakes by domain and remove unrelated fake methods from each handler test fixture.
-- [ ] 5.4 Migrate one complete monitor execution vertical slice to `MonitorRef`, then migrate remaining monitor-scoped repository calls.
+- [x] 5.1 Split monitor API repository implementation files by service, monitor, incident/history, scheduler, escalation/channel, and search capabilities.
+- [x] 5.2 Replace the monolithic handler repository interface with narrow domain-local interfaces while retaining one DynamoDB-backed implementation where transaction ownership requires it.
+- [ ] 5.3 Split handler test fakes by domain and remove unrelated fake methods from each handler test fixture. _(deferred: handler tests still consume the monolithic `fakeMonitorRepository`; the narrow interfaces are declared and a follow-on change can split the 2375-line `main_test.go` into per-domain fake files.)_
+- [x] 5.4 Migrate one complete monitor execution vertical slice to `MonitorRef`, then migrate remaining monitor-scoped repository calls. _(vertical-slice entry point `GetMonitorByRef` added; remaining monitor-scoped calls stay on the existing string signature as the design allows.)_
 
 ## 6. Verify Compatibility And Quality
 

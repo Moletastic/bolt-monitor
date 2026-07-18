@@ -39,6 +39,12 @@ type searchResult struct {
 	MatchText   string `json:"matchText"`
 }
 
+// SearchStore is the narrow interface used by the global search handler. The
+// underlying repository already satisfies it via the named GSI helper.
+type SearchStore interface {
+	SearchResources(context.Context, string, string, int, map[string]struct{}) ([]searchResult, error)
+}
+
 type searchResponse struct {
 	Results []searchResult `json:"results"`
 }
