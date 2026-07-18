@@ -20,6 +20,7 @@ import (
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/notifications"
+	"bolt-monitor/shared/outboundhttp"
 	"bolt-monitor/shared/resultstatus"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -1317,9 +1318,9 @@ func TestNotificationChannelTestSendFailuresAreTypedAndAudited(t *testing.T) {
 		senders    notifications.SenderRegistry
 		wantReason string
 	}{
-		{name: "unsupported sender", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelType("unknown"), Target: "target", Config: json.RawMessage(`{}`)}, senders: notifications.SenderRegistry{}, wantReason: "sender not registered"},
-		{name: "invalid config", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelTypeTelegram, Target: "chat", Config: json.RawMessage(`{"botToken":`)}, senders: notifications.SenderRegistry{"telegram": &fakeNotificationSender{channelType: "telegram"}}, wantReason: "invalid telegram config"},
-		{name: "provider failure redacted", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelTypeTelegram, Target: "chat", Config: json.RawMessage(`{"botToken":"secret-token"}`)}, senders: notifications.SenderRegistry{"telegram": &fakeNotificationSender{channelType: "telegram", err: stderrors.New("telegram rejected botToken secret-token Authorization Bearer")}}, wantReason: "telegram rejected [redacted] [redacted] [redacted] [redacted]"},
+		{name: "unsupported sender", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelType("unknown"), Target: "target", Config: json.RawMessage(`{}`)}, senders: notifications.SenderRegistry{}, wantReason: "notification delivery failed"},
+		{name: "invalid config", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelTypeTelegram, Target: "chat", Config: json.RawMessage(`{"botToken":`)}, senders: notifications.SenderRegistry{"telegram": &fakeNotificationSender{channelType: "telegram"}}, wantReason: "notification delivery failed"},
+		{name: "provider failure redacted", channel: escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Type: escalation.ChannelTypeTelegram, Target: "chat", Config: json.RawMessage(`{"botToken":"secret-token"}`)}, senders: notifications.SenderRegistry{"telegram": &fakeNotificationSender{channelType: "telegram", err: stderrors.New("telegram rejected botToken secret-token Authorization Bearer")}}, wantReason: "notification delivery failed"},
 	}
 
 	for _, tt := range tests {
@@ -1348,6 +1349,33 @@ func TestNotificationChannelTestSendFailuresAreTypedAndAudited(t *testing.T) {
 			}
 			if strings.Contains(repo.channelTestAudit[0].Reason, "secret-token") || strings.Contains(repo.channelTestAudit[0].Reason, "botToken") {
 				t.Fatalf("audit leaked secret material: %+v", repo.channelTestAudit[0])
+			}
+		})
+	}
+}
+
+func TestChannelDestinationValidationUsesTypedFieldErrors(t *testing.T) {
+	handler := newMonitorHandler(newFakeMonitorRepository(), defaultProbeLocationCatalog(), defaultTenantID)
+	handler.validateDestination = func(context.Context, string) error {
+		return &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked}
+	}
+	tests := []struct {
+		name    string
+		channel escalation.NotificationChannel
+		field   string
+	}{
+		{name: "webhook", channel: escalation.NotificationChannel{Type: escalation.ChannelTypeWebhook, Target: "https://hooks.example.com"}, field: "target"},
+		{name: "provider", channel: escalation.NotificationChannel{Type: escalation.ChannelTypeEmail, Config: json.RawMessage(`{"apiBaseUrl":"https://provider.example.com"}`)}, field: "config.apiBaseUrl"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := handler.validateChannelDestination(context.Background(), test.channel)
+			typed, ok := sharederrors.As(err)
+			if !ok || typed.Code != sharederrors.CodeValidationFailed || typed.Details["field"] != test.field {
+				t.Fatalf("validation error = %#v", err)
+			}
+			if strings.Contains(err.Error(), "hooks.example.com") || strings.Contains(err.Error(), "provider.example.com") {
+				t.Fatalf("error leaked target: %q", err)
 			}
 		})
 	}
