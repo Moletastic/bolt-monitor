@@ -26,7 +26,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
-type fakeMonitorRepository struct {
+type fakeMonitorRepositoryState struct {
 	services         map[string]monitorconfig.Service
 	monitors         map[string]monitorconfig.Monitor
 	statuses         map[string]resultstatus.MonitorStatus
@@ -40,6 +40,13 @@ type fakeMonitorRepository struct {
 	audit            map[string][]auditEventView
 	scheduler        dynamodbrecord.SchedulerConfigRecord
 	channelTestAudit []channelTestAuditRecord
+}
+
+// fakeMonitorRepository is a test-only composition root. Mutable maps live
+// in fakeMonitorRepositoryState; focused handler tests can use that state via
+// the narrow domain interfaces declared by the production repository.
+type fakeMonitorRepository struct {
+	*fakeMonitorRepositoryState
 }
 
 type fixedPrincipalResolver struct{}
@@ -185,7 +192,7 @@ func (f *fakeDynamoClient) Scan(_ context.Context, input *sharedaws.DynamoDBScan
 }
 
 func newFakeMonitorRepository() *fakeMonitorRepository {
-	return &fakeMonitorRepository{
+	return &fakeMonitorRepository{fakeMonitorRepositoryState: &fakeMonitorRepositoryState{
 		services:         map[string]monitorconfig.Service{},
 		monitors:         map[string]monitorconfig.Monitor{},
 		statuses:         map[string]resultstatus.MonitorStatus{},
@@ -197,13 +204,13 @@ func newFakeMonitorRepository() *fakeMonitorRepository {
 		incidents:        map[string]dynamodbrecord.IncidentRecord{},
 		activities:       map[string][]dynamodbrecord.IncidentActivityRecord{},
 		audit:            map[string][]auditEventView{},
-	}
+	}}
 }
 
 func serviceKey(serviceID string) string            { return serviceID }
 func monitorKey(serviceID, monitorID string) string { return serviceID + "/" + monitorID }
 
-func (r *fakeMonitorRepository) SearchResources(_ context.Context, tenantID, query string, limit int, types map[string]struct{}) ([]searchResult, error) {
+func (r *fakeMonitorRepositoryState) SearchResources(_ context.Context, tenantID, query string, limit int, types map[string]struct{}) ([]searchResult, error) {
 	if len(normalizeSearchText(query)) < minSearchQueryLength {
 		return []searchResult{}, nil
 	}
@@ -226,7 +233,7 @@ func (r *fakeMonitorRepository) SearchResources(_ context.Context, tenantID, que
 	return results, nil
 }
 
-func (r *fakeMonitorRepository) CreateService(_ context.Context, service monitorconfig.Service) (monitorconfig.Service, error) {
+func (r *fakeMonitorRepositoryState) CreateService(_ context.Context, service monitorconfig.Service) (monitorconfig.Service, error) {
 	if _, ok := r.services[serviceKey(service.ServiceID)]; ok {
 		return monitorconfig.Service{}, errServiceAlreadyExists
 	}
@@ -234,7 +241,7 @@ func (r *fakeMonitorRepository) CreateService(_ context.Context, service monitor
 	return service, nil
 }
 
-func (r *fakeMonitorRepository) ListServices(_ context.Context, tenantID string) ([]monitorconfig.Service, error) {
+func (r *fakeMonitorRepositoryState) ListServices(_ context.Context, tenantID string) ([]monitorconfig.Service, error) {
 	out := []monitorconfig.Service{}
 	for _, service := range r.services {
 		if service.TenantID == tenantID {
@@ -244,7 +251,7 @@ func (r *fakeMonitorRepository) ListServices(_ context.Context, tenantID string)
 	return out, nil
 }
 
-func (r *fakeMonitorRepository) GetService(_ context.Context, tenantID, serviceID string) (monitorconfig.Service, bool, error) {
+func (r *fakeMonitorRepositoryState) GetService(_ context.Context, tenantID, serviceID string) (monitorconfig.Service, bool, error) {
 	service, ok := r.services[serviceKey(serviceID)]
 	if !ok || service.TenantID != tenantID {
 		return monitorconfig.Service{}, false, nil
@@ -252,12 +259,12 @@ func (r *fakeMonitorRepository) GetService(_ context.Context, tenantID, serviceI
 	return service, true, nil
 }
 
-func (r *fakeMonitorRepository) UpdateService(_ context.Context, service monitorconfig.Service) (monitorconfig.Service, error) {
+func (r *fakeMonitorRepositoryState) UpdateService(_ context.Context, service monitorconfig.Service) (monitorconfig.Service, error) {
 	r.services[serviceKey(service.ServiceID)] = service
 	return service, nil
 }
 
-func (r *fakeMonitorRepository) DeleteService(_ context.Context, tenantID, serviceID string) (bool, error) {
+func (r *fakeMonitorRepositoryState) DeleteService(_ context.Context, tenantID, serviceID string) (bool, error) {
 	service, ok := r.services[serviceKey(serviceID)]
 	if !ok || service.TenantID != tenantID {
 		return false, nil
@@ -274,7 +281,7 @@ func (r *fakeMonitorRepository) DeleteService(_ context.Context, tenantID, servi
 	return true, nil
 }
 
-func (r *fakeMonitorRepository) CreateMonitor(_ context.Context, monitor monitorconfig.Monitor) (monitorconfig.Monitor, error) {
+func (r *fakeMonitorRepositoryState) CreateMonitor(_ context.Context, monitor monitorconfig.Monitor) (monitorconfig.Monitor, error) {
 	key := monitorKey(monitor.ServiceID, monitor.MonitorID)
 	if _, ok := r.monitors[key]; ok {
 		return monitorconfig.Monitor{}, errMonitorAlreadyExists
@@ -290,7 +297,7 @@ func (r *fakeMonitorRepository) CreateMonitor(_ context.Context, monitor monitor
 	return monitor, nil
 }
 
-func (r *fakeMonitorRepository) ListMonitors(_ context.Context, tenantID, serviceID string) ([]monitorconfig.Monitor, error) {
+func (r *fakeMonitorRepositoryState) ListMonitors(_ context.Context, tenantID, serviceID string) ([]monitorconfig.Monitor, error) {
 	out := []monitorconfig.Monitor{}
 	for _, monitor := range r.monitors {
 		if monitor.TenantID == tenantID && monitor.ServiceID == serviceID {
@@ -300,7 +307,7 @@ func (r *fakeMonitorRepository) ListMonitors(_ context.Context, tenantID, servic
 	return out, nil
 }
 
-func (r *fakeMonitorRepository) GetMonitor(_ context.Context, tenantID, serviceID, monitorID string) (monitorconfig.Monitor, bool, error) {
+func (r *fakeMonitorRepositoryState) GetMonitor(_ context.Context, tenantID, serviceID, monitorID string) (monitorconfig.Monitor, bool, error) {
 	monitor, ok := r.monitors[monitorKey(serviceID, monitorID)]
 	if !ok || monitor.TenantID != tenantID {
 		return monitorconfig.Monitor{}, false, nil
@@ -308,12 +315,12 @@ func (r *fakeMonitorRepository) GetMonitor(_ context.Context, tenantID, serviceI
 	return monitor, true, nil
 }
 
-func (r *fakeMonitorRepository) UpdateMonitor(_ context.Context, monitor monitorconfig.Monitor) (monitorconfig.Monitor, error) {
+func (r *fakeMonitorRepositoryState) UpdateMonitor(_ context.Context, monitor monitorconfig.Monitor) (monitorconfig.Monitor, error) {
 	r.monitors[monitorKey(monitor.ServiceID, monitor.MonitorID)] = monitor
 	return monitor, nil
 }
 
-func (r *fakeMonitorRepository) DeleteMonitor(_ context.Context, tenantID, serviceID, monitorID string) (bool, error) {
+func (r *fakeMonitorRepositoryState) DeleteMonitor(_ context.Context, tenantID, serviceID, monitorID string) (bool, error) {
 	service := r.services[serviceKey(serviceID)]
 	count := 0
 	enabledCount := 0
@@ -351,7 +358,7 @@ func (r *fakeMonitorRepository) DeleteMonitor(_ context.Context, tenantID, servi
 	return true, nil
 }
 
-func (r *fakeMonitorRepository) SetMonitorEnabled(_ context.Context, tenantID, serviceID, monitorID string, enabled bool) (monitorconfig.Monitor, bool, error) {
+func (r *fakeMonitorRepositoryState) SetMonitorEnabled(_ context.Context, tenantID, serviceID, monitorID string, enabled bool) (monitorconfig.Monitor, bool, error) {
 	monitor, ok := r.monitors[monitorKey(serviceID, monitorID)]
 	if !ok || monitor.TenantID != tenantID {
 		return monitorconfig.Monitor{}, false, nil
@@ -361,7 +368,7 @@ func (r *fakeMonitorRepository) SetMonitorEnabled(_ context.Context, tenantID, s
 	return monitor, true, nil
 }
 
-func (r *fakeMonitorRepository) SetMonitorMaintenance(_ context.Context, tenantID, serviceID, monitorID string, enabled bool) (resultstatus.MonitorStatus, bool, error) {
+func (r *fakeMonitorRepositoryState) SetMonitorMaintenance(_ context.Context, tenantID, serviceID, monitorID string, enabled bool) (resultstatus.MonitorStatus, bool, error) {
 	now := time.Now()
 	status := resultstatus.MonitorStatus{
 		ServiceID:     strings.ToLower(serviceID),
@@ -378,7 +385,7 @@ func (r *fakeMonitorRepository) SetMonitorMaintenance(_ context.Context, tenantI
 	return status, true, nil
 }
 
-func (r *fakeMonitorRepository) ArchiveService(_ context.Context, tenantID, serviceID string) (monitorconfig.Service, error) {
+func (r *fakeMonitorRepositoryState) ArchiveService(_ context.Context, tenantID, serviceID string) (monitorconfig.Service, error) {
 	service, ok := r.services[serviceKey(serviceID)]
 	if !ok || service.TenantID != tenantID {
 		return monitorconfig.Service{}, sharederrors.New(sharederrors.CodeServiceNotFound, nil)
@@ -388,7 +395,7 @@ func (r *fakeMonitorRepository) ArchiveService(_ context.Context, tenantID, serv
 	return service, nil
 }
 
-func (r *fakeMonitorRepository) ReactivateService(_ context.Context, tenantID, serviceID string) (monitorconfig.Service, error) {
+func (r *fakeMonitorRepositoryState) ReactivateService(_ context.Context, tenantID, serviceID string) (monitorconfig.Service, error) {
 	service, ok := r.services[serviceKey(serviceID)]
 	if !ok || service.TenantID != tenantID {
 		return monitorconfig.Service{}, sharederrors.New(sharederrors.CodeServiceNotFound, nil)
@@ -405,7 +412,7 @@ func (r *fakeMonitorRepository) ReactivateService(_ context.Context, tenantID, s
 	return service, nil
 }
 
-func (r *fakeMonitorRepository) GetMonitorStatus(_ context.Context, tenantID, serviceID, monitorID string) (resultstatus.MonitorStatus, bool, error) {
+func (r *fakeMonitorRepositoryState) GetMonitorStatus(_ context.Context, tenantID, serviceID, monitorID string) (resultstatus.MonitorStatus, bool, error) {
 	status, ok := r.statuses[monitorKey(serviceID, monitorID)]
 	if !ok || status.TenantID != tenantID {
 		return resultstatus.MonitorStatus{}, false, nil
@@ -413,7 +420,7 @@ func (r *fakeMonitorRepository) GetMonitorStatus(_ context.Context, tenantID, se
 	return status, true, nil
 }
 
-func (r *fakeMonitorRepository) ListMonitorRuns(_ context.Context, tenantID, serviceID, monitorID string, _ int32) ([]resultstatus.CheckRun, error) {
+func (r *fakeMonitorRepositoryState) ListMonitorRuns(_ context.Context, tenantID, serviceID, monitorID string, _ int32) ([]resultstatus.CheckRun, error) {
 	runs := r.runs[monitorKey(serviceID, monitorID)]
 	filtered := make([]resultstatus.CheckRun, 0, len(runs))
 	for _, run := range runs {
@@ -424,7 +431,7 @@ func (r *fakeMonitorRepository) ListMonitorRuns(_ context.Context, tenantID, ser
 	return filtered, nil
 }
 
-func (r *fakeMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[resultstatus.CheckRun], error) {
+func (r *fakeMonitorRepositoryState) ListMonitorRunsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[resultstatus.CheckRun], error) {
 	runs, err := r.ListMonitorRuns(ctx, tenantID, serviceID, monitorID, limit)
 	if err != nil {
 		return historyPage[resultstatus.CheckRun]{}, err
@@ -435,7 +442,7 @@ func (r *fakeMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenantI
 	return historyPage[resultstatus.CheckRun]{Items: runs}, nil
 }
 
-func (r *fakeMonitorRepository) GetServiceCardMetrics(_ context.Context, tenantID, serviceID string) (serviceCardMetricsResponse, error) {
+func (r *fakeMonitorRepositoryState) GetServiceCardMetrics(_ context.Context, tenantID, serviceID string) (serviceCardMetricsResponse, error) {
 	monitors := []monitorconfig.Monitor{}
 	statuses := map[string]resultstatus.MonitorStatus{}
 	runsByMonitor := map[string][]resultstatus.CheckRun{}
@@ -452,20 +459,20 @@ func (r *fakeMonitorRepository) GetServiceCardMetrics(_ context.Context, tenantI
 	return buildServiceCardMetrics(monitors, statuses, runsByMonitor), nil
 }
 
-func (r *fakeMonitorRepository) CreateManualRun(_ context.Context, monitor monitorconfig.Monitor, now time.Time) (manualRunRequestRecord, error) {
+func (r *fakeMonitorRepositoryState) CreateManualRun(_ context.Context, monitor monitorconfig.Monitor, now time.Time) (manualRunRequestRecord, error) {
 	run := manualRunRequestRecord{RunID: newRunID(now), ServiceID: monitor.ServiceID, MonitorID: monitor.MonitorID, TenantID: monitor.TenantID, Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now.UTC().Format(time.RFC3339)}
 	r.manual[run.RunID] = run
 	return run, nil
 }
 
-func (r *fakeMonitorRepository) RecordExecutionResult(_ context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error {
+func (r *fakeMonitorRepositoryState) RecordExecutionResult(_ context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error {
 	key := monitorKey(monitor.ServiceID, monitor.MonitorID)
 	status := resultstatus.NewMonitorStatus(result)
 	r.statuses[key] = status
 	return nil
 }
 
-func (r *fakeMonitorRepository) ListIncidents(_ context.Context, tenantID, status string) ([]dynamodbrecord.IncidentRecord, error) {
+func (r *fakeMonitorRepositoryState) ListIncidents(_ context.Context, tenantID, status string) ([]dynamodbrecord.IncidentRecord, error) {
 	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(r.incidents))
 	for _, incident := range r.incidents {
 		if incident.TenantID == tenantID && matchesIncidentFilter(incident.Status, status) {
@@ -475,7 +482,7 @@ func (r *fakeMonitorRepository) ListIncidents(_ context.Context, tenantID, statu
 	return incidents, nil
 }
 
-func (r *fakeMonitorRepository) GetIncident(_ context.Context, tenantID, incidentID string) (dynamodbrecord.IncidentRecord, bool, error) {
+func (r *fakeMonitorRepositoryState) GetIncident(_ context.Context, tenantID, incidentID string) (dynamodbrecord.IncidentRecord, bool, error) {
 	incident, ok := r.incidents[incidentID]
 	if !ok || incident.TenantID != tenantID {
 		return dynamodbrecord.IncidentRecord{}, false, nil
@@ -483,7 +490,7 @@ func (r *fakeMonitorRepository) GetIncident(_ context.Context, tenantID, inciden
 	return incident, true, nil
 }
 
-func (r *fakeMonitorRepository) ListIncidentActivities(_ context.Context, tenantID, incidentID string) ([]dynamodbrecord.IncidentActivityRecord, error) {
+func (r *fakeMonitorRepositoryState) ListIncidentActivities(_ context.Context, tenantID, incidentID string) ([]dynamodbrecord.IncidentActivityRecord, error) {
 	incident, ok := r.incidents[incidentID]
 	if !ok || incident.TenantID != tenantID {
 		return nil, nil
@@ -491,7 +498,7 @@ func (r *fakeMonitorRepository) ListIncidentActivities(_ context.Context, tenant
 	return append([]dynamodbrecord.IncidentActivityRecord(nil), r.activities[incidentID]...), nil
 }
 
-func (r *fakeMonitorRepository) ListMonitorIncidents(_ context.Context, tenantID, serviceID, monitorID string) ([]dynamodbrecord.IncidentRecord, error) {
+func (r *fakeMonitorRepositoryState) ListMonitorIncidents(_ context.Context, tenantID, serviceID, monitorID string) ([]dynamodbrecord.IncidentRecord, error) {
 	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(r.incidents))
 	for _, incident := range r.incidents {
 		if incident.TenantID == tenantID && incident.ServiceID == serviceID && incident.MonitorID == monitorID {
@@ -501,7 +508,7 @@ func (r *fakeMonitorRepository) ListMonitorIncidents(_ context.Context, tenantID
 	return incidents, nil
 }
 
-func (r *fakeMonitorRepository) ListMonitorIncidentsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[dynamodbrecord.IncidentRecord], error) {
+func (r *fakeMonitorRepositoryState) ListMonitorIncidentsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[dynamodbrecord.IncidentRecord], error) {
 	incidents, err := r.ListMonitorIncidents(ctx, tenantID, serviceID, monitorID)
 	if err != nil {
 		return historyPage[dynamodbrecord.IncidentRecord]{}, err
@@ -513,7 +520,7 @@ func (r *fakeMonitorRepository) ListMonitorIncidentsPage(ctx context.Context, te
 	return historyPage[dynamodbrecord.IncidentRecord]{Items: incidents}, nil
 }
 
-func (r *fakeMonitorRepository) ListServiceIncidents(_ context.Context, tenantID, serviceID string, limit int32) ([]dynamodbrecord.IncidentRecord, error) {
+func (r *fakeMonitorRepositoryState) ListServiceIncidents(_ context.Context, tenantID, serviceID string, limit int32) ([]dynamodbrecord.IncidentRecord, error) {
 	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(r.incidents))
 	for _, incident := range r.incidents {
 		if incident.TenantID == tenantID && incident.ServiceID == serviceID {
@@ -527,7 +534,7 @@ func (r *fakeMonitorRepository) ListServiceIncidents(_ context.Context, tenantID
 	return incidents, nil
 }
 
-func (r *fakeMonitorRepository) AcknowledgeIncident(_ context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
+func (r *fakeMonitorRepositoryState) AcknowledgeIncident(_ context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
 	incident, ok := r.incidents[incidentID]
 	if !ok || incident.TenantID != tenantID {
 		return dynamodbrecord.IncidentRecord{}, false, nil
@@ -542,7 +549,7 @@ func (r *fakeMonitorRepository) AcknowledgeIncident(_ context.Context, tenantID,
 	return incident, true, nil
 }
 
-func (r *fakeMonitorRepository) ResolveIncident(_ context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
+func (r *fakeMonitorRepositoryState) ResolveIncident(_ context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
 	incident, ok := r.incidents[incidentID]
 	if !ok || incident.TenantID != tenantID {
 		return dynamodbrecord.IncidentRecord{}, false, nil
@@ -557,16 +564,16 @@ func (r *fakeMonitorRepository) ResolveIncident(_ context.Context, tenantID, inc
 	return incident, true, nil
 }
 
-func (r *fakeMonitorRepository) GetSchedulerConfig(_ context.Context, _ string) (dynamodbrecord.SchedulerConfigRecord, error) {
+func (r *fakeMonitorRepositoryState) GetSchedulerConfig(_ context.Context, _ string) (dynamodbrecord.SchedulerConfigRecord, error) {
 	return r.scheduler, nil
 }
 
-func (r *fakeMonitorRepository) UpdateSchedulerConfig(_ context.Context, _ string, config checkexecution.SchedulerConfig, now time.Time) (dynamodbrecord.SchedulerConfigRecord, error) {
+func (r *fakeMonitorRepositoryState) UpdateSchedulerConfig(_ context.Context, _ string, config checkexecution.SchedulerConfig, now time.Time) (dynamodbrecord.SchedulerConfigRecord, error) {
 	r.scheduler = dynamodbrecord.SchedulerConfigRecord{Config: config, UpdatedAt: now.UTC().Format(time.RFC3339)}
 	return r.scheduler, nil
 }
 
-func (r *fakeMonitorRepository) ListMonitorAuditEvents(_ context.Context, tenantID, serviceID, monitorID string) ([]auditEventView, error) {
+func (r *fakeMonitorRepositoryState) ListMonitorAuditEvents(_ context.Context, tenantID, serviceID, monitorID string) ([]auditEventView, error) {
 	if _, ok := r.monitors[monitorKey(serviceID, monitorID)]; !ok {
 		return nil, nil
 	}
@@ -574,7 +581,7 @@ func (r *fakeMonitorRepository) ListMonitorAuditEvents(_ context.Context, tenant
 	return append([]auditEventView(nil), r.audit[monitorKey(serviceID, monitorID)]...), nil
 }
 
-func (r *fakeMonitorRepository) ListMonitorAuditEventsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error) {
+func (r *fakeMonitorRepositoryState) ListMonitorAuditEventsPage(ctx context.Context, tenantID, serviceID, monitorID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error) {
 	events, err := r.ListMonitorAuditEvents(ctx, tenantID, serviceID, monitorID)
 	if err != nil {
 		return historyPage[auditEventView]{}, err
@@ -585,7 +592,7 @@ func (r *fakeMonitorRepository) ListMonitorAuditEventsPage(ctx context.Context, 
 	return historyPage[auditEventView]{Items: events}, nil
 }
 
-func (r *fakeMonitorRepository) ListServiceAuditEvents(_ context.Context, tenantID, serviceID string) ([]auditEventView, error) {
+func (r *fakeMonitorRepositoryState) ListServiceAuditEvents(_ context.Context, tenantID, serviceID string) ([]auditEventView, error) {
 	service, ok := r.services[serviceKey(serviceID)]
 	if !ok || service.TenantID != tenantID {
 		return nil, nil
@@ -593,7 +600,7 @@ func (r *fakeMonitorRepository) ListServiceAuditEvents(_ context.Context, tenant
 	return append([]auditEventView(nil), r.audit[serviceKey(serviceID)]...), nil
 }
 
-func (r *fakeMonitorRepository) ListServiceAuditEventsPage(ctx context.Context, tenantID, serviceID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error) {
+func (r *fakeMonitorRepositoryState) ListServiceAuditEventsPage(ctx context.Context, tenantID, serviceID string, limit int32, _ map[string]sharedaws.AttributeValue) (historyPage[auditEventView], error) {
 	events, err := r.ListServiceAuditEvents(ctx, tenantID, serviceID)
 	if err != nil {
 		return historyPage[auditEventView]{}, err
@@ -604,12 +611,12 @@ func (r *fakeMonitorRepository) ListServiceAuditEventsPage(ctx context.Context, 
 	return historyPage[auditEventView]{Items: events}, nil
 }
 
-func (r *fakeMonitorRepository) CreateEscalationPolicy(_ context.Context, policy escalation.EscalationPolicy) (escalation.EscalationPolicy, error) {
+func (r *fakeMonitorRepositoryState) CreateEscalationPolicy(_ context.Context, policy escalation.EscalationPolicy) (escalation.EscalationPolicy, error) {
 	r.policies[policy.PolicyID] = policy
 	return policy, nil
 }
 
-func (r *fakeMonitorRepository) ListEscalationPolicies(_ context.Context, tenantID string) ([]escalation.EscalationPolicy, error) {
+func (r *fakeMonitorRepositoryState) ListEscalationPolicies(_ context.Context, tenantID string) ([]escalation.EscalationPolicy, error) {
 	out := make([]escalation.EscalationPolicy, 0, len(r.policies))
 	for _, policy := range r.policies {
 		if policy.TenantID == tenantID {
@@ -619,7 +626,7 @@ func (r *fakeMonitorRepository) ListEscalationPolicies(_ context.Context, tenant
 	return out, nil
 }
 
-func (r *fakeMonitorRepository) GetEscalationPolicy(_ context.Context, tenantID, policyID string) (*escalation.EscalationPolicy, error) {
+func (r *fakeMonitorRepositoryState) GetEscalationPolicy(_ context.Context, tenantID, policyID string) (*escalation.EscalationPolicy, error) {
 	policy, ok := r.policies[policyID]
 	if !ok || policy.TenantID != tenantID {
 		return nil, nil
@@ -628,12 +635,12 @@ func (r *fakeMonitorRepository) GetEscalationPolicy(_ context.Context, tenantID,
 	return &copy, nil
 }
 
-func (r *fakeMonitorRepository) UpdateEscalationPolicy(_ context.Context, policy escalation.EscalationPolicy) (escalation.EscalationPolicy, error) {
+func (r *fakeMonitorRepositoryState) UpdateEscalationPolicy(_ context.Context, policy escalation.EscalationPolicy) (escalation.EscalationPolicy, error) {
 	r.policies[policy.PolicyID] = policy
 	return policy, nil
 }
 
-func (r *fakeMonitorRepository) DeleteEscalationPolicy(_ context.Context, tenantID, policyID string) error {
+func (r *fakeMonitorRepositoryState) DeleteEscalationPolicy(_ context.Context, tenantID, policyID string) error {
 	policy, ok := r.policies[policyID]
 	if ok && policy.TenantID == tenantID {
 		delete(r.policies, policyID)
@@ -641,7 +648,7 @@ func (r *fakeMonitorRepository) DeleteEscalationPolicy(_ context.Context, tenant
 	return nil
 }
 
-func (r *fakeMonitorRepository) ServiceReferencesEscalationPolicy(_ context.Context, tenantID, policyID string) (bool, error) {
+func (r *fakeMonitorRepositoryState) ServiceReferencesEscalationPolicy(_ context.Context, tenantID, policyID string) (bool, error) {
 	for _, service := range r.services {
 		if service.TenantID == tenantID && strings.EqualFold(service.EscalationPolicyID, policyID) {
 			return true, nil
@@ -650,12 +657,12 @@ func (r *fakeMonitorRepository) ServiceReferencesEscalationPolicy(_ context.Cont
 	return false, nil
 }
 
-func (r *fakeMonitorRepository) CreateNotificationChannel(_ context.Context, channel escalation.NotificationChannel) (escalation.NotificationChannel, error) {
+func (r *fakeMonitorRepositoryState) CreateNotificationChannel(_ context.Context, channel escalation.NotificationChannel) (escalation.NotificationChannel, error) {
 	r.channels[channel.ChannelID] = channel
 	return channel, nil
 }
 
-func (r *fakeMonitorRepository) ListNotificationChannels(_ context.Context, tenantID string) ([]escalation.NotificationChannel, error) {
+func (r *fakeMonitorRepositoryState) ListNotificationChannels(_ context.Context, tenantID string) ([]escalation.NotificationChannel, error) {
 	out := make([]escalation.NotificationChannel, 0, len(r.channels))
 	for _, channel := range r.channels {
 		if channel.TenantID == tenantID {
@@ -665,7 +672,7 @@ func (r *fakeMonitorRepository) ListNotificationChannels(_ context.Context, tena
 	return out, nil
 }
 
-func (r *fakeMonitorRepository) GetNotificationChannel(_ context.Context, tenantID, channelID string) (*escalation.NotificationChannel, error) {
+func (r *fakeMonitorRepositoryState) GetNotificationChannel(_ context.Context, tenantID, channelID string) (*escalation.NotificationChannel, error) {
 	channel, ok := r.channels[channelID]
 	if !ok || channel.TenantID != tenantID {
 		return nil, nil
@@ -674,12 +681,12 @@ func (r *fakeMonitorRepository) GetNotificationChannel(_ context.Context, tenant
 	return &copy, nil
 }
 
-func (r *fakeMonitorRepository) UpdateNotificationChannel(_ context.Context, channel escalation.NotificationChannel) (escalation.NotificationChannel, error) {
+func (r *fakeMonitorRepositoryState) UpdateNotificationChannel(_ context.Context, channel escalation.NotificationChannel) (escalation.NotificationChannel, error) {
 	r.channels[channel.ChannelID] = channel
 	return channel, nil
 }
 
-func (r *fakeMonitorRepository) DeleteNotificationChannel(_ context.Context, tenantID, channelID string) error {
+func (r *fakeMonitorRepositoryState) DeleteNotificationChannel(_ context.Context, tenantID, channelID string) error {
 	channel, ok := r.channels[channelID]
 	if ok && channel.TenantID == tenantID {
 		delete(r.channels, channelID)
@@ -687,12 +694,12 @@ func (r *fakeMonitorRepository) DeleteNotificationChannel(_ context.Context, ten
 	return nil
 }
 
-func (r *fakeMonitorRepository) RecordNotificationChannelTestAudit(_ context.Context, tenantID, channelID, channelType, outcome, reason string, occurredAt time.Time) error {
+func (r *fakeMonitorRepositoryState) RecordNotificationChannelTestAudit(_ context.Context, tenantID, channelID, channelType, outcome, reason string, occurredAt time.Time) error {
 	r.channelTestAudit = append(r.channelTestAudit, channelTestAuditRecord{TenantID: tenantID, ChannelID: channelID, ChannelType: channelType, Outcome: outcome, Reason: reason, OccurredAt: occurredAt})
 	return nil
 }
 
-func (r *fakeMonitorRepository) ChannelsReferencedByRoutes(_ context.Context, tenantID, channelID string) ([]routeReference, error) {
+func (r *fakeMonitorRepositoryState) ChannelsReferencedByRoutes(_ context.Context, tenantID, channelID string) ([]routeReference, error) {
 	references := []routeReference{}
 	for _, policy := range r.policies {
 		if policy.TenantID == tenantID && policyReferencesChannel(policy, channelID) {
@@ -702,7 +709,7 @@ func (r *fakeMonitorRepository) ChannelsReferencedByRoutes(_ context.Context, te
 	return references, nil
 }
 
-func (r *fakeMonitorRepository) GetEscalationState(_ context.Context, tenantID, incidentID string) (*escalation.EscalationState, error) {
+func (r *fakeMonitorRepositoryState) GetEscalationState(_ context.Context, tenantID, incidentID string) (*escalation.EscalationState, error) {
 	for _, state := range r.escalationStates {
 		if state.TenantID == tenantID && strings.EqualFold(state.IncidentID, incidentID) {
 			copy := state
