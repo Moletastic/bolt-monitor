@@ -43,19 +43,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: apps/dashboard/pnpm-lock.yaml
-
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.33.0 --activate
-          echo "::add-path::$(dirname "$(command -v corepack)")"
-          pnpm --version
 
       - name: Install dependencies
         run: pnpm --dir apps/dashboard install --frozen-lockfile --reporter=silent
@@ -70,19 +68,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: infra/pnpm-lock.yaml
-
-      - name: Enable pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.33.0 --activate
-          echo "::add-path::$(dirname "$(command -v corepack)")"
-          pnpm --version
 
       - name: Install dependencies
         run: pnpm --dir infra install --frozen-lockfile --reporter=silent
