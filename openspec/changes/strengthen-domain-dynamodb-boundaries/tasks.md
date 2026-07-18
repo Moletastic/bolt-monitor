@@ -25,12 +25,12 @@
 
 ## 4. Make DynamoDB Reads Explicit And Reusable
 
-- [ ] 4.1 Add a canonical exact-key helper using `shared/aws` and a typed primary-key key value.
-- [ ] 4.2 Add a primary-index prefix-query page helper that accepts explicit limit, cursor, and sort direction and returns continuation state.
-- [ ] 4.3 Add facade/helper tests proving exact-key input, prefix conditions, cursor propagation, ordering, and `LastEvaluatedKey` propagation.
-- [ ] 4.4 Migrate monitor API monitor/history/incident primary-index reads to explicit page helpers without changing endpoint response behavior.
-- [ ] 4.5 Migrate check runtime scheduler/worker primary-index reads to explicit page helpers and choose bounded behavior for each path.
-- [ ] 4.6 Keep GSI audit and search queries as named methods; make their pagination and limits explicit without introducing a generic expression builder.
+- [x] 4.1 Add a canonical exact-key helper using `shared/aws` and a typed primary-key key value.
+- [x] 4.2 Add a primary-index prefix-query page helper that accepts explicit limit, cursor, and sort direction and returns continuation state.
+- [x] 4.3 Add facade/helper tests proving exact-key input, prefix conditions, cursor propagation, ordering, and `LastEvaluatedKey` propagation.
+- [x] 4.4 Migrate monitor API monitor/history/incident primary-index reads to explicit page helpers without changing endpoint response behavior.
+- [x] 4.5 Migrate check runtime scheduler/worker primary-index reads to explicit page helpers and choose bounded behavior for each path.
+- [x] 4.6 Keep GSI audit and search queries as named methods; make their pagination and limits explicit without introducing a generic expression builder.
 
 ## 5. Narrow Monitor API Boundaries
 

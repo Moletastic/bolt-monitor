@@ -693,22 +693,16 @@ func (r *dynamoMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenan
 	if err := r.requireTableName(); err != nil {
 		return historyPage[resultstatus.CheckRun]{}, err
 	}
-	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
-		TableName:              sharedaws.String(r.tableName),
-		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
-		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.MonitorPK(tenantID, serviceID, monitorID)},
-			":prefix": &sharedaws.AttributeValueMemberS{Value: "RUN#"},
-		},
-		ScanIndexForward:  sharedaws.Bool(false),
-		Limit:             sharedaws.Int32(limit),
-		ExclusiveStartKey: startKey,
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.MonitorPK(tenantID, serviceID, monitorID), "RUN#", sharedaws.PageOptions{
+		Limit:   limit,
+		Forward: false,
+		Cursor:  startKey,
 	})
 	if err != nil {
 		return historyPage[resultstatus.CheckRun]{}, err
 	}
-	runs := make([]resultstatus.CheckRun, 0, len(out.Items))
-	for _, item := range out.Items {
+	runs := make([]resultstatus.CheckRun, 0, len(page.Items))
+	for _, item := range page.Items {
 		var record resultstatus.CheckRunRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 			return historyPage[resultstatus.CheckRun]{}, err
@@ -738,7 +732,7 @@ func (r *dynamoMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenan
 			TTL:         record.TTL,
 		})
 	}
-	return historyPage[resultstatus.CheckRun]{Items: runs, NextKey: out.LastEvaluatedKey}, nil
+	return historyPage[resultstatus.CheckRun]{Items: runs, NextKey: page.NextKey}, nil
 }
 
 func (r *dynamoMonitorRepository) GetServiceCardMetrics(ctx context.Context, tenantID, serviceID string) (serviceCardMetricsResponse, error) {
@@ -951,22 +945,16 @@ func (r *dynamoMonitorRepository) ListMonitorIncidentsPage(ctx context.Context, 
 	if err := r.requireTableName(); err != nil {
 		return historyPage[dynamodbrecord.IncidentRecord]{}, err
 	}
-	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
-		TableName:              sharedaws.String(r.tableName),
-		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
-		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.MonitorPK(tenantID, serviceID, monitorID)},
-			":prefix": &sharedaws.AttributeValueMemberS{Value: "INCIDENT#"},
-		},
-		ScanIndexForward:  sharedaws.Bool(false),
-		Limit:             sharedaws.Int32(limit),
-		ExclusiveStartKey: startKey,
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.MonitorPK(tenantID, serviceID, monitorID), "INCIDENT#", sharedaws.PageOptions{
+		Limit:   limit,
+		Forward: false,
+		Cursor:  startKey,
 	})
 	if err != nil {
 		return historyPage[dynamodbrecord.IncidentRecord]{}, err
 	}
-	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(out.Items))
-	for _, item := range out.Items {
+	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(page.Items))
+	for _, item := range page.Items {
 		var record dynamodbrecord.IncidentItemRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 			return historyPage[dynamodbrecord.IncidentRecord]{}, err
@@ -976,29 +964,23 @@ func (r *dynamoMonitorRepository) ListMonitorIncidentsPage(ctx context.Context, 
 		}
 		incidents = append(incidents, record.ToIncident())
 	}
-	return historyPage[dynamodbrecord.IncidentRecord]{Items: incidents, NextKey: out.LastEvaluatedKey}, nil
+	return historyPage[dynamodbrecord.IncidentRecord]{Items: incidents, NextKey: page.NextKey}, nil
 }
 
 func (r *dynamoMonitorRepository) ListServiceIncidents(ctx context.Context, tenantID, serviceID string, limit int32) ([]dynamodbrecord.IncidentRecord, error) {
 	if err := r.requireTableName(); err != nil {
 		return nil, err
 	}
-	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
-		TableName:              sharedaws.String(r.tableName),
-		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
-		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)},
-			":prefix": &sharedaws.AttributeValueMemberS{Value: "INCIDENT#"},
-		},
-		ScanIndexForward: sharedaws.Bool(false),
-		Limit:            sharedaws.Int32(limit),
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "INCIDENT#", sharedaws.PageOptions{
+		Limit:   limit,
+		Forward: false,
 	})
 	if err != nil {
 		return nil, err
 	}
 	normalized := strings.ToLower(strings.TrimSpace(serviceID))
-	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(out.Items))
-	for _, item := range out.Items {
+	incidents := make([]dynamodbrecord.IncidentRecord, 0, len(page.Items))
+	for _, item := range page.Items {
 		var record dynamodbrecord.IncidentItemRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 			return nil, err
@@ -1274,23 +1256,11 @@ func (r *dynamoMonitorRepository) buildServiceStatusRecord(ctx context.Context, 
 }
 
 func (r *dynamoMonitorRepository) queryPartition(ctx context.Context, pk, prefix string) ([]map[string]sharedaws.AttributeValue, error) {
-	input := &sharedaws.DynamoDBQueryInput{
-		TableName: sharedaws.String(r.tableName),
-		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pk": &sharedaws.AttributeValueMemberS{Value: pk},
-		},
-	}
-	if prefix == "" {
-		input.KeyConditionExpression = sharedaws.String("PK = :pk")
-	} else {
-		input.KeyConditionExpression = sharedaws.String("PK = :pk AND begins_with(SK, :prefix)")
-		input.ExpressionAttributeValues[":prefix"] = &sharedaws.AttributeValueMemberS{Value: prefix}
-	}
-	out, err := r.client.Query(ctx, input)
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, pk, prefix, sharedaws.PageOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return out.Items, nil
+	return page.Items, nil
 }
 
 func (r *dynamoMonitorRepository) deleteKeysAndPut(ctx context.Context, keys []ddbKey, puts []sharedaws.TransactWriteItem) error {
