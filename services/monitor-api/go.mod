@@ -9,6 +9,7 @@ require (
 	bolt-monitor/shared/errors v0.0.0
 	bolt-monitor/shared/escalation v0.0.0
 	bolt-monitor/shared/monitorconfig v0.0.0
+	bolt-monitor/shared/outboundhttp v0.0.0
 	github.com/aws/aws-lambda-go v1.50.0
 	github.com/aws/aws-sdk-go-v2 v1.42.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.0
@@ -59,3 +60,5 @@ replace bolt-monitor/shared/dynamodb => ../../shared/dynamodb
 replace bolt-monitor/shared/escalation => ../../shared/escalation
 
 replace bolt-monitor/shared/monitorconfig => ../../shared/monitorconfig
+
+replace bolt-monitor/shared/outboundhttp => ../../shared/outboundhttp

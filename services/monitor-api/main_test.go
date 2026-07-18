@@ -54,7 +54,9 @@ func (fixedMembershipResolver) Resolve(_ context.Context, _ auth.AuthenticatedId
 
 // newMonitorHandler preserves legacy domain tests while production uses the real resolvers.
 func newMonitorHandler(repo monitorRepository, _ ...any) monitorHandler {
-	return newAuthorizedMonitorHandler(repo, fixedPrincipalResolver{}, fixedMembershipResolver{})
+	handler := newAuthorizedMonitorHandler(repo, fixedPrincipalResolver{}, fixedMembershipResolver{})
+	handler.validateDestination = func(context.Context, string) error { return nil }
+	return handler
 }
 
 type channelTestAuditRecord struct {

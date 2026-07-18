@@ -668,14 +668,15 @@ func (r *dynamoMonitorRepository) GetMonitorStatus(ctx context.Context, tenantID
 		return resultstatus.MonitorStatus{}, false, err
 	}
 	return resultstatus.MonitorStatus{
-		ServiceID:      record.ServiceID,
-		MonitorID:      record.MonitorID,
-		TenantID:       record.TenantID,
-		CurrentStatus:  record.CurrentStatus,
-		LastCheckedAt:  lastCheckedAt,
-		LastDurationMs: record.LastDurationMs,
-		LastError:      record.LastError,
-		LastOutcome:    checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, rollupUnknown))),
+		ServiceID:       record.ServiceID,
+		MonitorID:       record.MonitorID,
+		TenantID:        record.TenantID,
+		CurrentStatus:   record.CurrentStatus,
+		LastCheckedAt:   lastCheckedAt,
+		LastDurationMs:  record.LastDurationMs,
+		LastError:       record.LastError,
+		LastFailureCode: record.LastFailureCode,
+		LastOutcome:     checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, rollupUnknown))),
 	}, true, nil
 }
 
@@ -720,19 +721,20 @@ func (r *dynamoMonitorRepository) ListMonitorRunsPage(ctx context.Context, tenan
 			return historyPage[resultstatus.CheckRun]{}, err
 		}
 		runs = append(runs, resultstatus.CheckRun{
-			ServiceID:  record.ServiceID,
-			MonitorID:  record.MonitorID,
-			TenantID:   record.TenantID,
-			RunID:      record.RunID,
-			Type:       record.Type,
-			Trigger:    checkexecution.TriggerType(strings.ToLower(record.Trigger)),
-			StartedAt:  startedAt,
-			FinishedAt: finishedAt,
-			DurationMs: record.DurationMs,
-			Outcome:    checkexecution.Outcome(strings.ToLower(record.Outcome)),
-			StatusCode: record.StatusCode,
-			Error:      record.Error,
-			TTL:        record.TTL,
+			ServiceID:   record.ServiceID,
+			MonitorID:   record.MonitorID,
+			TenantID:    record.TenantID,
+			RunID:       record.RunID,
+			Type:        record.Type,
+			Trigger:     checkexecution.TriggerType(strings.ToLower(record.Trigger)),
+			StartedAt:   startedAt,
+			FinishedAt:  finishedAt,
+			DurationMs:  record.DurationMs,
+			Outcome:     checkexecution.Outcome(strings.ToLower(record.Outcome)),
+			StatusCode:  record.StatusCode,
+			Error:       record.Error,
+			FailureCode: record.FailureCode,
+			TTL:         record.TTL,
 		})
 	}
 	return historyPage[resultstatus.CheckRun]{Items: runs, NextKey: out.LastEvaluatedKey}, nil

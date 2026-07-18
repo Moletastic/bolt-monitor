@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
 
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/monitorconfig"
+	"bolt-monitor/shared/outboundhttp"
 	"bolt-monitor/shared/resultstatus"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -38,7 +38,7 @@ type runtimeHandler struct {
 	tenantID           string
 	mode               string
 	now                func() time.Time
-	newHTTP            func(time.Duration) *http.Client
+	executor           checkexecution.HTTPExecutor
 }
 
 type runtimeSummary struct {
@@ -58,9 +58,7 @@ func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, es
 		tenantID:           tenantID,
 		mode:               strings.ToLower(strings.TrimSpace(mode)),
 		now:                time.Now,
-		newHTTP: func(timeout time.Duration) *http.Client {
-			return &http.Client{Timeout: timeout}
-		},
+		executor:           outboundhttp.NewExecutor(),
 	}
 }
 
@@ -191,7 +189,7 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			summary.Skipped++
 			continue
 		}
-		result := checkexecution.ExecuteHTTP(ctx, h.newHTTP(time.Duration(monitor.HTTP.TimeoutMs)*time.Millisecond), request)
+		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
 		transition, incidentID, err := h.repo.RecordExecutionResult(ctx, monitor, work, result)
 		if err != nil {
 			return summary, err
@@ -227,7 +225,7 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		if err := json.Unmarshal([]byte(msg.Body), &req); err != nil {
 			return summary, err
 		}
-		result := checkexecution.ExecuteHTTP(ctx, h.newHTTP(time.Duration(req.Monitor.HTTP.TimeoutMs)*time.Millisecond), req)
+		result := checkexecution.ExecuteHTTP(ctx, h.executor, req)
 		work := checkexecution.ExecutionWork{
 			TenantID:    req.Monitor.TenantID,
 			ServiceID:   req.Monitor.ServiceID,

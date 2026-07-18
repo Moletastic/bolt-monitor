@@ -2,14 +2,21 @@ package checkexecution
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
 
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/monitorconfig"
+	"bolt-monitor/shared/outboundhttp"
 )
+
+type fakeHTTPExecutor struct {
+	response outboundhttp.Response
+	err      error
+}
+
+func (e fakeHTTPExecutor) Execute(_ context.Context, _ outboundhttp.Request) (outboundhttp.Response, error) {
+	return e.response, e.err
+}
 
 func TestBuildExecutionRequestsSkipsDisabledMonitors(t *testing.T) {
 	monitors := []monitorconfig.Monitor{
@@ -70,12 +77,6 @@ func TestSchedulerConfigRequiresStopControl(t *testing.T) {
 }
 
 func TestExecuteHTTPReturnsNormalizedResult(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	}))
-	defer server.Close()
-
 	request := ExecutionRequest{
 		Monitor: monitorconfig.Monitor{
 			ServiceID:       "auth",
@@ -86,7 +87,7 @@ func TestExecuteHTTPReturnsNormalizedResult(t *testing.T) {
 			IntervalSeconds: 60,
 			Enabled:         true,
 			HTTP: &monitorconfig.HTTPConfiguration{
-				Target:              server.URL,
+				Target:              "https://status.example.com",
 				Method:              "GET",
 				TimeoutMs:           5000,
 				ExpectedStatusCodes: []int{200},
@@ -95,8 +96,7 @@ func TestExecuteHTTPReturnsNormalizedResult(t *testing.T) {
 		Trigger: TriggerTypeManual,
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	result := ExecuteHTTP(context.Background(), client, request)
+	result := ExecuteHTTP(context.Background(), fakeHTTPExecutor{response: outboundhttp.Response{StatusCode: 200, Body: []byte("ok")}}, request)
 	if result.Outcome != OutcomeSuccess {
 		t.Fatalf("Outcome = %q, want %q", result.Outcome, OutcomeSuccess)
 	}
@@ -107,12 +107,6 @@ func TestExecuteHTTPReturnsNormalizedResult(t *testing.T) {
 
 func TestExecuteHTTPSucceedsWhenExpectedBodyMatches(t *testing.T) {
 	expected := "healthy"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("service healthy"))
-	}))
-	defer server.Close()
-
 	request := ExecutionRequest{
 		Monitor: monitorconfig.Monitor{
 			ServiceID:       "auth",
@@ -123,7 +117,7 @@ func TestExecuteHTTPSucceedsWhenExpectedBodyMatches(t *testing.T) {
 			IntervalSeconds: 60,
 			Enabled:         true,
 			HTTP: &monitorconfig.HTTPConfiguration{
-				Target:               server.URL,
+				Target:               "https://status.example.com",
 				Method:               "GET",
 				TimeoutMs:            5000,
 				ExpectedStatusCodes:  []int{200},
@@ -133,7 +127,7 @@ func TestExecuteHTTPSucceedsWhenExpectedBodyMatches(t *testing.T) {
 		Trigger: TriggerTypeManual,
 	}
 
-	result := ExecuteHTTP(context.Background(), &http.Client{Timeout: 5 * time.Second}, request)
+	result := ExecuteHTTP(context.Background(), fakeHTTPExecutor{response: outboundhttp.Response{StatusCode: 200, Body: []byte("service healthy")}}, request)
 	if result.Outcome != OutcomeSuccess {
 		t.Fatalf("Outcome = %q, want %q", result.Outcome, OutcomeSuccess)
 	}
@@ -144,12 +138,6 @@ func TestExecuteHTTPSucceedsWhenExpectedBodyMatches(t *testing.T) {
 
 func TestExecuteHTTPFailsWhenExpectedBodyMissing(t *testing.T) {
 	expected := "healthy"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("service degraded"))
-	}))
-	defer server.Close()
-
 	request := ExecutionRequest{
 		Monitor: monitorconfig.Monitor{
 			ServiceID:       "auth",
@@ -160,7 +148,7 @@ func TestExecuteHTTPFailsWhenExpectedBodyMissing(t *testing.T) {
 			IntervalSeconds: 60,
 			Enabled:         true,
 			HTTP: &monitorconfig.HTTPConfiguration{
-				Target:               server.URL,
+				Target:               "https://status.example.com",
 				Method:               "GET",
 				TimeoutMs:            5000,
 				ExpectedStatusCodes:  []int{200},
@@ -170,7 +158,7 @@ func TestExecuteHTTPFailsWhenExpectedBodyMissing(t *testing.T) {
 		Trigger: TriggerTypeManual,
 	}
 
-	result := ExecuteHTTP(context.Background(), &http.Client{Timeout: 5 * time.Second}, request)
+	result := ExecuteHTTP(context.Background(), fakeHTTPExecutor{response: outboundhttp.Response{StatusCode: 200, Body: []byte("service degraded")}}, request)
 	if result.Outcome != OutcomeFailure {
 		t.Fatalf("Outcome = %q, want %q", result.Outcome, OutcomeFailure)
 	}
@@ -181,12 +169,6 @@ func TestExecuteHTTPFailsWhenExpectedBodyMissing(t *testing.T) {
 
 func TestExecuteHTTPFailsStatusBeforeBodyMatch(t *testing.T) {
 	expected := "healthy"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte("service healthy"))
-	}))
-	defer server.Close()
-
 	request := ExecutionRequest{
 		Monitor: monitorconfig.Monitor{
 			ServiceID:       "auth",
@@ -197,7 +179,7 @@ func TestExecuteHTTPFailsStatusBeforeBodyMatch(t *testing.T) {
 			IntervalSeconds: 60,
 			Enabled:         true,
 			HTTP: &monitorconfig.HTTPConfiguration{
-				Target:               server.URL,
+				Target:               "https://status.example.com",
 				Method:               "GET",
 				TimeoutMs:            5000,
 				ExpectedStatusCodes:  []int{200},
@@ -207,7 +189,7 @@ func TestExecuteHTTPFailsStatusBeforeBodyMatch(t *testing.T) {
 		Trigger: TriggerTypeManual,
 	}
 
-	result := ExecuteHTTP(context.Background(), &http.Client{Timeout: 5 * time.Second}, request)
+	result := ExecuteHTTP(context.Background(), fakeHTTPExecutor{response: outboundhttp.Response{StatusCode: 502, Body: []byte("service healthy")}}, request)
 	if result.Outcome != OutcomeFailure {
 		t.Fatalf("Outcome = %q, want %q", result.Outcome, OutcomeFailure)
 	}

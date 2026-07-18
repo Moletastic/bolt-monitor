@@ -3,19 +3,24 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/monitorconfig"
+	"bolt-monitor/shared/outboundhttp"
 	"bolt-monitor/shared/resultstatus"
 )
 
 type fakeSQSClient struct {
 	sentMessages []string
+}
+
+type fakeExecutor struct{ response outboundhttp.Response }
+
+func (e fakeExecutor) Execute(_ context.Context, _ outboundhttp.Request) (outboundhttp.Response, error) {
+	return e.response, nil
 }
 
 func (f *fakeSQSClient) SendMessage(_ context.Context, _ string, body string) error {
@@ -255,17 +260,12 @@ func TestRunWorkerSkipsDisabledMonitor(t *testing.T) {
 }
 
 func TestRunWorkerProcessesManualRunIntoRecordedResult(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	}))
-	defer server.Close()
-
 	repo := newFakeRuntimeRepository()
-	repo.monitors["auth/public-http"] = testMonitor(server.URL, true)
+	repo.monitors["auth/public-http"] = testMonitor("https://status.example.com", true)
 	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_MANUAL_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
 	sqs := &fakeSQSClient{}
 	handler := newRuntimeHandler(repo, sqs, "", "", defaultTenantID, modeWorker)
+	handler.executor = fakeExecutor{response: outboundhttp.Response{StatusCode: 200, Body: []byte("ok")}}
 
 	summary, err := handler.runWorker(context.Background())
 	if err != nil {

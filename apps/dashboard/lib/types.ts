@@ -180,6 +180,7 @@ export interface CheckRun {
   outcome: string
   statusCode?: number
   error?: string
+  failureCode?: string
 }
 
 export interface ListServicesResponse {
