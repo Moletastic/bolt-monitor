@@ -27,3 +27,14 @@ func (r SenderRegistry) Get(channelType string) (NotificationSender, bool) {
 func (r SenderRegistry) Register(channelType string, sender NotificationSender) {
 	r[channelType] = sender
 }
+
+// NewSenderRegistry keeps every notification path on the same outbound executor policy.
+func NewSenderRegistry(executors ...HTTPExecutor) SenderRegistry {
+	return SenderRegistry{
+		"telegram":  NewTelegramSender(executors...),
+		"email":     NewEmailSender(executors...),
+		"sms":       NewSMSSender(executors...),
+		"webhook":   NewWebhookSender(executors...),
+		"pagerduty": NewPagerDutySender(executors...),
+	}
+}

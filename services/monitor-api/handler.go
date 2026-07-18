@@ -112,13 +112,7 @@ func newAuthorizedMonitorHandler(repo monitorRepository, principalResolver Princ
 }
 
 func defaultNotificationSenderRegistry() notifications.SenderRegistry {
-	return notifications.SenderRegistry{
-		"telegram":  notifications.NewTelegramSender(),
-		"email":     notifications.NewEmailSender(),
-		"sms":       notifications.NewSMSSender(),
-		"webhook":   notifications.NewWebhookSender(),
-		"pagerduty": notifications.NewPagerDutySender(),
-	}
+	return notifications.NewSenderRegistry()
 }
 
 func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {

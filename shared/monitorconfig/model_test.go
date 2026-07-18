@@ -123,6 +123,38 @@ func TestHTTPConfigurationValidateOutboundPolicy(t *testing.T) {
 	}
 }
 
+func TestHTTPConfigurationValidateOutboundPolicyMatrix(t *testing.T) {
+	tests := []struct {
+		name    string
+		target  string
+		timeout int
+		field   string
+	}{
+		{name: "safe public http", target: "http://status.example.com/health", timeout: 5000},
+		{name: "safe public https", target: "https://status.example.com/health", timeout: 5000},
+		{name: "non http scheme", target: "gopher://status.example.com", timeout: 5000, field: "http.target"},
+		{name: "blocked literal", target: "http://10.0.0.1", timeout: 5000, field: "http.target"},
+		{name: "blocked local alias", target: "https://LOCALHOST./health", timeout: 5000, field: "http.target"},
+		{name: "excessive timeout", target: "https://status.example.com", timeout: 30001, field: "http.timeoutMs"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := HTTPConfiguration{Target: test.target, Method: "GET", TimeoutMs: test.timeout}.Validate()
+			if test.field == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v", err)
+				}
+				return
+			}
+			typed, ok := sharederrors.As(err)
+			if !ok || typed.Code != sharederrors.CodeValidationFailed || typed.Details["field"] != test.field {
+				t.Fatalf("Validate() error = %#v", err)
+			}
+		})
+	}
+}
+
 func TestMonitorValidateRejectsMissingServiceID(t *testing.T) {
 	monitor := Monitor{
 		MonitorID:         "public-http",

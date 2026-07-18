@@ -128,3 +128,62 @@ func TestSendersValidateConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestSenderRegistryUsesInjectedExecutorForEveryChannelType(t *testing.T) {
+	tests := []struct {
+		name        string
+		channelType string
+		config      string
+	}{
+		{name: "telegram", channelType: "telegram", config: `{"botToken":"token","chatId":"123"}`},
+		{name: "email", channelType: "email", config: `{"apiKey":"key","fromEmail":"from@example.com","toEmail":"to@example.com","apiBaseUrl":"https://provider.example.com"}`},
+		{name: "sms", channelType: "sms", config: `{"accountSid":"account","authToken":"token","fromNumber":"+10000000000","toNumber":"+19999999999","apiBaseUrl":"https://provider.example.com"}`},
+		{name: "webhook", channelType: "webhook", config: `{"url":"https://hooks.example.com","headers":{"Authorization":"Bearer secret"}}`},
+		{name: "pagerduty", channelType: "pagerduty", config: `{"routingKey":"routing-key","apiBaseUrl":"https://provider.example.com"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte(`{"ok":true}`)}}
+			registry := NewSenderRegistry(executor)
+			sender, ok := registry.Get(tt.channelType)
+			if !ok {
+				t.Fatalf("sender %q was not registered", tt.channelType)
+			}
+			if err := sender.Send(context.Background(), Notification{Message: "same-origin delivery", Config: json.RawMessage(tt.config)}); err != nil {
+				t.Fatalf("Send returned error: %v", err)
+			}
+			if executor.request.Timeout != outboundhttp.NotificationTimeout || executor.request.Body == nil {
+				t.Fatalf("request = %#v", executor.request)
+			}
+			if tt.channelType == "webhook" && executor.request.Header.Get("Authorization") != "Bearer secret" {
+				t.Fatalf("same-origin webhook header = %q", executor.request.Header.Get("Authorization"))
+			}
+		})
+	}
+}
+
+func TestSenderPolicyFailuresAreSanitized(t *testing.T) {
+	tests := []struct {
+		name string
+		kind outboundhttp.Kind
+	}{
+		{name: "cross-origin credential redirect", kind: outboundhttp.KindRedirectBlocked},
+		{name: "oversized response", kind: outboundhttp.KindResponseTooLarge},
+		{name: "timeout", kind: outboundhttp.KindTimeout},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			executor := &capturingExecutor{err: &outboundhttp.Error{Kind: tt.kind, Host: "secret.example.com"}}
+			sender := NewWebhookSender(executor)
+			err := sender.Send(context.Background(), Notification{Message: "body-secret", Config: json.RawMessage(`{"url":"https://secret.example.com/path?token=secret","headers":{"Authorization":"Bearer secret"}}`)})
+			if !outboundhttp.IsKind(err, tt.kind) {
+				t.Fatalf("error = %v, want outbound kind %q", err, tt.kind)
+			}
+			if strings.Contains(err.Error(), "secret.example.com") || strings.Contains(err.Error(), "token=secret") || strings.Contains(err.Error(), "Bearer secret") || strings.Contains(err.Error(), "body-secret") {
+				t.Fatalf("sender error leaked secret material: %q", err)
+			}
+		})
+	}
+}

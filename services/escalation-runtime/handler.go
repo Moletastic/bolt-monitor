@@ -39,14 +39,8 @@ func newEscalationHandler(repo escalationRepository, scheduler scheduleClient) *
 	return &escalationHandler{
 		repo:      repo,
 		scheduler: scheduler,
-		senders: notifications.SenderRegistry{
-			"telegram":  notifications.NewTelegramSender(),
-			"email":     notifications.NewEmailSender(),
-			"sms":       notifications.NewSMSSender(),
-			"webhook":   notifications.NewWebhookSender(),
-			"pagerduty": notifications.NewPagerDutySender(),
-		},
-		now: time.Now,
+		senders:   notifications.NewSenderRegistry(),
+		now:       time.Now,
 	}
 }
 
