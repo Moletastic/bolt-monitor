@@ -282,6 +282,25 @@ func TestRunWorkerProcessesManualRunIntoRecordedResult(t *testing.T) {
 	}
 }
 
+func TestRunWorkerRecordsUnsafePersistedTargetWithoutDialing(t *testing.T) {
+	repo := newFakeRuntimeRepository()
+	repo.monitors["auth/public-http"] = testMonitor("http://127.0.0.1", true)
+	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_UNSAFE_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
+
+	summary, err := handler.runWorker(context.Background())
+	if err != nil {
+		t.Fatalf("runWorker returned error: %v", err)
+	}
+	if summary.Processed != 1 || len(repo.results) != 1 {
+		t.Fatalf("summary = %+v, results = %d", summary, len(repo.results))
+	}
+	result := repo.results[0]
+	if result.Outcome != checkexecution.OutcomeError || result.FailureCode != "address_blocked" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestIncidentSummaryUsesErrorDetails(t *testing.T) {
 	statusCode := 503
 	summary := incidentSummary(testMonitor("https://example.com", true), checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", Outcome: checkexecution.OutcomeFailure, StatusCode: &statusCode, Error: "unexpected status code 503"})

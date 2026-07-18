@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -183,6 +184,36 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			return summary, err
 		}
 		if skipReason != "" {
+			if strings.HasPrefix(skipReason, "monitor invalid:") {
+				now := h.now().UTC()
+				failureKind := outboundhttp.KindInvalidURL
+				if monitor.HTTP != nil {
+					if _, err := outboundhttp.ValidateURL(monitor.HTTP.Target); err != nil {
+						var outbound *outboundhttp.Error
+						if errors.As(err, &outbound) {
+							failureKind = outbound.Kind
+						}
+					}
+				}
+				result := checkexecution.ExecutionResult{
+					ServiceID:   monitor.ServiceID,
+					MonitorID:   monitor.MonitorID,
+					TenantID:    monitor.TenantID,
+					RunID:       work.RunID,
+					Type:        string(monitor.Type),
+					Trigger:     work.Trigger,
+					StartedAt:   now,
+					FinishedAt:  now,
+					Outcome:     checkexecution.OutcomeError,
+					FailureCode: string(failureKind),
+					Error:       outboundhttp.SafeMessage(&outboundhttp.Error{Kind: failureKind}),
+				}
+				if _, _, err := h.repo.RecordExecutionResult(ctx, monitor, work, result); err != nil {
+					return summary, err
+				}
+				summary.Processed++
+				continue
+			}
 			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), skipReason); err != nil {
 				return summary, err
 			}
