@@ -905,6 +905,9 @@ func (h monitorHandler) createNotificationChannel(ctx context.Context, request e
 	}
 	channel.TenantID = h.tenantID
 	channel.ChannelID = newNotificationChannelID(h.now())
+	if err := h.validateChannelDestination(ctx, channel); err != nil {
+		return respondAPIGateway(err)
+	}
 	created, err := h.repo.CreateNotificationChannel(ctx, channel)
 	if err != nil {
 		return respondAPIGateway(err)
@@ -947,6 +950,9 @@ func (h monitorHandler) updateNotificationChannel(ctx context.Context, channelID
 	channel, resp, ok := h.notificationChannelFromRequest(request, current)
 	if !ok {
 		return resp, nil
+	}
+	if err := h.validateChannelDestination(ctx, channel); err != nil {
+		return respondAPIGateway(err)
 	}
 	updated, err := h.repo.UpdateNotificationChannel(ctx, channel)
 	if err != nil {
@@ -1141,12 +1147,45 @@ func validateNotificationChannel(channel escalation.NotificationChannel) error {
 		}
 		return nil
 	case escalation.ChannelTypeWebhook:
+		if _, err := outboundhttp.ValidateURL(channel.Target); err != nil {
+			return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "target", "reason": outboundhttp.SafeMessage(err)})
+		}
 		return nil
 	case escalation.ChannelTypePagerDuty:
 		return require("routingKey")
 	default:
 		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "type", "reason": "unsupported channel type"})
 	}
+}
+
+func (h monitorHandler) validateChannelDestination(ctx context.Context, channel escalation.NotificationChannel) error {
+	if h.validateDestination == nil {
+		return nil
+	}
+	target := ""
+	field := ""
+	if channel.Type == escalation.ChannelTypeWebhook {
+		target, field = channel.Target, "target"
+	} else if channel.Type == escalation.ChannelTypeEmail || channel.Type == escalation.ChannelTypeSMS || channel.Type == escalation.ChannelTypePagerDuty {
+		var config map[string]any
+		if err := json.Unmarshal(channel.Config, &config); err != nil {
+			return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "config", "reason": "must be a json object"})
+		}
+		if value, ok := config["apiBaseUrl"].(string); ok {
+			target = strings.TrimSpace(value)
+			field = "config.apiBaseUrl"
+		}
+	}
+	if target == "" {
+		return nil
+	}
+	if _, err := outboundhttp.ValidateURL(target); err != nil {
+		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": field, "reason": outboundhttp.SafeMessage(err)})
+	}
+	if err := h.validateDestination(ctx, target); err != nil {
+		return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": field, "reason": outboundhttp.SafeMessage(err)})
+	}
+	return nil
 }
 
 func (h monitorHandler) createEscalationPolicy(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {

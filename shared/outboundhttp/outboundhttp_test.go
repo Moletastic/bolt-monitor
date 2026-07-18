@@ -1,9 +1,14 @@
 package outboundhttp
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"net"
+	"net/http"
 	"net/netip"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -11,6 +16,41 @@ type fakeResolver struct {
 	addresses []netip.Addr
 	err       error
 }
+
+type scriptedDialer struct {
+	mutex     sync.Mutex
+	responses []string
+	remote    netip.Addr
+	calls     []string
+}
+
+func (d *scriptedDialer) DialContext(_ context.Context, _, address string) (net.Conn, error) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.calls = append(d.calls, address)
+	if len(d.responses) == 0 {
+		return nil, errors.New("unexpected dial")
+	}
+	response := d.responses[0]
+	d.responses = d.responses[1:]
+	client, server := net.Pipe()
+	go func() {
+		defer server.Close()
+		request, err := http.ReadRequest(bufio.NewReader(server))
+		if err == nil && request.Body != nil {
+			_ = request.Body.Close()
+		}
+		_, _ = server.Write([]byte(response))
+	}()
+	return remoteConn{Conn: client, remote: &net.TCPAddr{IP: net.IP(d.remote.AsSlice()), Port: 443}}, nil
+}
+
+type remoteConn struct {
+	net.Conn
+	remote net.Addr
+}
+
+func (c remoteConn) RemoteAddr() net.Addr { return c.remote }
 
 func (r fakeResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
 	return r.addresses, r.err
@@ -99,6 +139,64 @@ func TestValidateDestinationRejectsUnsafeDNSAnswers(t *testing.T) {
 				t.Fatalf("addresses = %v, want %d", addresses, test.wantCount)
 			}
 		})
+	}
+}
+
+func TestExecutorPinsApprovedAddressAndPreservesHost(t *testing.T) {
+	approved := netip.MustParseAddr("8.8.8.8")
+	dialer := &scriptedDialer{remote: approved, responses: []string{"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"}}
+	executor := &Executor{Resolver: fakeResolver{addresses: []netip.Addr{approved}}, Dialer: dialer}
+	response, err := executor.Execute(context.Background(), Request{Method: http.MethodGet, URL: "http://status.example.com/health", Timeout: MaxRequestTimeout})
+	if err != nil {
+		t.Fatalf("Execute error = %v", err)
+	}
+	if response.StatusCode != http.StatusOK || string(response.Body) != "ok" {
+		t.Fatalf("response = %#v", response)
+	}
+	if len(dialer.calls) != 1 || dialer.calls[0] != "8.8.8.8:80" {
+		t.Fatalf("dial calls = %v", dialer.calls)
+	}
+}
+
+func TestExecutorRejectsUnapprovedRemoteAddress(t *testing.T) {
+	approved := netip.MustParseAddr("8.8.8.8")
+	dialer := &scriptedDialer{remote: netip.MustParseAddr("1.1.1.1"), responses: []string{"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"}}
+	executor := &Executor{Resolver: fakeResolver{addresses: []netip.Addr{approved}}, Dialer: dialer}
+	_, err := executor.Execute(context.Background(), Request{Method: http.MethodGet, URL: "http://status.example.com"})
+	if !IsKind(err, KindAddressBlocked) {
+		t.Fatalf("Execute error = %v, want blocked address", err)
+	}
+}
+
+func TestExecutorRejectsSensitiveCrossOriginRedirect(t *testing.T) {
+	approved := netip.MustParseAddr("8.8.8.8")
+	dialer := &scriptedDialer{remote: approved, responses: []string{"HTTP/1.1 302 Found\r\nLocation: http://other.example.com\r\nContent-Length: 0\r\n\r\n"}}
+	executor := &Executor{Resolver: fakeResolver{addresses: []netip.Addr{approved}}, Dialer: dialer}
+	_, err := executor.Execute(context.Background(), Request{Method: http.MethodGet, URL: "http://status.example.com", Header: http.Header{"Authorization": {"secret"}}})
+	if !IsKind(err, KindRedirectBlocked) {
+		t.Fatalf("Execute error = %v, want blocked redirect", err)
+	}
+	if len(dialer.calls) != 1 {
+		t.Fatalf("dial calls = %v, redirect target must not be dialed", dialer.calls)
+	}
+}
+
+func TestExecutorFollowsCredentialFreeRedirectWithFreshDial(t *testing.T) {
+	approved := netip.MustParseAddr("8.8.8.8")
+	dialer := &scriptedDialer{remote: approved, responses: []string{
+		"HTTP/1.1 302 Found\r\nLocation: http://other.example.com\r\nContent-Length: 0\r\n\r\n",
+		"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+	}}
+	executor := &Executor{Resolver: fakeResolver{addresses: []netip.Addr{approved}}, Dialer: dialer}
+	response, err := executor.Execute(context.Background(), Request{Method: http.MethodGet, URL: "http://status.example.com"})
+	if err != nil {
+		t.Fatalf("Execute error = %v", err)
+	}
+	if response.StatusCode != http.StatusOK || len(dialer.calls) != 2 {
+		t.Fatalf("response = %#v, calls = %v", response, dialer.calls)
+	}
+	if strings.Contains(strings.Join(dialer.calls, ","), "status.example.com") {
+		t.Fatalf("dial must use pinned address: %v", dialer.calls)
 	}
 }
 

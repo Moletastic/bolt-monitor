@@ -3,6 +3,8 @@ package notifications
 import (
 	"context"
 	"encoding/json"
+
+	"bolt-monitor/shared/outboundhttp"
 )
 
 type NotificationSender interface {
@@ -12,6 +14,10 @@ type NotificationSender interface {
 }
 
 type SenderRegistry map[string]NotificationSender
+
+type HTTPExecutor interface {
+	Execute(context.Context, outboundhttp.Request) (outboundhttp.Response, error)
+}
 
 func (r SenderRegistry) Get(channelType string) (NotificationSender, bool) {
 	sender, ok := r[channelType]

@@ -15,8 +15,8 @@ use (
 	./shared/errors
 	./shared/escalation
 	./shared/monitorconfig
-	./shared/outboundhttp
 	./shared/notifications
+	./shared/outboundhttp
 	./shared/resultstatus
 	./shared/rules
 	./tools/admin-bootstrap

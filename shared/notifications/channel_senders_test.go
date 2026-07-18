@@ -1,116 +1,92 @@
 package notifications
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"bolt-monitor/shared/outboundhttp"
 )
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
+type capturingExecutor struct {
+	response outboundhttp.Response
+	err      error
+	request  outboundhttp.Request
+}
 
-func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r)
+func (e *capturingExecutor) Execute(_ context.Context, request outboundhttp.Request) (outboundhttp.Response, error) {
+	e.request = request
+	return e.response, e.err
 }
 
 func TestEmailSenderSend(t *testing.T) {
-	var authHeader string
-	var body string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v3/mail/send" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		authHeader = r.Header.Get("Authorization")
-		payload, _ := io.ReadAll(r.Body)
-		body = string(payload)
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer server.Close()
-
-	sender := NewEmailSender()
-	config, _ := json.Marshal(EmailConfig{APIKey: "key", FromEmail: "from@example.com", ToEmail: "to@example.com", APIBaseURL: server.URL})
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusAccepted}}
+	sender := NewEmailSender(executor)
+	config, _ := json.Marshal(EmailConfig{APIKey: "key", FromEmail: "from@example.com", ToEmail: "to@example.com", APIBaseURL: "https://provider.example.com"})
 	err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
 	if err != nil {
 		t.Fatalf("Send returned error: %v", err)
 	}
-	if authHeader != "Bearer key" {
-		t.Fatalf("auth header = %q", authHeader)
+	if executor.request.Header.Get("Authorization") != "Bearer key" || !strings.HasSuffix(executor.request.URL, "/v3/mail/send") {
+		t.Fatalf("request = %#v", executor.request)
 	}
+	payload, _ := io.ReadAll(executor.request.Body)
+	body := string(payload)
 	if !strings.Contains(body, "to@example.com") {
 		t.Fatalf("body = %s", body)
 	}
 }
 
 func TestSMSSenderSend(t *testing.T) {
-	var authHeader string
-	var body string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader = r.Header.Get("Authorization")
-		payload, _ := io.ReadAll(r.Body)
-		body = string(payload)
-		w.WriteHeader(http.StatusCreated)
-	}))
-	defer server.Close()
-
-	sender := NewSMSSender()
-	config, _ := json.Marshal(SMSTwilioConfig{AccountSID: "acct", AuthToken: "token", FromNumber: "+10000000000", ToNumber: "+19999999999", APIBaseURL: server.URL})
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusCreated}}
+	sender := NewSMSSender(executor)
+	config, _ := json.Marshal(SMSTwilioConfig{AccountSID: "acct", AuthToken: "token", FromNumber: "+10000000000", ToNumber: "+19999999999", APIBaseURL: "https://provider.example.com"})
 	err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
 	if err != nil {
 		t.Fatalf("Send returned error: %v", err)
 	}
-	if authHeader == "" {
+	if executor.request.Header.Get("Authorization") == "" {
 		t.Fatal("missing Authorization header")
 	}
-	if !strings.Contains(body, "Body=disk full") {
+	payload, _ := io.ReadAll(executor.request.Body)
+	body := string(payload)
+	if !strings.Contains(body, "Body=disk+full") {
 		t.Fatalf("body = %s", body)
 	}
 }
 
 func TestWebhookSenderSend(t *testing.T) {
-	var gotHeader string
-	var gotBody string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotHeader = r.Header.Get("X-Test")
-		payload, _ := io.ReadAll(r.Body)
-		gotBody = string(payload)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	sender := NewWebhookSender()
-	config, _ := json.Marshal(WebhookConfig{URL: server.URL, Headers: map[string]string{"X-Test": "yes"}})
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK}}
+	sender := NewWebhookSender(executor)
+	config, _ := json.Marshal(WebhookConfig{URL: "https://hooks.example.com", Headers: map[string]string{"X-Test": "yes"}})
 	err := sender.Send(context.Background(), Notification{Message: "disk full", MonitorID: "m1", Config: config})
 	if err != nil {
 		t.Fatalf("Send returned error: %v", err)
 	}
-	if gotHeader != "yes" {
-		t.Fatalf("header = %q", gotHeader)
+	if executor.request.Header.Get("X-Test") != "yes" {
+		t.Fatalf("header = %q", executor.request.Header.Get("X-Test"))
 	}
+	payload, _ := io.ReadAll(executor.request.Body)
+	gotBody := string(payload)
 	if !strings.Contains(gotBody, "disk full") {
 		t.Fatalf("body = %s", gotBody)
 	}
 }
 
 func TestPagerDutySenderSend(t *testing.T) {
-	var gotBody string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		payload, _ := io.ReadAll(r.Body)
-		gotBody = string(payload)
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer server.Close()
-
-	sender := NewPagerDutySender()
-	config, _ := json.Marshal(PagerDutyConfig{RoutingKey: "route", APIBaseURL: server.URL})
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusAccepted}}
+	sender := NewPagerDutySender(executor)
+	config, _ := json.Marshal(PagerDutyConfig{RoutingKey: "route", APIBaseURL: "https://provider.example.com"})
 	err := sender.Send(context.Background(), Notification{EventType: EventTypeIncidentDown, IncidentID: "INC_1", MonitorID: "m1", Message: "disk full", Timestamp: time.Now(), Config: config})
 	if err != nil {
 		t.Fatalf("Send returned error: %v", err)
 	}
+	payload, _ := io.ReadAll(executor.request.Body)
+	gotBody := string(payload)
 	if !strings.Contains(gotBody, "trigger") {
 		t.Fatalf("body = %s", gotBody)
 	}
@@ -120,14 +96,7 @@ func TestPagerDutySenderSend(t *testing.T) {
 }
 
 func TestTelegramSenderChatNotFoundErrorIsActionable(t *testing.T) {
-	sender := NewTelegramSender()
-	sender.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusBadRequest,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(bytes.NewBufferString(`{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)),
-		}, nil
-	})}
+	sender := NewTelegramSender(&capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusBadRequest, Body: []byte(`{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)}})
 	config, _ := json.Marshal(TelegramConfig{BotToken: "token", ChatID: "valid-looking-chat"})
 
 	err := sender.Send(context.Background(), Notification{Message: "test", Config: config})

@@ -3,13 +3,15 @@ package notifications
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"strings"
-	"time"
+
+	"bolt-monitor/shared/outboundhttp"
 )
 
 const (
@@ -53,35 +55,35 @@ type PagerDutyConfig struct {
 }
 
 type EmailSender struct {
-	httpClient *http.Client
+	executor HTTPExecutor
 }
 
 type SMSSender struct {
-	httpClient *http.Client
+	executor HTTPExecutor
 }
 
 type WebhookSender struct {
-	httpClient *http.Client
+	executor HTTPExecutor
 }
 
 type PagerDutySender struct {
-	httpClient *http.Client
+	executor HTTPExecutor
 }
 
-func NewEmailSender() *EmailSender {
-	return &EmailSender{httpClient: &http.Client{Timeout: 10 * time.Second}}
+func NewEmailSender(executors ...HTTPExecutor) *EmailSender {
+	return &EmailSender{executor: senderExecutor(executors)}
 }
 
-func NewSMSSender() *SMSSender {
-	return &SMSSender{httpClient: &http.Client{Timeout: 10 * time.Second}}
+func NewSMSSender(executors ...HTTPExecutor) *SMSSender {
+	return &SMSSender{executor: senderExecutor(executors)}
 }
 
-func NewWebhookSender() *WebhookSender {
-	return &WebhookSender{httpClient: &http.Client{Timeout: 10 * time.Second}}
+func NewWebhookSender(executors ...HTTPExecutor) *WebhookSender {
+	return &WebhookSender{executor: senderExecutor(executors)}
 }
 
-func NewPagerDutySender() *PagerDutySender {
-	return &PagerDutySender{httpClient: &http.Client{Timeout: 10 * time.Second}}
+func NewPagerDutySender(executors ...HTTPExecutor) *PagerDutySender {
+	return &PagerDutySender{executor: senderExecutor(executors)}
 }
 
 func (s *EmailSender) ChannelType() string { return "email" }
@@ -162,7 +164,7 @@ func (s *EmailSender) Send(ctx context.Context, notification Notification) error
 		"subject":          buildSubject(cfg.SubjectPrefix, notification),
 		"content":          []map[string]string{{"type": "text/plain", "value": notification.Message}},
 	}
-	_, err := sendJSONRequest(ctx, s.httpClient, http.MethodPost, strings.TrimRight(firstNonEmpty(cfg.APIBaseURL, defaultEmailAPIBaseURL), "/")+"/v3/mail/send", payload, map[string]string{"Authorization": "Bearer " + cfg.APIKey})
+	_, err := sendJSONRequest(ctx, s.executor, http.MethodPost, joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultEmailAPIBaseURL), "/v3/mail/send"), payload, map[string]string{"Authorization": "Bearer " + cfg.APIKey})
 	if err != nil {
 		return fmt.Errorf("send email: %w", err)
 	}
@@ -174,22 +176,16 @@ func (s *SMSSender) Send(ctx context.Context, notification Notification) error {
 	if err := unmarshalConfig(notification.Config, &cfg); err != nil {
 		return fmt.Errorf("invalid sms config: %w", err)
 	}
-	form := "To=" + cfg.ToNumber + "&From=" + cfg.FromNumber + "&Body=" + notification.Message
-	url := strings.TrimRight(firstNonEmpty(cfg.APIBaseURL, defaultSMSAPIBaseURL), "/") + "/2010-04-01/Accounts/" + cfg.AccountSID + "/Messages.json"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(form))
-	if err != nil {
-		return err
-	}
-	req.SetBasicAuth(cfg.AccountSID, cfg.AuthToken)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := s.httpClient.Do(req)
+	form := url.Values{"To": {cfg.ToNumber}, "From": {cfg.FromNumber}, "Body": {notification.Message}}.Encode()
+	headers := make(http.Header)
+	headers.Set("Content-Type", "application/x-www-form-urlencoded")
+	headers.Set("Authorization", "Basic "+basicAuth(cfg.AccountSID, cfg.AuthToken))
+	response, err := s.executor.Execute(ctx, outboundhttp.Request{Method: http.MethodPost, URL: joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultSMSAPIBaseURL), "/2010-04-01/Accounts/"+url.PathEscape(cfg.AccountSID)+"/Messages.json"), Header: headers, Body: strings.NewReader(form), Timeout: outboundhttp.NotificationTimeout})
 	if err != nil {
 		return fmt.Errorf("send sms: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("send sms: status=%d body=%s", resp.StatusCode, string(body))
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return errors.New("send sms: provider returned non-success status")
 	}
 	return nil
 }
@@ -199,7 +195,7 @@ func (s *WebhookSender) Send(ctx context.Context, notification Notification) err
 	if err := unmarshalConfig(notification.Config, &cfg); err != nil {
 		return fmt.Errorf("invalid webhook config: %w", err)
 	}
-	_, err := sendJSONRequest(ctx, s.httpClient, http.MethodPost, cfg.URL, notification, cfg.Headers)
+	_, err := sendJSONRequest(ctx, s.executor, http.MethodPost, cfg.URL, notification, cfg.Headers)
 	if err != nil {
 		return fmt.Errorf("send webhook: %w", err)
 	}
@@ -229,7 +225,7 @@ func (s *PagerDutySender) Send(ctx context.Context, notification Notification) e
 			"custom_details": notification,
 		},
 	}
-	_, err := sendJSONRequest(ctx, s.httpClient, http.MethodPost, strings.TrimRight(firstNonEmpty(cfg.APIBaseURL, defaultPagerDutyAPIBaseURL), "/")+"/v2/enqueue", payload, nil)
+	_, err := sendJSONRequest(ctx, s.executor, http.MethodPost, joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultPagerDutyAPIBaseURL), "/v2/enqueue"), payload, nil)
 	if err != nil {
 		return fmt.Errorf("send pagerduty: %w", err)
 	}
@@ -246,32 +242,44 @@ func unmarshalConfig[T any](config json.RawMessage, out *T) error {
 	return nil
 }
 
-func sendJSONRequest(ctx context.Context, client *http.Client, method, url string, payload any, headers map[string]string) ([]byte, error) {
+func sendJSONRequest(ctx context.Context, executor HTTPExecutor, method, target string, payload any, headers map[string]string) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	reqHeaders := make(http.Header)
+	reqHeaders.Set("Content-Type", "application/json")
 	for key, value := range headers {
-		req.Header.Set(key, value)
+		reqHeaders.Set(key, value)
 	}
-	resp, err := client.Do(req)
+	response, err := executor.Execute(ctx, outboundhttp.Request{Method: method, URL: target, Header: reqHeaders, Body: bytes.NewReader(body), Timeout: outboundhttp.NotificationTimeout})
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	respBody, err := io.ReadAll(resp.Body)
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, errors.New("provider returned non-success status")
+	}
+	return response.Body, nil
+}
+
+func senderExecutor(executors []HTTPExecutor) HTTPExecutor {
+	if len(executors) > 0 && executors[0] != nil {
+		return executors[0]
+	}
+	return outboundhttp.NewExecutor()
+}
+
+func joinEndpoint(base, endpoint string) string {
+	parsed, err := url.Parse(strings.TrimSpace(base))
 	if err != nil {
-		return nil, err
+		return ""
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("status=%d body=%s", resp.StatusCode, string(respBody))
-	}
-	return respBody, nil
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + endpoint
+	return parsed.String()
+}
+
+func basicAuth(username, password string) string {
+	return base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 }
 
 func buildSubject(prefix string, notification Notification) string {

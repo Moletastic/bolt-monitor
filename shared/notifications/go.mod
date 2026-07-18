@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	bolt-monitor/shared/dynamodbschema v0.0.0
+	bolt-monitor/shared/outboundhttp v0.0.0
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.13
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.51.1
@@ -19,3 +20,5 @@ require (
 )
 
 replace bolt-monitor/shared/dynamodbschema => ../dynamodbschema
+
+replace bolt-monitor/shared/outboundhttp => ../outboundhttp
