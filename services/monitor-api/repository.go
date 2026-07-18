@@ -10,6 +10,7 @@ import (
 
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
+	"bolt-monitor/shared/domainvalues"
 	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/dynamodbschema"
 	sharederrors "bolt-monitor/shared/errors"
@@ -150,7 +151,7 @@ func (r *dynamoMonitorRepository) serviceMonitorSummaries(ctx context.Context, t
 			return nil, err
 		}
 		if found {
-			statuses[monitorStatusKey(monitor.ServiceID, monitor.MonitorID)] = status
+			statuses[monitorStatusMapKey(monitor)] = status
 		}
 	}
 	return buildMonitorSummaries(monitors, statuses), nil
@@ -317,7 +318,7 @@ func (r *dynamoMonitorRepository) CreateMonitor(ctx context.Context, monitor mon
 	if !found {
 		return monitorconfig.Monitor{}, sharederrors.New(sharederrors.CodeServiceNotFound, nil)
 	}
-	serviceStatus, err := r.buildServiceStatusRecord(ctx, service, now, []monitorconfig.Monitor{monitor}, map[string]resultstatus.MonitorStatus{monitorStatusKey(monitor.ServiceID, monitor.MonitorID): monitorStatusRecordToDomain(statusRecord)})
+	serviceStatus, err := r.buildServiceStatusRecord(ctx, service, now, []monitorconfig.Monitor{monitor}, map[string]resultstatus.MonitorStatus{monitorStatusMapKey(monitor): monitorStatusRecordToDomain(statusRecord)})
 	if err != nil {
 		return monitorconfig.Monitor{}, err
 	}
@@ -848,7 +849,7 @@ func (r *dynamoMonitorRepository) RecordExecutionResult(ctx context.Context, mon
 		return err
 	}
 	if found {
-		serviceStatus, err := r.buildServiceStatusRecord(ctx, service, now.UTC().Format(time.RFC3339), nil, map[string]resultstatus.MonitorStatus{monitorStatusKey(monitor.ServiceID, monitor.MonitorID): monitorStatus})
+		serviceStatus, err := r.buildServiceStatusRecord(ctx, service, now.UTC().Format(time.RFC3339), nil, map[string]resultstatus.MonitorStatus{monitorStatusMapKey(monitor): monitorStatus})
 		if err != nil {
 			return err
 		}
@@ -1218,13 +1219,13 @@ func (r *dynamoMonitorRepository) buildServiceStatusRecord(ctx context.Context, 
 		if _, skip := excluded[strings.ToLower(monitor.MonitorID)]; skip {
 			continue
 		}
-		byID[monitorStatusKey(monitor.ServiceID, monitor.MonitorID)] = monitor
+		byID[monitorStatusMapKey(monitor)] = monitor
 	}
 	for _, monitor := range monitorsOverride {
 		if _, skip := excluded[strings.ToLower(monitor.MonitorID)]; skip {
 			continue
 		}
-		byID[monitorStatusKey(monitor.ServiceID, monitor.MonitorID)] = monitor
+		byID[monitorStatusMapKey(monitor)] = monitor
 	}
 	merged := make([]monitorconfig.Monitor, 0, len(byID))
 	for _, monitor := range byID {
@@ -1235,7 +1236,7 @@ func (r *dynamoMonitorRepository) buildServiceStatusRecord(ctx context.Context, 
 		statuses[key] = status
 	}
 	for _, monitor := range merged {
-		key := monitorStatusKey(monitor.ServiceID, monitor.MonitorID)
+		key := monitorStatusMapKey(monitor)
 		if _, ok := statuses[key]; ok {
 			continue
 		}
@@ -1514,7 +1515,7 @@ func buildMonitorSummaries(monitors []monitorconfig.Monitor, statuses map[string
 			Enabled:         monitor.Enabled,
 			IntervalSeconds: monitor.IntervalSeconds,
 		}
-		if status, ok := statuses[monitorStatusKey(monitor.ServiceID, monitor.MonitorID)]; ok {
+		if status, ok := statuses[monitorStatusMapKey(monitor)]; ok {
 			summary.CurrentStatus = strings.ToLower(status.CurrentStatus)
 			summary.LastCheckedAt = status.LastCheckedAt.UTC().Format(time.RFC3339)
 			summary.LastDurationMs = status.LastDurationMs
@@ -1613,8 +1614,12 @@ func countEnabledMonitors(monitors []monitorconfig.Monitor) int {
 	return count
 }
 
-func monitorStatusKey(serviceID, monitorID string) string {
-	return strings.ToLower(strings.TrimSpace(serviceID)) + "/" + strings.ToLower(strings.TrimSpace(monitorID))
+func monitorStatusMapKey(monitor monitorconfig.Monitor) string {
+	return domainvalues.MustMonitorRef(
+		domainvalues.TenantID(monitor.TenantID),
+		domainvalues.ServiceID(monitor.ServiceID),
+		domainvalues.MonitorID(monitor.MonitorID),
+	).StatusMapKey()
 }
 
 func mustParseTime(value string) time.Time {

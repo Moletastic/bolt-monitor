@@ -7,12 +7,12 @@
 
 ## 2. Add Shared Domain Values
 
-- [ ] 2.1 Create a dependency-light shared domain value package with validated canonical identifier constructors and string serialization.
-- [ ] 2.2 Define `MonitorRef` and migrate shared status-map/key call sites that require tenant, service, and monitor identity.
-- [ ] 2.3 Define validated monitor-state conversion at status transition and adapter boundaries while preserving existing stored/API strings.
-- [ ] 2.4 Define `CheckInterval` from supported cadence values with seconds and duration accessors.
-- [ ] 2.5 Converge `auth.TenantID` on the neutral shared tenant value or add explicit adapter conversion without import cycles.
-- [ ] 2.6 Add unit tests for invalid input, canonicalization, composite references, state conversion, and interval duration/seconds behavior.
+- [x] 2.1 Create a dependency-light shared domain value package with validated canonical identifier constructors and string serialization.
+- [x] 2.2 Define `MonitorRef` and migrate shared status-map/key call sites that require tenant, service, and monitor identity.
+- [x] 2.3 Define validated monitor-state conversion at status transition and adapter boundaries while preserving existing stored/API strings.
+- [x] 2.4 Define `CheckInterval` from supported cadence values with seconds and duration accessors.
+- [x] 2.5 Converge `auth.TenantID` on the neutral shared tenant value or add explicit adapter conversion without import cycles.
+- [x] 2.6 Add unit tests for invalid input, canonicalization, composite references, state conversion, and interval duration/seconds behavior.
 
 ## 3. Centralize Storage Records And Facade Use
 

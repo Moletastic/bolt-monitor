@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"bolt-monitor/shared/domainvalues"
 	sharederrors "bolt-monitor/shared/errors"
 )
 
@@ -16,7 +17,11 @@ const (
 
 type MembershipID string
 type Subject string
-type TenantID string
+
+// TenantID is an alias for the canonical domain tenant value. This keeps
+// every existing call site source-compatible while converging the auth and
+// domain surfaces onto a single typed value.
+type TenantID = domainvalues.TenantID
 type MembershipStatus string
 type Role string
 

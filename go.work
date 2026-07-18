@@ -9,6 +9,7 @@ use (
 	./shared/auth
 	./shared/aws
 	./shared/checkexecution
+	./shared/domainvalues
 	./shared/dynamodb
 	./shared/dynamodbrecord
 	./shared/dynamodbschema
