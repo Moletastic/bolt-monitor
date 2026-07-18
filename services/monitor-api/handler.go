@@ -19,6 +19,7 @@ import (
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/notifications"
+	"bolt-monitor/shared/outboundhttp"
 	"bolt-monitor/shared/resultstatus"
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -82,13 +83,15 @@ type monitorRepository interface {
 }
 
 type monitorHandler struct {
-	repo               monitorRepository
-	principalResolver  PrincipalResolver
-	membershipResolver MembershipResolver
-	securityEvents     securityEventEmitter
-	tenantID           string
-	now                func() time.Time
-	senders            notifications.SenderRegistry
+	repo                monitorRepository
+	principalResolver   PrincipalResolver
+	membershipResolver  MembershipResolver
+	securityEvents      securityEventEmitter
+	tenantID            string
+	now                 func() time.Time
+	senders             notifications.SenderRegistry
+	validateDestination func(context.Context, string) error
+	executor            checkexecution.HTTPExecutor
 }
 
 func newAuthorizedMonitorHandler(repo monitorRepository, principalResolver PrincipalResolver, membershipResolver MembershipResolver) monitorHandler {
@@ -99,6 +102,11 @@ func newAuthorizedMonitorHandler(repo monitorRepository, principalResolver Princ
 		securityEvents:     emitMonitorSecurityEvent,
 		now:                time.Now,
 		senders:            defaultNotificationSenderRegistry(),
+		executor:           outboundhttp.NewExecutor(),
+		validateDestination: func(ctx context.Context, target string) error {
+			_, _, err := outboundhttp.NewExecutor().ValidateDestination(ctx, target)
+			return err
+		},
 	}
 }
 
@@ -444,6 +452,9 @@ func (h monitorHandler) createMonitor(ctx context.Context, serviceID string, req
 	if err := monitor.Validate(); err != nil {
 		return respondAPIGateway(err)
 	}
+	if err := h.validateMonitorDestination(ctx, monitor); err != nil {
+		return respondAPIGateway(err)
+	}
 	created, err := h.repo.CreateMonitor(ctx, monitor)
 	if err != nil {
 		return respondAPIGateway(err)
@@ -533,6 +544,9 @@ func (h monitorHandler) updateMonitor(ctx context.Context, serviceID, monitorID 
 	if err := updated.Validate(); err != nil {
 		return respondAPIGateway(err)
 	}
+	if err := h.validateMonitorDestination(ctx, updated); err != nil {
+		return respondAPIGateway(err)
+	}
 	stored, err := h.repo.UpdateMonitor(ctx, updated)
 	if err != nil {
 		return respondAPIGateway(err)
@@ -546,6 +560,19 @@ func (h monitorHandler) updateMonitor(ctx context.Context, serviceID, monitorID 
 		statusResponse = toStatusResponse(status)
 	}
 	return envelopeResponse(http.StatusOK, response.Ok(toMonitorResponse(stored, statusResponse)))
+}
+
+func (h monitorHandler) validateMonitorDestination(ctx context.Context, monitor monitorconfig.Monitor) error {
+	if h.validateDestination == nil || monitor.HTTP == nil {
+		return nil
+	}
+	if err := h.validateDestination(ctx, monitor.HTTP.Target); err != nil {
+		return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{
+			"field":  "http.target",
+			"reason": outboundhttp.SafeMessage(err),
+		})
+	}
+	return nil
 }
 
 func (h monitorHandler) deleteMonitor(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
@@ -643,10 +670,7 @@ func (h monitorHandler) runMonitor(ctx context.Context, serviceID, monitorID str
 		RunID:   runID,
 		Trigger: checkexecution.TriggerTypeManual,
 	}
-	httpClient := &http.Client{
-		Timeout: time.Duration(monitor.HTTP.TimeoutMs) * time.Millisecond,
-	}
-	result := checkexecution.ExecuteHTTP(ctx, httpClient, request)
+	result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
 	if err := h.repo.RecordExecutionResult(ctx, monitor, runID, result); err != nil {
 		return respondAPIGateway(err)
 	}

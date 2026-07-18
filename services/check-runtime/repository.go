@@ -386,7 +386,7 @@ func (r *dynamoRuntimeRepository) getMonitorStatus(ctx context.Context, tenantID
 	if err != nil {
 		return resultstatus.MonitorStatus{}, false, err
 	}
-	return resultstatus.MonitorStatus{ServiceID: record.ServiceID, MonitorID: record.MonitorID, TenantID: record.TenantID, CurrentStatus: record.CurrentStatus, ConsecutiveFailures: record.ConsecutiveFailures, ConsecutiveSuccesses: record.ConsecutiveSuccesses, LastCheckedAt: lastCheckedAt, LastDurationMs: record.LastDurationMs, LastError: record.LastError, LastOutcome: checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, "unknown")))}, true, nil
+	return resultstatus.MonitorStatus{ServiceID: record.ServiceID, MonitorID: record.MonitorID, TenantID: record.TenantID, CurrentStatus: record.CurrentStatus, ConsecutiveFailures: record.ConsecutiveFailures, ConsecutiveSuccesses: record.ConsecutiveSuccesses, LastCheckedAt: lastCheckedAt, LastDurationMs: record.LastDurationMs, LastError: record.LastError, LastFailureCode: record.LastFailureCode, LastOutcome: checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, "unknown")))}, true, nil
 }
 
 func (r *dynamoRuntimeRepository) GetMonitorStatus(ctx context.Context, tenantID, serviceID, monitorID string) (resultstatus.MonitorStatus, bool, error) {
@@ -444,6 +444,7 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 	newStatus.LastCheckedAt = result.FinishedAt.UTC()
 	newStatus.LastDurationMs = result.DurationMs
 	newStatus.LastError = result.Error
+	newStatus.LastFailureCode = result.FailureCode
 	newStatus.LastOutcome = result.Outcome
 
 	var incidentRecords []any

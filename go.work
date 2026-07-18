@@ -15,6 +15,7 @@ use (
 	./shared/errors
 	./shared/escalation
 	./shared/monitorconfig
+	./shared/outboundhttp
 	./shared/notifications
 	./shared/resultstatus
 	./shared/rules

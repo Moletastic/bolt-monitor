@@ -22,19 +22,20 @@ const (
 )
 
 type CheckRun struct {
-	ServiceID  string                     `json:"serviceId"`
-	MonitorID  string                     `json:"monitorId"`
-	TenantID   string                     `json:"tenantId"`
-	RunID      string                     `json:"runId"`
-	Type       string                     `json:"type"`
-	Trigger    checkexecution.TriggerType `json:"trigger"`
-	StartedAt  time.Time                  `json:"startedAt"`
-	FinishedAt time.Time                  `json:"finishedAt"`
-	DurationMs int64                      `json:"durationMs"`
-	Outcome    checkexecution.Outcome     `json:"outcome"`
-	StatusCode *int                       `json:"statusCode,omitempty"`
-	Error      string                     `json:"error,omitempty"`
-	TTL        int64                      `json:"ttl"`
+	ServiceID   string                     `json:"serviceId"`
+	MonitorID   string                     `json:"monitorId"`
+	TenantID    string                     `json:"tenantId"`
+	RunID       string                     `json:"runId"`
+	Type        string                     `json:"type"`
+	Trigger     checkexecution.TriggerType `json:"trigger"`
+	StartedAt   time.Time                  `json:"startedAt"`
+	FinishedAt  time.Time                  `json:"finishedAt"`
+	DurationMs  int64                      `json:"durationMs"`
+	Outcome     checkexecution.Outcome     `json:"outcome"`
+	StatusCode  *int                       `json:"statusCode,omitempty"`
+	Error       string                     `json:"error,omitempty"`
+	FailureCode string                     `json:"failureCode,omitempty"`
+	TTL         int64                      `json:"ttl"`
 }
 
 type MonitorStatus struct {
@@ -47,26 +48,28 @@ type MonitorStatus struct {
 	LastCheckedAt        time.Time              `json:"lastCheckedAt"`
 	LastDurationMs       int64                  `json:"lastDurationMs"`
 	LastError            string                 `json:"lastError,omitempty"`
+	LastFailureCode      string                 `json:"lastFailureCode,omitempty"`
 	LastOutcome          checkexecution.Outcome `json:"lastOutcome"`
 }
 
 type CheckRunRecord struct {
-	PK         string `json:"pk"`
-	SK         string `json:"sk"`
-	EntityType string `json:"entityType"`
-	TenantID   string `json:"tenantId"`
-	ServiceID  string `json:"serviceId"`
-	MonitorID  string `json:"monitorId"`
-	RunID      string `json:"runId"`
-	Type       string `json:"type"`
-	Trigger    string `json:"trigger"`
-	StartedAt  string `json:"startedAt"`
-	FinishedAt string `json:"finishedAt"`
-	DurationMs int64  `json:"durationMs"`
-	Outcome    string `json:"outcome"`
-	StatusCode *int   `json:"statusCode,omitempty"`
-	Error      string `json:"error,omitempty"`
-	TTL        int64  `json:"ttl"`
+	PK          string `json:"pk"`
+	SK          string `json:"sk"`
+	EntityType  string `json:"entityType"`
+	TenantID    string `json:"tenantId"`
+	ServiceID   string `json:"serviceId"`
+	MonitorID   string `json:"monitorId"`
+	RunID       string `json:"runId"`
+	Type        string `json:"type"`
+	Trigger     string `json:"trigger"`
+	StartedAt   string `json:"startedAt"`
+	FinishedAt  string `json:"finishedAt"`
+	DurationMs  int64  `json:"durationMs"`
+	Outcome     string `json:"outcome"`
+	StatusCode  *int   `json:"statusCode,omitempty"`
+	Error       string `json:"error,omitempty"`
+	FailureCode string `json:"failureCode,omitempty"`
+	TTL         int64  `json:"ttl"`
 }
 
 type MonitorStatusRecord struct {
@@ -83,6 +86,7 @@ type MonitorStatusRecord struct {
 	UpdatedAt            string `json:"updatedAt" dynamodbav:"UpdatedAt,omitempty"`
 	LastDurationMs       int64  `json:"lastDurationMs" dynamodbav:"LastDurationMs"`
 	LastError            string `json:"lastError,omitempty" dynamodbav:"LastError,omitempty"`
+	LastFailureCode      string `json:"lastFailureCode,omitempty" dynamodbav:"LastFailureCode,omitempty"`
 	LastOutcome          string `json:"lastOutcome" dynamodbav:"LastOutcome"`
 	GSI2PK               string `json:"gsi2pk,omitempty" dynamodbav:"GSI2PK,omitempty"`
 	GSI2SK               string `json:"gsi2sk,omitempty" dynamodbav:"GSI2SK,omitempty"`
@@ -94,19 +98,20 @@ func NewCheckRun(result checkexecution.ExecutionResult, now time.Time) CheckRun 
 		runID = fmt.Sprintf("RUN_%s", strings.TrimPrefix(result.StartedAt.UTC().Format("20060102T150405.000000000"), ""))
 	}
 	return CheckRun{
-		ServiceID:  strings.ToLower(result.ServiceID),
-		MonitorID:  strings.ToLower(result.MonitorID),
-		TenantID:   strings.ToUpper(result.TenantID),
-		RunID:      strings.ToUpper(runID),
-		Type:       result.Type,
-		Trigger:    result.Trigger,
-		StartedAt:  result.StartedAt.UTC(),
-		FinishedAt: result.FinishedAt.UTC(),
-		DurationMs: result.DurationMs,
-		Outcome:    result.Outcome,
-		StatusCode: result.StatusCode,
-		Error:      result.Error,
-		TTL:        now.UTC().Add(DefaultCheckRunRetentionDays * 24 * time.Hour).Unix(),
+		ServiceID:   strings.ToLower(result.ServiceID),
+		MonitorID:   strings.ToLower(result.MonitorID),
+		TenantID:    strings.ToUpper(result.TenantID),
+		RunID:       strings.ToUpper(runID),
+		Type:        result.Type,
+		Trigger:     result.Trigger,
+		StartedAt:   result.StartedAt.UTC(),
+		FinishedAt:  result.FinishedAt.UTC(),
+		DurationMs:  result.DurationMs,
+		Outcome:     result.Outcome,
+		StatusCode:  result.StatusCode,
+		Error:       result.Error,
+		FailureCode: result.FailureCode,
+		TTL:         now.UTC().Add(DefaultCheckRunRetentionDays * 24 * time.Hour).Unix(),
 	}
 }
 
@@ -125,6 +130,7 @@ func NewMonitorStatus(result checkexecution.ExecutionResult) MonitorStatus {
 		LastCheckedAt:        result.FinishedAt.UTC(),
 		LastDurationMs:       result.DurationMs,
 		LastError:            result.Error,
+		LastFailureCode:      result.FailureCode,
 		LastOutcome:          result.Outcome,
 	}
 }
@@ -166,6 +172,7 @@ func NewMonitorStatusWithConfig(result checkexecution.ExecutionResult, config Th
 		LastCheckedAt:        result.FinishedAt.UTC(),
 		LastDurationMs:       result.DurationMs,
 		LastError:            result.Error,
+		LastFailureCode:      result.FailureCode,
 		LastOutcome:          result.Outcome,
 	}
 }
@@ -173,22 +180,23 @@ func NewMonitorStatusWithConfig(result checkexecution.ExecutionResult, config Th
 func (r CheckRun) ToRecord() CheckRunRecord {
 	item := dynamodbschema.CheckRunItem(r.TenantID, r.ServiceID, r.MonitorID, r.StartedAt.UTC().Format(time.RFC3339), r.RunID, r.TTL)
 	return CheckRunRecord{
-		PK:         item.PK,
-		SK:         item.SK,
-		EntityType: item.EntityType,
-		TenantID:   r.TenantID,
-		ServiceID:  r.ServiceID,
-		MonitorID:  r.MonitorID,
-		RunID:      r.RunID,
-		Type:       r.Type,
-		Trigger:    string(r.Trigger),
-		StartedAt:  r.StartedAt.UTC().Format(time.RFC3339),
-		FinishedAt: r.FinishedAt.UTC().Format(time.RFC3339),
-		DurationMs: r.DurationMs,
-		Outcome:    string(r.Outcome),
-		StatusCode: r.StatusCode,
-		Error:      r.Error,
-		TTL:        r.TTL,
+		PK:          item.PK,
+		SK:          item.SK,
+		EntityType:  item.EntityType,
+		TenantID:    r.TenantID,
+		ServiceID:   r.ServiceID,
+		MonitorID:   r.MonitorID,
+		RunID:       r.RunID,
+		Type:        r.Type,
+		Trigger:     string(r.Trigger),
+		StartedAt:   r.StartedAt.UTC().Format(time.RFC3339),
+		FinishedAt:  r.FinishedAt.UTC().Format(time.RFC3339),
+		DurationMs:  r.DurationMs,
+		Outcome:     string(r.Outcome),
+		StatusCode:  r.StatusCode,
+		Error:       r.Error,
+		FailureCode: r.FailureCode,
+		TTL:         r.TTL,
 	}
 }
 
@@ -208,6 +216,7 @@ func (s MonitorStatus) ToRecord() MonitorStatusRecord {
 		UpdatedAt:            s.LastCheckedAt.UTC().Format(time.RFC3339),
 		LastDurationMs:       s.LastDurationMs,
 		LastError:            s.LastError,
+		LastFailureCode:      s.LastFailureCode,
 		LastOutcome:          string(s.LastOutcome),
 	}
 }

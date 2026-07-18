@@ -8,6 +8,7 @@ require (
 	bolt-monitor/shared/dynamodbrecord v0.0.0
 	bolt-monitor/shared/dynamodbschema v0.0.0
 	bolt-monitor/shared/monitorconfig v0.0.0
+	bolt-monitor/shared/outboundhttp v0.0.0
 	bolt-monitor/shared/resultstatus v0.0.0
 	github.com/aws/aws-lambda-go v1.50.0
 	github.com/oklog/ulid/v2 v2.1.1
@@ -53,5 +54,7 @@ replace bolt-monitor/shared/dynamodb => ../../shared/dynamodb
 replace bolt-monitor/shared/escalation => ../../shared/escalation
 
 replace bolt-monitor/shared/monitorconfig => ../../shared/monitorconfig
+
+replace bolt-monitor/shared/outboundhttp => ../../shared/outboundhttp
 
 replace bolt-monitor/shared/resultstatus => ../../shared/resultstatus

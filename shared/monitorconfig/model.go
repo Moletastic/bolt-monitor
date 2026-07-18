@@ -3,12 +3,12 @@ package monitorconfig
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/escalation"
+	"bolt-monitor/shared/outboundhttp"
 	"bolt-monitor/shared/rules"
 )
 
@@ -364,9 +364,8 @@ func (h HTTPConfiguration) Validate() error {
 	if strings.TrimSpace(h.Target) == "" {
 		return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{"field": "http.target", "reason": "required"})
 	}
-	parsed, err := url.ParseRequestURI(h.Target)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{"field": "http.target", "reason": "must be a valid absolute URL"})
+	if _, err := outboundhttp.ValidateURL(h.Target); err != nil {
+		return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{"field": "http.target", "reason": outboundhttp.SafeMessage(err)})
 	}
 
 	if strings.TrimSpace(h.Method) == "" {
@@ -377,6 +376,9 @@ func (h HTTPConfiguration) Validate() error {
 	}
 	if h.TimeoutMs <= 0 {
 		return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{"field": "http.timeoutMs", "reason": "must be greater than 0"})
+	}
+	if h.TimeoutMs > int(outboundhttp.MaxRequestTimeout.Milliseconds()) {
+		return sharederrors.Wrap(sharederrors.CodeValidationFailed, nil, map[string]any{"field": "http.timeoutMs", "reason": "must be no greater than 30000"})
 	}
 
 	for _, code := range h.ExpectedStatusCodes {

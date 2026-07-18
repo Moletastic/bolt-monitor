@@ -2,14 +2,15 @@ package checkexecution
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/monitorconfig"
+	"bolt-monitor/shared/outboundhttp"
 )
 
 type TriggerType string
@@ -42,18 +43,19 @@ type ExecutionRequest struct {
 }
 
 type ExecutionResult struct {
-	ServiceID  string      `json:"serviceId"`
-	MonitorID  string      `json:"monitorId"`
-	TenantID   string      `json:"tenantId"`
-	RunID      string      `json:"runId,omitempty"`
-	Type       string      `json:"type"`
-	Trigger    TriggerType `json:"trigger"`
-	StartedAt  time.Time   `json:"startedAt"`
-	FinishedAt time.Time   `json:"finishedAt"`
-	DurationMs int64       `json:"durationMs"`
-	Outcome    Outcome     `json:"outcome"`
-	StatusCode *int        `json:"statusCode,omitempty"`
-	Error      string      `json:"error,omitempty"`
+	ServiceID   string      `json:"serviceId"`
+	MonitorID   string      `json:"monitorId"`
+	TenantID    string      `json:"tenantId"`
+	RunID       string      `json:"runId,omitempty"`
+	Type        string      `json:"type"`
+	Trigger     TriggerType `json:"trigger"`
+	StartedAt   time.Time   `json:"startedAt"`
+	FinishedAt  time.Time   `json:"finishedAt"`
+	DurationMs  int64       `json:"durationMs"`
+	Outcome     Outcome     `json:"outcome"`
+	StatusCode  *int        `json:"statusCode,omitempty"`
+	Error       string      `json:"error,omitempty"`
+	FailureCode string      `json:"failureCode,omitempty"`
 }
 
 type SchedulerConfig struct {
@@ -85,7 +87,11 @@ func BuildExecutionRequests(monitors []monitorconfig.Monitor, trigger TriggerTyp
 	return requests, nil
 }
 
-func ExecuteHTTP(ctx context.Context, client *http.Client, request ExecutionRequest) ExecutionResult {
+type HTTPExecutor interface {
+	Execute(context.Context, outboundhttp.Request) (outboundhttp.Response, error)
+}
+
+func ExecuteHTTP(ctx context.Context, executor HTTPExecutor, request ExecutionRequest) ExecutionResult {
 	startedAt := time.Now().UTC()
 	result := ExecutionResult{
 		ServiceID: request.Monitor.ServiceID,
@@ -98,42 +104,33 @@ func ExecuteHTTP(ctx context.Context, client *http.Client, request ExecutionRequ
 	}
 
 	httpConfig := request.Monitor.HTTP
-	req, err := http.NewRequestWithContext(ctx, httpConfig.Method, httpConfig.Target, nil)
-	if err != nil {
-		result.Outcome = OutcomeError
-		result.Error = err.Error()
-		result.FinishedAt = time.Now().UTC()
-		result.DurationMs = result.FinishedAt.Sub(startedAt).Milliseconds()
-		return result
-	}
+	headers := make(http.Header, len(httpConfig.Headers))
 	for key, value := range httpConfig.Headers {
-		req.Header.Set(key, value)
+		headers.Set(key, value)
 	}
-
-	resp, err := client.Do(req)
+	response, err := executor.Execute(ctx, outboundhttp.Request{
+		Method:  httpConfig.Method,
+		URL:     httpConfig.Target,
+		Header:  headers,
+		Timeout: time.Duration(httpConfig.TimeoutMs) * time.Millisecond,
+	})
 	finishedAt := time.Now().UTC()
 	result.FinishedAt = finishedAt
 	result.DurationMs = finishedAt.Sub(startedAt).Milliseconds()
 	if err != nil {
 		result.Outcome = classifyError(err)
-		result.Error = err.Error()
+		result.FailureCode = outboundFailureCode(err)
+		result.Error = outboundhttp.SafeMessage(err)
 		return result
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		result.Outcome = OutcomeError
-		result.Error = err.Error()
-		return result
-	}
-	statusCode := resp.StatusCode
+	statusCode := response.StatusCode
 	result.StatusCode = &statusCode
 	if len(httpConfig.ExpectedStatusCodes) != 0 && !containsStatus(httpConfig.ExpectedStatusCodes, statusCode) {
 		result.Outcome = OutcomeFailure
 		result.Error = fmt.Sprintf("unexpected status code %d", statusCode)
 		return result
 	}
-	if httpConfig.ExpectedBodyContains != nil && !strings.Contains(string(body), *httpConfig.ExpectedBodyContains) {
+	if httpConfig.ExpectedBodyContains != nil && !strings.Contains(string(response.Body), *httpConfig.ExpectedBodyContains) {
 		result.Outcome = OutcomeFailure
 		result.Error = fmt.Sprintf("response body missing expected content %q", *httpConfig.ExpectedBodyContains)
 		return result
@@ -143,13 +140,18 @@ func ExecuteHTTP(ctx context.Context, client *http.Client, request ExecutionRequ
 }
 
 func classifyError(err error) Outcome {
-	if err == nil {
-		return OutcomeSuccess
-	}
-	if ne, ok := err.(interface{ Timeout() bool }); ok && ne.Timeout() {
+	if outboundhttp.IsKind(err, outboundhttp.KindTimeout) {
 		return OutcomeTimeout
 	}
 	return OutcomeError
+}
+
+func outboundFailureCode(err error) string {
+	var outbound *outboundhttp.Error
+	if errors.As(err, &outbound) {
+		return string(outbound.Kind)
+	}
+	return string(outboundhttp.KindTransport)
 }
 
 func containsStatus(list []int, value int) bool {
