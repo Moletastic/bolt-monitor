@@ -4,7 +4,7 @@
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra test-infra \
 	check-bruno check-api-contract test-api-contract check-sst-target test-sst-target \
-	check-auth-routes check-auth-cutover-prerequisites \
+	check-auth-routes check-auth-cutover-prerequisites check-pnpm-install-trust check-pre-cutover-gate smoke-staging \
 	format-dashboard format-dashboard-check format-dashboard-files format-infra format-infra-check format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
@@ -27,7 +27,7 @@ bootstrap-admin:
 	go run ./tools/admin-bootstrap --email "$(EMAIL)" --user-pool-id "$(USER_POOL_ID)" --auth-table "$(AUTH_TABLE_NAME)"
 
 rotate-auth-key:
-	node scripts/rotate-auth-key.mjs
+	node --experimental-strip-types --no-warnings scripts/rotate-auth-key.mjs
 
 test-go: bootstrap
 	$(foreach module,$(GO_MODULE_DIRS),go test $(module);)
@@ -69,7 +69,7 @@ check-infra:
 
 test-infra:
 	cd infra && pnpm run test
-	node --test scripts/sst-lifecycle.test.mjs scripts/sst-cleanup.test.mjs scripts/check-auth-cutover-prerequisites.test.mjs
+	node --test scripts/sst-lifecycle.test.mjs scripts/sst-cleanup.test.mjs scripts/check-auth-cutover-prerequisites.test.mjs scripts/prepare-staging-smoke.test.mjs scripts/staging-smoke.test.mjs scripts/cognito-access-token.test.mjs
 
 check-bruno:
 	node scripts/check-bruno.mjs
@@ -79,6 +79,16 @@ check-auth-routes:
 
 check-auth-cutover-prerequisites:
 	node scripts/check-auth-cutover-prerequisites.mjs
+
+check-pnpm-install-trust:
+	node --test scripts/check-pnpm-install-trust.test.mjs
+	node scripts/check-pnpm-install-trust.mjs
+
+# Local release gates required before protected-route cutover. The dashboard build runs here once.
+check-pre-cutover-gate: build-dashboard check-bruno check-api-contract check-sst-target check-auth-cutover-prerequisites
+
+smoke-staging:
+	node --experimental-strip-types --no-warnings scripts/staging-smoke.mjs
 
 test-api-contract:
 	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/check-openapi-auth.test.mjs scripts/rotate-auth-key.test.mjs
@@ -152,19 +162,19 @@ build-dashboard:
 build-all: build-go build-dashboard
 
 deploy-infra:
-	SST_LIFECYCLE_ACTION=deploy node scripts/sst-lifecycle.mjs
+	SST_LIFECYCLE_ACTION=deploy node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
 
 deploy-infra-print:
-	SST_LIFECYCLE_ACTION=deploy node scripts/sst-lifecycle.mjs
+	SST_LIFECYCLE_ACTION=deploy node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
 
 preview-infra:
-	SST_LIFECYCLE_ACTION=preview node scripts/sst-lifecycle.mjs
+	SST_LIFECYCLE_ACTION=preview node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
 
 remove-infra:
-	SST_LIFECYCLE_ACTION=remove node scripts/sst-lifecycle.mjs
+	SST_LIFECYCLE_ACTION=remove node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
 
 dev-infra:
-	SST_LIFECYCLE_ACTION=dev node scripts/sst-lifecycle.mjs
+	SST_LIFECYCLE_ACTION=dev node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
 
 clean:
 	rm -f services/api-health/function.zip services/api-health/handler
