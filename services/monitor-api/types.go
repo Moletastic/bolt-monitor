@@ -362,8 +362,8 @@ func toEscalationPolicyResponse(policy escalation.EscalationPolicy) escalationPo
 		PolicyID:          policy.PolicyID,
 		Name:              policy.Name,
 		Description:       policy.Description,
-		BusinessHoursPath: cloneEscalationPath(policy.BusinessHoursPath),
-		OffHoursPath:      cloneEscalationPath(policy.OffHoursPath),
+		BusinessHoursPath: escalation.CloneEscalationPath(policy.BusinessHoursPath),
+		OffHoursPath:      escalation.CloneEscalationPath(policy.OffHoursPath),
 		CreatedAt:         policy.CreatedAt,
 		UpdatedAt:         policy.UpdatedAt,
 	}
@@ -468,22 +468,6 @@ func toSchedulerConfigResponse(config dynamodbrecord.SchedulerConfigRecord) sche
 
 func toAuditEventResponse(event auditEventView) auditEventResponse {
 	return auditEventResponse(event)
-}
-
-func cloneEscalationPath(input escalation.EscalationPath) escalation.EscalationPath {
-	steps := make([]escalation.EscalationStep, 0, len(input.Steps))
-	for _, step := range input.Steps {
-		channels := make([]escalation.ChannelConfig, 0, len(step.Channels))
-		for _, channel := range step.Channels {
-			var cfg json.RawMessage
-			if channel.Config != nil {
-				cfg = append(json.RawMessage(nil), channel.Config...)
-			}
-			channels = append(channels, escalation.ChannelConfig{Type: channel.Type, Target: strings.TrimSpace(channel.Target), Config: cfg})
-		}
-		steps = append(steps, escalation.EscalationStep{ChannelID: strings.TrimSpace(step.ChannelID), DelayMinutes: step.DelayMinutes, Channels: channels})
-	}
-	return escalation.EscalationPath{Steps: steps}
 }
 
 func redactChannelConfig(input json.RawMessage) json.RawMessage {
