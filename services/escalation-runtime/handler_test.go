@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/notifications"
+	"bolt-monitor/shared/outboundhttp"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -35,6 +37,15 @@ func (f *fakeScheduler) ScheduleNextStep(_ context.Context, event scheduledInvoc
 
 type fakeSender struct {
 	notifications []notifications.Notification
+}
+
+type capturingEscalationExecutor struct {
+	request outboundhttp.Request
+}
+
+func (e *capturingEscalationExecutor) Execute(_ context.Context, request outboundhttp.Request) (outboundhttp.Response, error) {
+	e.request = request
+	return outboundhttp.Response{StatusCode: http.StatusOK}, nil
 }
 
 func (f *fakeSender) Send(_ context.Context, notification notifications.Notification) error {
@@ -156,6 +167,28 @@ func TestHandleIncidentDownResolvesChannelID(t *testing.T) {
 	}
 	if config["chatId"] != "chat-1" || config["botToken"] != "token" {
 		t.Fatalf("config = %+v", config)
+	}
+}
+
+func TestEscalationDispatchUsesProductionSenderRegistryWithInjectedExecutor(t *testing.T) {
+	executor := &capturingEscalationExecutor{}
+	repo := &fakeEscalationRepository{
+		channels: map[string]escalation.NotificationChannel{
+			"CH_1": {TenantID: "DEFAULT", ChannelID: "CH_1", Name: "Webhook", Type: escalation.ChannelTypeWebhook, Target: "https://hooks.example.com", Config: json.RawMessage(`{"headers":{"Authorization":"Bearer secret"}}`)},
+		},
+	}
+	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler.senders = notifications.NewSenderRegistry(executor)
+	event := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: time.Date(2026, 6, 16, 2, 0, 0, 0, time.UTC), Message: "disk full"}
+
+	if err := handler.fireStep(context.Background(), event, escalation.EscalationStep{ChannelID: "CH_1"}); err != nil {
+		t.Fatalf("fireStep returned error: %v", err)
+	}
+	if executor.request.URL != "https://hooks.example.com" || executor.request.Header.Get("Authorization") != "Bearer secret" {
+		t.Fatalf("request = %#v", executor.request)
+	}
+	if executor.request.Timeout != outboundhttp.NotificationTimeout || executor.request.Body == nil {
+		t.Fatalf("request = %#v", executor.request)
 	}
 }
 

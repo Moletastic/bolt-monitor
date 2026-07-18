@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/outboundhttp"
 	"bolt-monitor/shared/resultstatus"
+	"github.com/aws/aws-lambda-go/events"
 )
 
 type fakeSQSClient struct {
@@ -21,6 +24,13 @@ type fakeExecutor struct{ response outboundhttp.Response }
 
 func (e fakeExecutor) Execute(_ context.Context, _ outboundhttp.Request) (outboundhttp.Response, error) {
 	return e.response, nil
+}
+
+type countingDialer struct{ calls int }
+
+func (d *countingDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	d.calls++
+	return nil, errors.New("unexpected dial")
 }
 
 func (f *fakeSQSClient) SendMessage(_ context.Context, _ string, body string) error {
@@ -287,6 +297,8 @@ func TestRunWorkerRecordsUnsafePersistedTargetWithoutDialing(t *testing.T) {
 	repo.monitors["auth/public-http"] = testMonitor("http://127.0.0.1", true)
 	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_UNSAFE_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
 	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
+	dialer := &countingDialer{}
+	handler.executor = &outboundhttp.Executor{Dialer: dialer}
 
 	summary, err := handler.runWorker(context.Background())
 	if err != nil {
@@ -298,6 +310,32 @@ func TestRunWorkerRecordsUnsafePersistedTargetWithoutDialing(t *testing.T) {
 	result := repo.results[0]
 	if result.Outcome != checkexecution.OutcomeError || result.FailureCode != "address_blocked" {
 		t.Fatalf("result = %#v", result)
+	}
+	if dialer.calls != 0 {
+		t.Fatalf("unsafe stored target dialed %d times", dialer.calls)
+	}
+}
+
+func TestHandleSQSEventRecordsUnsafeQueuedTargetWithoutDialing(t *testing.T) {
+	repo := newFakeRuntimeRepository()
+	dialer := &countingDialer{}
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
+	handler.executor = &outboundhttp.Executor{Dialer: dialer}
+	request := checkexecution.ExecutionRequest{Monitor: testMonitor("http://127.0.0.1", true), RunID: "RUN_QUEUE_UNSAFE", Trigger: checkexecution.TriggerTypeManual}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	summary, err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: string(body)}}})
+	if err != nil {
+		t.Fatalf("handleSQSEvent returned error: %v", err)
+	}
+	if summary.Processed != 1 || len(repo.results) != 1 || repo.results[0].FailureCode != string(outboundhttp.KindAddressBlocked) {
+		t.Fatalf("summary = %+v, results = %#v", summary, repo.results)
+	}
+	if dialer.calls != 0 {
+		t.Fatalf("unsafe queued target dialed %d times", dialer.calls)
 	}
 }
 

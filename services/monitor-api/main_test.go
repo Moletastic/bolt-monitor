@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -73,6 +74,23 @@ type fakeNotificationSender struct {
 	channelType   string
 	err           error
 	notifications []notifications.Notification
+}
+
+type noDialer struct{ calls int }
+
+func (d *noDialer) DialContext(context.Context, string, string) (net.Conn, error) {
+	d.calls++
+	return nil, stderrors.New("unexpected dial")
+}
+
+type recordingMonitorExecutor struct {
+	calls    int
+	response outboundhttp.Response
+}
+
+func (e *recordingMonitorExecutor) Execute(_ context.Context, _ outboundhttp.Request) (outboundhttp.Response, error) {
+	e.calls++
+	return e.response, nil
 }
 
 func (s *fakeNotificationSender) Send(_ context.Context, notification notifications.Notification) error {
@@ -1378,6 +1396,183 @@ func TestChannelDestinationValidationUsesTypedFieldErrors(t *testing.T) {
 				t.Fatalf("error leaked target: %q", err)
 			}
 		})
+	}
+}
+
+func TestUpdateMonitorDestinationPreflightIsRedactedAndDoesNotPersist(t *testing.T) {
+	tests := []struct {
+		name        string
+		target      string
+		validateErr error
+		wantPersist bool
+	}{
+		{name: "safe public target", target: "https://status.example.com/health", wantPersist: true},
+		{name: "blocked alias resolution", target: "https://metadata-alias.example.com/?token=secret-token", validateErr: &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked}},
+		{name: "mixed dns answers", target: "https://mixed.example.com/?token=secret-token", validateErr: &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newFakeMonitorRepository()
+			current := monitorconfig.Monitor{
+				TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage",
+				Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, FailureThreshold: 1, RecoveryThreshold: 1,
+				HTTP: &monitorconfig.HTTPConfiguration{Target: "https://status.example.com", Method: "GET", TimeoutMs: 5000},
+			}
+			repo.monitors[monitorKey("auth", "public-http")] = current
+			handler := newMonitorHandler(repo)
+			handler.tenantID = defaultTenantID
+			handler.validateDestination = func(context.Context, string) error { return test.validateErr }
+			request := events.APIGatewayV2HTTPRequest{Body: fmt.Sprintf(`{"http":{"target":%q,"method":"GET","timeoutMs":5000}}`, test.target)}
+
+			response, err := handler.updateMonitor(context.Background(), "auth", "public-http", request)
+			if err != nil {
+				t.Fatalf("updateMonitor returned error: %v", err)
+			}
+			if test.wantPersist {
+				if response.StatusCode != http.StatusOK || repo.monitors[monitorKey("auth", "public-http")].HTTP.Target != test.target {
+					t.Fatalf("response = %d, stored = %#v", response.StatusCode, repo.monitors[monitorKey("auth", "public-http")])
+				}
+				return
+			}
+			if response.StatusCode != http.StatusBadRequest || !strings.Contains(response.Body, `"field":"http.target"`) {
+				t.Fatalf("response = %d %s", response.StatusCode, response.Body)
+			}
+			if repo.monitors[monitorKey("auth", "public-http")].HTTP.Target != current.HTTP.Target {
+				t.Fatalf("unsafe target was persisted: %#v", repo.monitors[monitorKey("auth", "public-http")])
+			}
+			if strings.Contains(response.Body, "secret-token") || strings.Contains(response.Body, "metadata-alias") || strings.Contains(response.Body, "mixed.example") {
+				t.Fatalf("response leaked destination data: %s", response.Body)
+			}
+		})
+	}
+}
+
+func TestManualRunRecordsUnsafeStoredTargetWithoutDialing(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	monitor := monitorconfig.Monitor{
+		TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage",
+		Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, FailureThreshold: 1, RecoveryThreshold: 1,
+		HTTP: &monitorconfig.HTTPConfiguration{Target: "http://127.0.0.1", Method: "GET", TimeoutMs: 5000},
+	}
+	repo.monitors[monitorKey("auth", "public-http")] = monitor
+	dialer := &noDialer{}
+	handler := newMonitorHandler(repo)
+	handler.tenantID = defaultTenantID
+	handler.executor = &outboundhttp.Executor{Dialer: dialer}
+	handler.now = func() time.Time { return time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC) }
+
+	response, err := handler.runMonitor(context.Background(), "auth", "public-http")
+	if err != nil {
+		t.Fatalf("runMonitor returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(response.Body, `"failureCode":"address_blocked"`) {
+		t.Fatalf("response = %d %s", response.StatusCode, response.Body)
+	}
+	if dialer.calls != 0 {
+		t.Fatalf("unsafe manual target dialed %d times", dialer.calls)
+	}
+	status := repo.statuses[monitorKey("auth", "public-http")]
+	if status.LastFailureCode != string(outboundhttp.KindAddressBlocked) {
+		t.Fatalf("recorded status = %#v", status)
+	}
+}
+
+func TestManualRunExecutesSafePublicTargetWithFakeExecutor(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	monitor := monitorconfig.Monitor{
+		TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", Name: "Homepage",
+		Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true, FailureThreshold: 1, RecoveryThreshold: 1,
+		HTTP: &monitorconfig.HTTPConfiguration{Target: "https://status.example.com", Method: "GET", TimeoutMs: 5000, ExpectedStatusCodes: []int{200}},
+	}
+	repo.monitors[monitorKey("auth", "public-http")] = monitor
+	executor := &recordingMonitorExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte("ok")}}
+	handler := newMonitorHandler(repo)
+	handler.tenantID = defaultTenantID
+	handler.executor = executor
+
+	response, err := handler.runMonitor(context.Background(), "auth", "public-http")
+	if err != nil {
+		t.Fatalf("runMonitor returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusOK || executor.calls != 1 || !strings.Contains(response.Body, `"outcome":"success"`) {
+		t.Fatalf("response = %d %s, executor calls = %d", response.StatusCode, response.Body, executor.calls)
+	}
+}
+
+func TestNotificationChannelDestinationValidationIsDeterministicAndNonPersistent(t *testing.T) {
+	tests := []struct {
+		name        string
+		channelType string
+		target      string
+		config      string
+		preflight   error
+		field       string
+		wantStatus  int
+	}{
+		{name: "safe public webhook", channelType: "webhook", target: "https://hooks.example.com", config: `{}`, wantStatus: http.StatusCreated},
+		{name: "blocked webhook literal", channelType: "webhook", target: "http://127.0.0.1/secret", config: `{}`, field: "target", wantStatus: http.StatusBadRequest},
+		{name: "blocked webhook alias", channelType: "webhook", target: "https://metadata-alias.example.com?token=secret", config: `{}`, preflight: &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked}, field: "target", wantStatus: http.StatusBadRequest},
+		{name: "mixed provider answers", channelType: "email", target: "ops@example.com", config: `{"apiKey":"key","fromEmail":"from@example.com","apiBaseUrl":"https://provider.example.com?token=secret"}`, preflight: &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked}, field: "config.apiBaseUrl", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newFakeMonitorRepository()
+			handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+			handler.validateDestination = func(context.Context, string) error { return tt.preflight }
+			request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels", Body: fmt.Sprintf(`{"name":"Channel","type":%q,"target":%q,"config":%s}`, tt.channelType, tt.target, tt.config), RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+
+			response, err := handler.handleRequest(context.Background(), request)
+			if err != nil {
+				t.Fatalf("handleRequest returned error: %v", err)
+			}
+			if response.StatusCode != tt.wantStatus {
+				t.Fatalf("status = %d body=%s, want %d", response.StatusCode, response.Body, tt.wantStatus)
+			}
+			if tt.field == "" {
+				if len(repo.channels) != 1 {
+					t.Fatalf("channels = %+v, want one persisted safe channel", repo.channels)
+				}
+				return
+			}
+			if len(repo.channels) != 0 {
+				t.Fatalf("unsafe channel was persisted: %+v", repo.channels)
+			}
+			var envelope struct {
+				Reason struct {
+					Details map[string]any `json:"details"`
+				} `json:"reason"`
+			}
+			if err := json.Unmarshal([]byte(response.Body), &envelope); err != nil {
+				t.Fatalf("json.Unmarshal: %v", err)
+			}
+			if envelope.Reason.Details["field"] != tt.field {
+				t.Fatalf("details = %+v, want field %q", envelope.Reason.Details, tt.field)
+			}
+			if strings.Contains(response.Body, "token=secret") || strings.Contains(response.Body, "127.0.0.1") || strings.Contains(response.Body, "metadata-alias.example.com") {
+				t.Fatalf("validation response leaked destination details: %s", response.Body)
+			}
+		})
+	}
+}
+
+func TestNotificationChannelUpdateRejectsUnsafeDestinationWithoutPersistence(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.channels["CH_1"] = escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Name: "Webhook", Type: escalation.ChannelTypeWebhook, Target: "https://hooks.example.com", Config: json.RawMessage(`{}`)}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	handler.validateDestination = func(context.Context, string) error { return &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked} }
+	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1", PathParameters: map[string]string{"channelId": "CH_1"}, Body: `{"target":"https://rebound.example.com?token=secret"}`, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPut}}}
+
+	response, err := handler.handleRequest(context.Background(), request)
+	if err != nil {
+		t.Fatalf("handleRequest returned error: %v", err)
+	}
+	if response.StatusCode != http.StatusBadRequest || !strings.Contains(response.Body, `"field":"target"`) {
+		t.Fatalf("response = %d %s", response.StatusCode, response.Body)
+	}
+	if repo.channels["CH_1"].Target != "https://hooks.example.com" {
+		t.Fatalf("unsafe update persisted: %+v", repo.channels["CH_1"])
 	}
 }
 
