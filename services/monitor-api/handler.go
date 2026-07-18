@@ -1055,34 +1055,12 @@ func mergeNotificationChannelTarget(channel escalation.NotificationChannel) (jso
 	return json.Marshal(config)
 }
 
-func sanitizeNotificationDeliveryError(reason error, config json.RawMessage) string {
+func sanitizeNotificationDeliveryError(reason error, _ json.RawMessage) string {
 	var outbound *outboundhttp.Error
 	if errors.As(reason, &outbound) {
 		return outboundhttp.SafeMessage(outbound)
 	}
-	trimmed := strings.TrimSpace(reason.Error())
-	if trimmed == "" {
-		return "notification delivery failed"
-	}
-	secretValues := map[string]struct{}{}
-	var cfg map[string]any
-	if err := json.Unmarshal(config, &cfg); err == nil {
-		for _, key := range []string{"botToken", "apiKey", "authToken", "accountSid"} {
-			if value, ok := cfg[key].(string); ok && strings.TrimSpace(value) != "" {
-				secretValues[value] = struct{}{}
-			}
-		}
-	}
-	for value := range secretValues {
-		trimmed = strings.ReplaceAll(trimmed, value, "[redacted]")
-	}
-	for _, key := range []string{"botToken", "apiKey", "authToken", "accountSid", "Authorization", "Bearer"} {
-		trimmed = strings.ReplaceAll(trimmed, key, "[redacted]")
-	}
-	if len(trimmed) > 240 {
-		trimmed = trimmed[:240]
-	}
-	return trimmed
+	return "notification delivery failed"
 }
 
 func (h monitorHandler) notificationChannelFromRequest(request events.APIGatewayV2HTTPRequest, current *escalation.NotificationChannel) (escalation.NotificationChannel, events.APIGatewayV2HTTPResponse, bool) {
