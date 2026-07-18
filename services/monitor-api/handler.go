@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -992,11 +993,11 @@ func (h monitorHandler) testNotificationChannel(ctx context.Context, channelID s
 	}
 	sender, ok := h.senders.Get(string(channel.Type))
 	if !ok {
-		return h.recordChannelTestFailure(ctx, *channel, "sender not registered")
+		return h.recordChannelTestFailure(ctx, *channel, errors.New("sender not registered"))
 	}
 	config, err := mergeNotificationChannelTarget(*channel)
 	if err != nil {
-		return h.recordChannelTestFailure(ctx, *channel, err.Error())
+		return h.recordChannelTestFailure(ctx, *channel, err)
 	}
 	now := h.now().UTC()
 	notification := notifications.Notification{
@@ -1012,7 +1013,7 @@ func (h monitorHandler) testNotificationChannel(ctx context.Context, channelID s
 		Config:      config,
 	}
 	if err := sender.Send(ctx, notification); err != nil {
-		return h.recordChannelTestFailure(ctx, *channel, err.Error())
+		return h.recordChannelTestFailure(ctx, *channel, err)
 	}
 	if err := h.repo.RecordNotificationChannelTestAudit(ctx, h.tenantID, channel.ChannelID, string(channel.Type), "success", "", now); err != nil {
 		return respondAPIGateway(err)
@@ -1020,7 +1021,7 @@ func (h monitorHandler) testNotificationChannel(ctx context.Context, channelID s
 	return envelopeResponse(http.StatusOK, response.Ok(notificationChannelTestResponse{ChannelID: channel.ChannelID, SentAt: now.Format(time.RFC3339)}, "Test notification sent."))
 }
 
-func (h monitorHandler) recordChannelTestFailure(ctx context.Context, channel escalation.NotificationChannel, reason string) (events.APIGatewayV2HTTPResponse, error) {
+func (h monitorHandler) recordChannelTestFailure(ctx context.Context, channel escalation.NotificationChannel, reason error) (events.APIGatewayV2HTTPResponse, error) {
 	now := h.now().UTC()
 	sanitized := sanitizeNotificationDeliveryError(reason, channel.Config)
 	if err := h.repo.RecordNotificationChannelTestAudit(ctx, h.tenantID, channel.ChannelID, string(channel.Type), "failure", sanitized, now); err != nil {
@@ -1054,8 +1055,12 @@ func mergeNotificationChannelTarget(channel escalation.NotificationChannel) (jso
 	return json.Marshal(config)
 }
 
-func sanitizeNotificationDeliveryError(reason string, config json.RawMessage) string {
-	trimmed := strings.TrimSpace(reason)
+func sanitizeNotificationDeliveryError(reason error, config json.RawMessage) string {
+	var outbound *outboundhttp.Error
+	if errors.As(reason, &outbound) {
+		return outboundhttp.SafeMessage(outbound)
+	}
+	trimmed := strings.TrimSpace(reason.Error())
 	if trimmed == "" {
 		return "notification delivery failed"
 	}
