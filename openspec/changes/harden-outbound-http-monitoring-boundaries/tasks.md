@@ -33,7 +33,7 @@
 
 - [x] 5.1 Extend notification channel create/update validation with injected static and network-aware policy checks for webhook `target` and non-empty email/SMS/PagerDuty `config.apiBaseUrl`, preserving `target` and `config.apiBaseUrl` typed field paths.
 - [x] 5.2 Refactor email, SMS, webhook, PagerDuty, Telegram send, and Telegram chat-ID detection to use injected bounded outbound executors; parse and safely join provider base URLs and endpoint paths instead of unchecked string concatenation.
-- [ ] 5.3 Construct the same production policy-backed sender registry in monitor API test-send and escalation runtime dispatch, and map policy failures to sanitized `CodeNotificationDelivery` categories rather than raw `err.Error()` or provider bodies.
+- [x] 5.3 Construct the same production policy-backed sender registry in monitor API test-send and escalation runtime dispatch, and map policy failures to sanitized `CodeNotificationDelivery` categories rather than raw `err.Error()` or provider bodies.
 - [ ] 5.4 Ensure notification test-send responses and success/failure audit records contain no raw URL secrets, configured headers, credentials, request bodies, or provider response payloads, including oversized and redirect failures.
 - [ ] 5.5 Add table-driven channel validation tests for safe public and blocked webhook/provider URLs, DNS aliases and mixed answers, update non-persistence, exact typed field paths, and redacted details.
 - [ ] 5.6 Add fake-executor/resolver/dialer sender tests for every notification type, same-origin behavior, cross-origin credential/body redirect rejection, response limits, timeouts, production escalation dispatch, test-send failure mapping, and audit redaction.

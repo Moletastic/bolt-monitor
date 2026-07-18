@@ -1,6 +1,7 @@
 package monitorconfig
 
 import (
+	"strings"
 	"testing"
 
 	sharederrors "bolt-monitor/shared/errors"
@@ -86,6 +87,39 @@ func TestCreateMonitorRequestToMonitor(t *testing.T) {
 	}
 	if monitor.HTTP.Method != "GET" {
 		t.Fatalf("HTTP.Method = %q, want GET", monitor.HTTP.Method)
+	}
+}
+
+func TestHTTPConfigurationValidateOutboundPolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		target  string
+		timeout int
+		field   string
+	}{
+		{name: "safe public", target: "https://status.example.com", timeout: 5000},
+		{name: "unsupported scheme", target: "ftp://status.example.com", timeout: 5000, field: "http.target"},
+		{name: "blocked literal", target: "http://127.0.0.1", timeout: 5000, field: "http.target"},
+		{name: "userinfo redacted", target: "https://token:secret@status.example.com?key=private", timeout: 5000, field: "http.target"},
+		{name: "timeout cap", target: "https://status.example.com", timeout: 30001, field: "http.timeoutMs"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := HTTPConfiguration{Target: test.target, Method: "GET", TimeoutMs: test.timeout}.Validate()
+			if test.field == "" {
+				if err != nil {
+					t.Fatalf("Validate error = %v", err)
+				}
+				return
+			}
+			typed, ok := sharederrors.As(err)
+			if !ok || typed.Code != sharederrors.CodeValidationFailed || typed.Details["field"] != test.field {
+				t.Fatalf("Validate error = %#v", err)
+			}
+			if got := err.Error(); strings.Contains(got, "secret") || strings.Contains(got, "private") {
+				t.Fatalf("error leaked target secret: %q", got)
+			}
+		})
 	}
 }
 

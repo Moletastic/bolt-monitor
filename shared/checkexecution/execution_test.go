@@ -2,6 +2,7 @@ package checkexecution
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	sharederrors "bolt-monitor/shared/errors"
@@ -195,5 +196,20 @@ func TestExecuteHTTPFailsStatusBeforeBodyMatch(t *testing.T) {
 	}
 	if result.Error != "unexpected status code 502" {
 		t.Fatalf("Error = %q, want unexpected status code message", result.Error)
+	}
+}
+
+func TestExecuteHTTPMapsOutboundFailureWithoutSecrets(t *testing.T) {
+	request := ExecutionRequest{Monitor: monitorconfig.Monitor{
+		ServiceID: "auth", MonitorID: "public-http", TenantID: "DEFAULT", Name: "Homepage",
+		Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: true,
+		HTTP: &monitorconfig.HTTPConfiguration{Target: "https://token:secret@status.example.com", Method: "GET", TimeoutMs: 5000},
+	}}
+	result := ExecuteHTTP(context.Background(), fakeHTTPExecutor{err: &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked}}, request)
+	if result.Outcome != OutcomeError || result.FailureCode != string(outboundhttp.KindAddressBlocked) {
+		t.Fatalf("result = %#v", result)
+	}
+	if strings.Contains(result.Error, "secret") || result.Error != outboundhttp.SafeMessage(&outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked}) {
+		t.Fatalf("unsafe error = %q", result.Error)
 	}
 }
