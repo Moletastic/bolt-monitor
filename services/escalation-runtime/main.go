@@ -28,7 +28,7 @@ func main() {
 		log.Fatalf("TABLE_NAME is required")
 	}
 
-	dynamoClient, err := aws.NewDynamoDBClient(ctx)
+	dynamoClient, err := aws.NewDynamoDBAPI(ctx)
 	if err != nil {
 		log.Fatalf("create dynamodb client: %v", err)
 	}

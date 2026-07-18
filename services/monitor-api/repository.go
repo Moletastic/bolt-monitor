@@ -531,10 +531,10 @@ func (r *dynamoMonitorRepository) SetMonitorMaintenance(ctx context.Context, ten
 	}
 	if !found {
 		status = resultstatus.MonitorStatus{
-			ServiceID:     strings.ToLower(serviceID),
-			MonitorID:     strings.ToLower(monitorID),
-			TenantID:      strings.ToUpper(tenantID),
-			CurrentStatus: strings.ToUpper(rollupUnknown),
+			ServiceID:     dynamodbschema.NormalizeField(serviceID),
+			MonitorID:     dynamodbschema.NormalizeField(monitorID),
+			TenantID:      dynamodbschema.NormalizeToken(tenantID),
+			CurrentStatus: domainvalues.MonitorStateUnknown.Stored(),
 			LastCheckedAt: now,
 			LastOutcome:   checkexecution.Outcome(rollupUnknown),
 		}
@@ -1372,7 +1372,7 @@ func newDefaultMonitorStatusRecord(monitor monitorconfig.Monitor, now string) re
 		ServiceID:      monitor.ServiceID,
 		MonitorID:      monitor.MonitorID,
 		TenantID:       monitor.TenantID,
-		CurrentStatus:  strings.ToUpper(rollupUnknown),
+		CurrentStatus:  domainvalues.MonitorStateUnknown.Stored(),
 		LastCheckedAt:  mustParseTime(now),
 		LastDurationMs: 0,
 		LastError:      "",
@@ -1650,7 +1650,7 @@ func (r *dynamoMonitorRepository) CreateNotificationChannel(ctx context.Context,
 	now := r.now().UTC().Format(time.RFC3339)
 	channel.CreatedAt = now
 	channel.UpdatedAt = now
-	av, err := sharedaws.MarshalMap(newNotificationChannelItemRecord(channel))
+	av, err := sharedaws.MarshalMap(dynamodbrecord.NewNotificationChannelItemRecord(channel))
 	if err != nil {
 		return escalation.NotificationChannel{}, err
 	}
@@ -1674,14 +1674,14 @@ func (r *dynamoMonitorRepository) ListNotificationChannels(ctx context.Context, 
 	}
 	channels := make([]escalation.NotificationChannel, 0, len(out))
 	for _, item := range out {
-		var record notificationChannelItemRecord
+		var record dynamodbrecord.NotificationChannelItemRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 			return nil, err
 		}
 		if record.EntityType != dynamodbschema.EntityNotificationChannel {
 			continue
 		}
-		channels = append(channels, record.toNotificationChannel())
+		channels = append(channels, record.ToNotificationChannel())
 	}
 	sort.Slice(channels, func(i, j int) bool { return channels[i].Name < channels[j].Name })
 	return channels, nil
@@ -1691,18 +1691,18 @@ func (r *dynamoMonitorRepository) GetNotificationChannel(ctx context.Context, te
 	if err := r.requireTableName(); err != nil {
 		return nil, err
 	}
-	out, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: notificationChannelSK(channelID)}}})
+	out, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: dynamodbrecord.NotificationChannelSK(channelID)}}})
 	if err != nil {
 		return nil, err
 	}
 	if len(out.Item) == 0 {
 		return nil, nil
 	}
-	var record notificationChannelItemRecord
+	var record dynamodbrecord.NotificationChannelItemRecord
 	if err := sharedaws.UnmarshalMap(out.Item, &record); err != nil {
 		return nil, err
 	}
-	channel := record.toNotificationChannel()
+	channel := record.ToNotificationChannel()
 	return &channel, nil
 }
 
@@ -1718,7 +1718,7 @@ func (r *dynamoMonitorRepository) UpdateNotificationChannel(ctx context.Context,
 		channel.CreatedAt = existing.CreatedAt
 	}
 	channel.UpdatedAt = r.now().UTC().Format(time.RFC3339)
-	av, err := sharedaws.MarshalMap(newNotificationChannelItemRecord(channel))
+	av, err := sharedaws.MarshalMap(dynamodbrecord.NewNotificationChannelItemRecord(channel))
 	if err != nil {
 		return escalation.NotificationChannel{}, err
 	}
@@ -1736,7 +1736,7 @@ func (r *dynamoMonitorRepository) DeleteNotificationChannel(ctx context.Context,
 	if err := r.requireTableName(); err != nil {
 		return err
 	}
-	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: notificationChannelSK(channelID)}}})
+	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: dynamodbrecord.NotificationChannelSK(channelID)}}})
 	if err != nil {
 		return err
 	}
@@ -1797,7 +1797,7 @@ func (r *dynamoMonitorRepository) CreateEscalationPolicy(ctx context.Context, po
 	now := r.now().UTC().Format(time.RFC3339)
 	policy.CreatedAt = now
 	policy.UpdatedAt = now
-	av, err := sharedaws.MarshalMap(newEscalationPolicyItemRecord(policy))
+	av, err := sharedaws.MarshalMap(dynamodbrecord.NewEscalationPolicyItemRecord(policy))
 	if err != nil {
 		return escalation.EscalationPolicy{}, err
 	}
@@ -1821,14 +1821,14 @@ func (r *dynamoMonitorRepository) ListEscalationPolicies(ctx context.Context, te
 	}
 	policies := make([]escalation.EscalationPolicy, 0, len(out))
 	for _, item := range out {
-		var record escalationPolicyItemRecord
+		var record dynamodbrecord.EscalationPolicyItemRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
 			return nil, err
 		}
 		if record.EntityType != dynamodbschema.EntityEscalationPolicy {
 			continue
 		}
-		policy := record.toEscalationPolicy()
+		policy := record.ToEscalationPolicy()
 		if err := r.MigrateRouteInlineChannels(ctx, &policy); err != nil {
 			return nil, err
 		}
@@ -1842,18 +1842,18 @@ func (r *dynamoMonitorRepository) GetEscalationPolicy(ctx context.Context, tenan
 	if err := r.requireTableName(); err != nil {
 		return nil, err
 	}
-	out, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: escalationPolicySK(policyID)}}})
+	out, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: dynamodbrecord.EscalationPolicySK(policyID)}}})
 	if err != nil {
 		return nil, err
 	}
 	if len(out.Item) == 0 {
 		return nil, nil
 	}
-	var record escalationPolicyItemRecord
+	var record dynamodbrecord.EscalationPolicyItemRecord
 	if err := sharedaws.UnmarshalMap(out.Item, &record); err != nil {
 		return nil, err
 	}
-	policy := record.toEscalationPolicy()
+	policy := record.ToEscalationPolicy()
 	if err := r.MigrateRouteInlineChannels(ctx, &policy); err != nil {
 		return nil, err
 	}
@@ -1898,7 +1898,7 @@ func (r *dynamoMonitorRepository) MigrateRouteInlineChannels(ctx context.Context
 	if !migrated {
 		return nil
 	}
-	av, err := sharedaws.MarshalMap(newEscalationPolicyItemRecord(*policy))
+	av, err := sharedaws.MarshalMap(dynamodbrecord.NewEscalationPolicyItemRecord(*policy))
 	if err != nil {
 		return err
 	}
@@ -1918,7 +1918,7 @@ func (r *dynamoMonitorRepository) UpdateEscalationPolicy(ctx context.Context, po
 		policy.CreatedAt = existing.CreatedAt
 	}
 	policy.UpdatedAt = r.now().UTC().Format(time.RFC3339)
-	av, err := sharedaws.MarshalMap(newEscalationPolicyItemRecord(policy))
+	av, err := sharedaws.MarshalMap(dynamodbrecord.NewEscalationPolicyItemRecord(policy))
 	if err != nil {
 		return escalation.EscalationPolicy{}, err
 	}
@@ -1936,7 +1936,7 @@ func (r *dynamoMonitorRepository) DeleteEscalationPolicy(ctx context.Context, te
 	if err := r.requireTableName(); err != nil {
 		return err
 	}
-	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: escalationPolicySK(policyID)}}})
+	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{TableName: sharedaws.String(r.tableName), Key: map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: dynamodbschema.TenantPK(tenantID)}, "SK": &sharedaws.AttributeValueMemberS{Value: dynamodbrecord.EscalationPolicySK(policyID)}}})
 	if err != nil {
 		return err
 	}
@@ -1967,140 +1967,10 @@ func (r *dynamoMonitorRepository) GetEscalationState(ctx context.Context, tenant
 	if len(out.Item) == 0 {
 		return nil, nil
 	}
-	var record escalationStateItemRecord
+	var record dynamodbrecord.EscalationStateItemRecord
 	if err := sharedaws.UnmarshalMap(out.Item, &record); err != nil {
 		return nil, err
 	}
-	state := record.toEscalationState()
+	state := record.ToEscalationState()
 	return &state, nil
-}
-
-type escalationStateItemRecord struct {
-	PK           string                      `dynamodbav:"PK"`
-	SK           string                      `dynamodbav:"SK"`
-	EntityType   string                      `dynamodbav:"EntityType"`
-	TenantID     string                      `dynamodbav:"TenantID"`
-	IncidentID   string                      `dynamodbav:"IncidentID"`
-	PolicyID     string                      `dynamodbav:"PolicyID"`
-	ServiceID    string                      `dynamodbav:"ServiceID"`
-	MonitorID    string                      `dynamodbav:"MonitorID"`
-	CurrentStep  int                         `dynamodbav:"CurrentStep"`
-	StepsFired   []int                       `dynamodbav:"StepsFired"`
-	SelectedPath string                      `dynamodbav:"SelectedPath"`
-	ScheduledFor string                      `dynamodbav:"ScheduledFor,omitempty"`
-	Status       escalation.EscalationStatus `dynamodbav:"Status"`
-	CreatedAt    string                      `dynamodbav:"CreatedAt"`
-	UpdatedAt    string                      `dynamodbav:"UpdatedAt"`
-}
-
-func (r escalationStateItemRecord) toEscalationState() escalation.EscalationState {
-	return escalation.EscalationState{
-		TenantID:     r.TenantID,
-		IncidentID:   r.IncidentID,
-		PolicyID:     r.PolicyID,
-		ServiceID:    r.ServiceID,
-		MonitorID:    r.MonitorID,
-		CurrentStep:  r.CurrentStep,
-		StepsFired:   append([]int(nil), r.StepsFired...),
-		SelectedPath: r.SelectedPath,
-		ScheduledFor: r.ScheduledFor,
-		Status:       r.Status,
-		CreatedAt:    r.CreatedAt,
-		UpdatedAt:    r.UpdatedAt,
-	}
-}
-
-type escalationPolicyItemRecord struct {
-	PK                string                    `dynamodbav:"PK"`
-	SK                string                    `dynamodbav:"SK"`
-	EntityType        string                    `dynamodbav:"EntityType"`
-	TenantID          string                    `dynamodbav:"TenantID"`
-	PolicyID          string                    `dynamodbav:"PolicyID"`
-	Name              string                    `dynamodbav:"Name"`
-	Description       string                    `dynamodbav:"Description,omitempty"`
-	BusinessHoursPath escalation.EscalationPath `dynamodbav:"BusinessHoursPath"`
-	OffHoursPath      escalation.EscalationPath `dynamodbav:"OffHoursPath"`
-	CreatedAt         string                    `dynamodbav:"CreatedAt,omitempty"`
-	UpdatedAt         string                    `dynamodbav:"UpdatedAt,omitempty"`
-}
-
-type notificationChannelItemRecord struct {
-	PK         string                 `dynamodbav:"PK"`
-	SK         string                 `dynamodbav:"SK"`
-	EntityType string                 `dynamodbav:"EntityType"`
-	TenantID   string                 `dynamodbav:"TenantID"`
-	ChannelID  string                 `dynamodbav:"ChannelID"`
-	Name       string                 `dynamodbav:"Name"`
-	Type       escalation.ChannelType `dynamodbav:"Type"`
-	Target     string                 `dynamodbav:"Target"`
-	Config     []byte                 `dynamodbav:"Config,omitempty"`
-	CreatedAt  string                 `dynamodbav:"CreatedAt,omitempty"`
-	UpdatedAt  string                 `dynamodbav:"UpdatedAt,omitempty"`
-}
-
-func escalationPolicySK(policyID string) string {
-	return "ESCALATION_POLICY#" + strings.ToUpper(strings.TrimSpace(policyID))
-}
-
-func notificationChannelSK(channelID string) string {
-	return "NOTIFICATION_CHANNEL#" + strings.ToUpper(strings.TrimSpace(channelID))
-}
-
-func newNotificationChannelItemRecord(channel escalation.NotificationChannel) notificationChannelItemRecord {
-	item := dynamodbschema.NotificationChannelItem(channel.TenantID, channel.ChannelID)
-	return notificationChannelItemRecord{
-		PK:         item.PK,
-		SK:         item.SK,
-		EntityType: item.EntityType,
-		TenantID:   strings.ToUpper(channel.TenantID),
-		ChannelID:  strings.ToUpper(strings.TrimSpace(channel.ChannelID)),
-		Name:       strings.TrimSpace(channel.Name),
-		Type:       channel.Type,
-		Target:     strings.TrimSpace(channel.Target),
-		Config:     append([]byte(nil), channel.Config...),
-		CreatedAt:  channel.CreatedAt,
-		UpdatedAt:  channel.UpdatedAt,
-	}
-}
-
-func (r notificationChannelItemRecord) toNotificationChannel() escalation.NotificationChannel {
-	return escalation.NotificationChannel{
-		TenantID:  r.TenantID,
-		ChannelID: r.ChannelID,
-		Name:      r.Name,
-		Type:      r.Type,
-		Target:    r.Target,
-		Config:    append(json.RawMessage(nil), r.Config...),
-		CreatedAt: r.CreatedAt,
-		UpdatedAt: r.UpdatedAt,
-	}
-}
-
-func newEscalationPolicyItemRecord(policy escalation.EscalationPolicy) escalationPolicyItemRecord {
-	return escalationPolicyItemRecord{
-		PK:                dynamodbschema.TenantPK(policy.TenantID),
-		SK:                escalationPolicySK(policy.PolicyID),
-		EntityType:        dynamodbschema.EntityEscalationPolicy,
-		TenantID:          strings.ToUpper(policy.TenantID),
-		PolicyID:          strings.ToUpper(strings.TrimSpace(policy.PolicyID)),
-		Name:              strings.TrimSpace(policy.Name),
-		Description:       strings.TrimSpace(policy.Description),
-		BusinessHoursPath: cloneEscalationPath(policy.BusinessHoursPath),
-		OffHoursPath:      cloneEscalationPath(policy.OffHoursPath),
-		CreatedAt:         policy.CreatedAt,
-		UpdatedAt:         policy.UpdatedAt,
-	}
-}
-
-func (r escalationPolicyItemRecord) toEscalationPolicy() escalation.EscalationPolicy {
-	return escalation.EscalationPolicy{
-		TenantID:          r.TenantID,
-		PolicyID:          r.PolicyID,
-		Name:              r.Name,
-		Description:       r.Description,
-		BusinessHoursPath: cloneEscalationPath(r.BusinessHoursPath),
-		OffHoursPath:      cloneEscalationPath(r.OffHoursPath),
-		CreatedAt:         r.CreatedAt,
-		UpdatedAt:         r.UpdatedAt,
-	}
 }

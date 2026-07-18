@@ -1689,7 +1689,7 @@ func TestGetEscalationPolicyMigratesLegacyInlineChannelsOnce(t *testing.T) {
 		BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"secret"}`)}}}}},
 		OffHoursPath:      escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_EXISTING", DelayMinutes: 5}}},
 	}
-	addRecord(t, client.items, newEscalationPolicyItemRecord(legacy))
+	addRecord(t, client.items, dynamodbrecord.NewEscalationPolicyItemRecord(legacy))
 
 	first, err := repo.GetEscalationPolicy(context.Background(), defaultTenantID, "POL_1")
 	if err != nil {

@@ -16,12 +16,12 @@
 
 ## 3. Centralize Storage Records And Facade Use
 
-- [ ] 3.1 Move escalation-policy and notification-channel DynamoDB records, constructors, and decoders from monitor API into `shared/dynamodbrecord`.
-- [ ] 3.2 Move escalation-state record mapping into `shared/dynamodbrecord` and preserve its existing primary-key shape.
-- [ ] 3.3 Replace escalation-runtime duplicate incident record mapping with shared incident records and constructors.
-- [ ] 3.4 Migrate escalation runtime repository and tests from `shared/dynamodb`/direct AWS SDK types to `shared/aws.DynamoDBAPI`.
-- [ ] 3.5 Consolidate shared monitor, status, execution-work, and incident conversion paths on the new value-object adapters.
-- [ ] 3.6 Add record round-trip tests for each moved item family, including legacy-cased input and defensive-copy behavior for mutable config fields.
+- [x] 3.1 Move escalation-policy and notification-channel DynamoDB records, constructors, and decoders from monitor API into `shared/dynamodbrecord`.
+- [x] 3.2 Move escalation-state record mapping into `shared/dynamodbrecord` and preserve its existing primary-key shape.
+- [x] 3.3 Replace escalation-runtime duplicate incident record mapping with shared incident records and constructors.
+- [x] 3.4 Migrate escalation runtime repository and tests from `shared/dynamodb`/direct AWS SDK types to `shared/aws.DynamoDBAPI`.
+- [x] 3.5 Consolidate shared monitor, status, execution-work, and incident conversion paths on the new value-object adapters.
+- [x] 3.6 Add record round-trip tests for each moved item family, including legacy-cased input and defensive-copy behavior for mutable config fields.
 
 ## 4. Make DynamoDB Reads Explicit And Reusable
 
