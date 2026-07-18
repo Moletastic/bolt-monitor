@@ -60,7 +60,7 @@ return builder.Build()(monitor)
 
 ### Bruno API Collection
 - Bruno requests live under `.bruno/collections/` and cover every method/path route declared in `infra/stacks/bootstrap.ts`.
-- Organize requests by API domain: `health`, `search`, `channels`, `policies`, `services`, `monitors`, `incidents`, and `admin`.
+- Organize API Gateway requests by domain: `health`, `search`, `channels`, `policies`, `services`, `monitors`, `incidents`, and `admin`. Direct Cognito helpers belong in `auth` and are explicitly marked external.
 - Name requests `Verb Resource`; use exact route variables such as `serviceId`, `monitorId`, `incidentId`, `channelId`, and `policyId`.
 - Every request has exactly one `domain:<domain>` tag and one `operation:<operation>` tag.
 - Every request docs block includes `Purpose:`, `Setup:`, and `Expected result:`.

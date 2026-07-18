@@ -84,6 +84,63 @@ ephemeral target with verified cleanup, or declared persistent `staging` with
 no teardown. Persistent target names beginning with `smoke` are rejected even
 if configured, preventing unique retained smoke installations.
 
+### Local staging smoke
+
+Repository CI never deploys or receives AWS credentials. After deliberately
+deploying the declared persistent staging target from a workstation, run
+`make smoke-staging` with `SST_STAGE`, `SST_OUTPUT_PATH`, and a locally
+acquired `STAGING_SMOKE_ACCESS_TOKEN` in the local environment. The helper reads the deployed API and direct Cognito client from
+structured SST output, rejects production stage names, and checks public
+health, anonymous Gateway `401`, and authenticated read-only access. It does
+not print credentials, tokens, or authorization headers.
+
+```sh
+SST_STAGE=staging \
+SST_OUTPUT_PATH=infra/.sst/outputs.json \
+STAGING_SMOKE_ACCESS_TOKEN=<access-token-after-mfa> \
+make smoke-staging
+```
+
+To set the token without copying it from Bruno, export local direct-client
+credentials and the current TOTP code, then evaluate the helper output. The
+token is emitted only to the calling shell's `eval` and is not written to a
+file:
+
+```sh
+eval "$(node scripts/cognito-access-token.mjs)"
+```
+
+The helper requires local `COGNITO_REGION`, `COGNITO_CLIENT_ID`,
+`COGNITO_USERNAME`, `COGNITO_PASSWORD`, and, when Cognito requests it,
+`COGNITO_MFA_CODE` environment variables.
+
+SST `4.14.1` writes `infra/.sst/outputs.json` after a persistent deploy; the
+lifecycle verifier reads it directly. Point the smoke helper at that file:
+
+```sh
+AWS_PROFILE=bolt-monitor SST_STAGE=staging \
+  SST_TARGET_CONFIG="$HOME/.config/bolt-monitor/deployment-target.json" \
+  SST_LIFECYCLE_ACTION=deploy node scripts/sst-lifecycle.mjs
+```
+
+The deploy prints the path; pass it through unchanged:
+
+```sh
+SST_STAGE=staging \
+SST_OUTPUT_PATH=infra/.sst/outputs.json \
+STAGING_SMOKE_ACCESS_TOKEN=<token> \
+make smoke-staging
+```
+
+Then point the helper at that file:
+
+```sh
+SST_STAGE=staging \
+SST_OUTPUT_PATH=infra/.sst/outputs.json \
+STAGING_SMOKE_ACCESS_TOKEN=<token> \
+make smoke-staging
+```
+
 ## Authentication Cutover Gate
 
 Before protected-route cutover, run

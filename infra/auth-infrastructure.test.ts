@@ -96,6 +96,7 @@ test('auth configuration and permissions are scoped to monitor API and dashboard
 
   assert.match(outputs, /authTableName: authTable\.name/)
   assert.match(outputs, /operatorUserPoolId: operatorUserPool\.id/)
+  assert.match(outputs, /directOperatorUserPoolClientId: directOperatorUserPoolClient\.id/)
   assert.match(outputs, /authEncryptionKeyParameterName: authEncryptionKey\.name/)
   assert.match(
     outputs,
@@ -106,7 +107,7 @@ test('auth configuration and permissions are scoped to monitor API and dashboard
     /logicalName: 'OperatorUserPool', id: operatorUserPool\.id, arn: operatorUserPool\.arn/
   )
   assert.match(outputs, /logicalName: 'AuthEncryptionKey', name: authEncryptionKey\.name/)
-  assert.doesNotMatch(outputs, /dashboardUserPoolClientId|directOperatorUserPoolClientId/)
+  assert.doesNotMatch(outputs, /dashboardUserPoolClientId/)
 })
 
 test('Gateway rejects protected-route requests before Lambda and keeps health public', () => {

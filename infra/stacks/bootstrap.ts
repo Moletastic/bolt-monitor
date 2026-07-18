@@ -429,6 +429,7 @@ export function createBootstrapStack(target: DeploymentTarget) {
     appTableName: table.name,
     authTableName: authTable.name,
     operatorUserPoolId: operatorUserPool.id,
+    directOperatorUserPoolClientId: directOperatorUserPoolClient.id,
     authEncryptionKeyParameterName: authEncryptionKey.name,
     bootstrapBucket: bootstrapBucket.name,
     notificationQueueUrl: notificationQueue.url,
