@@ -51,7 +51,10 @@ jobs:
           cache-dependency-path: apps/dashboard/pnpm-lock.yaml
 
       - name: Enable pnpm
-        run: corepack enable
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          echo "$(dirname "$(command -v corepack)")" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         run: pnpm --dir apps/dashboard install --frozen-lockfile --reporter=silent
@@ -74,7 +77,10 @@ jobs:
           cache-dependency-path: infra/pnpm-lock.yaml
 
       - name: Enable pnpm
-        run: corepack enable
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          echo "$(dirname "$(command -v corepack)")" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         run: pnpm --dir infra install --frozen-lockfile --reporter=silent
