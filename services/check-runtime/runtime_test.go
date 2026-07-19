@@ -128,6 +128,10 @@ func (r *fakeRuntimeRepository) RemoveDispatchPending(context.Context, string, s
 	return nil
 }
 
+func (r *fakeRuntimeRepository) LoadTransitionOutbox(context.Context, string, string) (dynamodbrecord.TransitionOutboxRecord, bool, error) {
+	return dynamodbrecord.TransitionOutboxRecord{}, false, nil
+}
+
 func (r *fakeRuntimeRepository) ClaimExecutionWork(_ context.Context, work checkexecution.ExecutionWork, now time.Time) (checkexecution.ExecutionWork, bool, error) {
 	if r.claims[work.RunID] {
 		return work, false, nil
