@@ -85,8 +85,8 @@ func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
 	if client.transactInput == nil {
 		t.Fatal("transact input not captured")
 	}
-	if len(client.transactInput.TransactItems) != 3 {
-		t.Fatalf("transact items = %d, want 3", len(client.transactInput.TransactItems))
+	if len(client.transactInput.TransactItems) != 4 {
+		t.Fatalf("transact items = %d, want 4", len(client.transactInput.TransactItems))
 	}
 	if got := sharedaws.ToString(client.transactInput.TransactItems[0].Update.TableName); got != "table-name" {
 		t.Fatalf("table name = %q, want table-name", got)
