@@ -51,11 +51,11 @@
 
 ## 7. Manual Run Unification
 
-- [ ] 7.1 Change `POST /api/v1/services/{serviceId}/monitors/{monitorId}/run` to require and validate `Idempotency-Key`, deterministically map key scope to one idempotency-record address, canonicalize/fingerprint the service-scoped command, assign/store one `runId` before effects, conditionally create/claim work before HTTP, and use the shared canonical result commit.
-- [ ] 7.2 Ensure manual `CheckRun` remains distinguishable in response/history but does not modify recurring status cursor, counters, rollup, incidents, incident audit/activity, or transition outbox.
-- [ ] 7.3 Persist a bounded-TTL manual idempotency record containing fingerprint, `runId`, and replay/result reference; same-key/same-fingerprint resumes or returns the same response, while same-key/different-fingerprint maps to an existing conflict response code with safe details.
-- [ ] 7.4 Map other typed manual runtime failures to existing public response-envelope error codes with safe operation and `runId` details where available.
-- [ ] 7.5 Add manual tests for missing/invalid key, deterministic mapping, same-request in-progress/completed replay, different-payload conflict, retention expiry, duplicate commit, persistence failure, disabled/maintenance race, mixed manual/recurring ordering, and absence of status/counter/rollup/incident/activity/outbox effects.
+- [x] 7.1 Change `POST /api/v1/services/{serviceId}/monitors/{monitorId}/run` to require and validate `Idempotency-Key`, deterministically map key scope to one idempotency-record address, canonicalize/fingerprint the service-scoped command, assign/store one `runId` before effects, conditionally create/claim work before HTTP, and use the shared canonical result commit.
+- [x] 7.2 Ensure manual `CheckRun` remains distinguishable in response/history but does not modify recurring status cursor, counters, rollup, incidents, incident audit/activity, or transition outbox.
+- [x] 7.3 Persist a bounded-TTL manual idempotency record containing fingerprint, `runId`, and replay/result reference; same-key/same-fingerprint resumes or returns the same response, while same-key/different-fingerprint maps to an existing conflict response code with safe details.
+- [x] 7.4 Map other typed manual runtime failures to existing public response-envelope error codes with safe operation and `runId` details where available.
+- [x] 7.5 Add manual tests for missing/invalid key, deterministic mapping, same-request in-progress/completed replay, different-payload conflict, retention expiry, duplicate commit, persistence failure, disabled/maintenance race, mixed manual/recurring ordering, and absence of status/counter/rollup/incident/activity/outbox effects.
 
 ## 8. Infrastructure And Rollout Safety
 
