@@ -17,6 +17,7 @@ const (
 	EntityMonitorStatus       = "MonitorStatus"
 	EntityCheckRun            = "CheckRun"
 	EntityCheckRunIdentity    = "CheckRunIdentity"
+	EntityTransitionOutbox    = "TransitionOutbox"
 	EntityAlertState          = "AlertState"
 	EntityIncident            = "Incident"
 	EntityAuditEvent          = "AuditEvent"
@@ -116,6 +117,10 @@ func CheckRunItem(tenantID, serviceID, monitorID, startedAt, runID string, ttl i
 
 func CheckRunIdentityItem(tenantID, serviceID, monitorID, runID string, ttl int64) Item {
 	return Item{PK: MonitorPK(tenantID, serviceID, monitorID), SK: "RUN_ID#" + normalizeToken(runID), EntityType: EntityCheckRunIdentity, TenantID: normalizeField(tenantID), ServiceID: normalizeField(serviceID), MonitorID: normalizeField(monitorID), RunID: normalizeField(runID), TTL: ttl}
+}
+
+func TransitionOutboxItem(tenantID, eventID string) Item {
+	return Item{PK: TenantPK(tenantID), SK: "TRANSITION_OUTBOX#" + normalizeToken(eventID), EntityType: EntityTransitionOutbox, TenantID: normalizeField(tenantID), RunID: normalizeField(eventID)}
 }
 
 func AlertStateItem(tenantID, serviceID, monitorID string) Item {
