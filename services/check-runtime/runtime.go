@@ -237,7 +237,7 @@ func buildExecutionRequest(monitor monitorconfig.Monitor, work checkexecution.Ex
 	if !monitor.Enabled {
 		return checkexecution.ExecutionRequest{}, "monitor disabled", nil
 	}
-	return checkexecution.ExecutionRequest{Monitor: monitor, RunID: work.RunID, Trigger: work.Trigger}, "", nil
+	return checkexecution.ExecutionRequest{Monitor: monitor, RunID: work.RunID, Trigger: work.Trigger, AcceptedAt: work.AcceptedAt, ScheduleDefinitionVersion: work.ScheduleDefinitionVersion, ScheduledFor: work.ScheduledFor}, "", nil
 }
 
 func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEvent) (runtimeSummary, error) {

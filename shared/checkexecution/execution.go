@@ -142,6 +142,9 @@ func ExecuteHTTP(ctx context.Context, executor HTTPExecutor, request ExecutionRe
 		RunID:     request.RunID,
 		Type:      string(request.Monitor.Type),
 		Trigger:   request.Trigger,
+		AcceptedAt: request.AcceptedAt,
+		ScheduleDefinitionVersion: request.ScheduleDefinitionVersion,
+		ScheduledFor: request.ScheduledFor,
 		StartedAt: startedAt,
 	}
 
