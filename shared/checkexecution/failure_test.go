@@ -24,6 +24,12 @@ func TestRuntimeFailureCarriesSafeIdentity(t *testing.T) {
 	}
 }
 
+func TestTransitionIDIsStableForRunID(t *testing.T) {
+	if TransitionID("run_1") != TransitionID(" RUN_1 ") || TransitionID("RUN_1") == TransitionID("RUN_2") {
+		t.Fatal("transition ID is not stable and distinct")
+	}
+}
+
 func TestScheduleIdentityUsesCurrentDefinitionAndBoundary(t *testing.T) {
 	monitor := validExecutionMonitor()
 	first := ScheduleDefinitionVersion(monitor)
