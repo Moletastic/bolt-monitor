@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -224,7 +224,23 @@ func executionRecoveryBucket(work checkexecution.ExecutionWork) (string, string)
 		acceptedAt = work.RequestedAt
 	}
 	sum := sha256.Sum256([]byte(work.RunID))
-	return acceptedAt.UTC().Format("2006010215"), fmt.Sprintf("%02x", sum[0]%16)
+	return acceptedAt.UTC().Format("2006010215"), shardHex(sum, 16)
+}
+
+func dispatchPendingBucket(work checkexecution.ExecutionWork) (string, string) {
+	acceptedAt := work.AcceptedAt
+	if acceptedAt.IsZero() {
+		acceptedAt = work.RequestedAt
+	}
+	sum := sha256.Sum256([]byte(work.RunID))
+	return acceptedAt.UTC().Format(dynamodbrecord.DispatchPendingBucketFormat), shardHex(sum, dispatchPendingShards)
+}
+
+func shardHex(sum [32]byte, shards int) string {
+	if shards <= 0 {
+		shards = 1
+	}
+	return fmt.Sprintf("%02x", sum[0]%byte(shards))
 }
 
 func (r *dynamoRuntimeRepository) listExecutionMarkers(ctx context.Context, tenantID, kind, bucket, shard string, limit int32, cursor map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error) {
@@ -297,8 +313,9 @@ func (r *dynamoRuntimeRepository) RemoveDispatchPending(ctx context.Context, ten
 	}
 	pk := fmt.Sprintf("DISPATCH_PENDING#%s#%s#%s", dynamodbschema.NormalizeToken(tenantID), dynamodbschema.NormalizeToken(bucket), dynamodbschema.NormalizeToken(shard))
 	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{
-		TableName: sharedaws.String(r.tableName),
-		Key:      sharedaws.NewPrimaryKey(pk, dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
+		TableName:           sharedaws.String(r.tableName),
+		Key:                 sharedaws.NewPrimaryKey(pk, dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
+		ConditionExpression: sharedaws.String("attribute_exists(PK)"),
 	})
 	return err
 }
@@ -326,11 +343,11 @@ func (r *dynamoRuntimeRepository) AcknowledgeExecutionPublication(ctx context.Co
 	_, err := r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: []sharedaws.TransactWriteItem{
 		{Update: &sharedaws.Update{
 			TableName: sharedaws.String(r.tableName), Key: workKey,
-			UpdateExpression: sharedaws.String("SET PublicationState = :acknowledged"),
+			UpdateExpression:    sharedaws.String("SET PublicationState = :acknowledged"),
 			ConditionExpression: sharedaws.String("PublicationState = :pending"),
 			ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
 				":acknowledged": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.PublicationAcknowledged)},
-				":pending": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.PublicationPending)},
+				":pending":      &sharedaws.AttributeValueMemberS{Value: string(checkexecution.PublicationPending)},
 			},
 		}},
 		{Delete: &sharedaws.Delete{TableName: sharedaws.String(r.tableName), Key: markerKey}},
@@ -423,18 +440,18 @@ func (r *dynamoRuntimeRepository) ClaimExecutionWork(ctx context.Context, work c
 	key := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
 	out, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
 		TableName: sharedaws.String(r.tableName), Key: key,
-		UpdateExpression: sharedaws.String("SET #status = :inProgress, StartedAt = :startedAt, LeaseUntil = :leaseUntil, FencingToken = :token, AttemptCount = if_not_exists(AttemptCount, :zero) + :one"),
-		ConditionExpression: sharedaws.String("#status = :pending OR (#status = :inProgress AND LeaseUntil < :now)"),
+		UpdateExpression:         sharedaws.String("SET #status = :inProgress, StartedAt = :startedAt, LeaseUntil = :leaseUntil, FencingToken = :token, AttemptCount = if_not_exists(AttemptCount, :zero) + :one"),
+		ConditionExpression:      sharedaws.String("#status = :pending OR (#status = :inProgress AND LeaseUntil < :now)"),
 		ExpressionAttributeNames: map[string]string{"#status": "Status"},
 		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pending": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkPending)},
+			":pending":    &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkPending)},
 			":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
-			":startedAt": &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
+			":startedAt":  &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
 			":leaseUntil": &sharedaws.AttributeValueMemberS{Value: leaseUntil.Format(time.RFC3339)},
-			":token": &sharedaws.AttributeValueMemberS{Value: token},
-			":now": &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
-			":zero": &sharedaws.AttributeValueMemberN{Value: "0"},
-			":one": &sharedaws.AttributeValueMemberN{Value: "1"},
+			":token":      &sharedaws.AttributeValueMemberS{Value: token},
+			":now":        &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
+			":zero":       &sharedaws.AttributeValueMemberN{Value: "0"},
+			":one":        &sharedaws.AttributeValueMemberN{Value: "1"},
 		},
 		ReturnValues: "ALL_NEW",
 	})
@@ -498,17 +515,17 @@ func (r *dynamoRuntimeRepository) MarkExecutionWorkSkipped(ctx context.Context, 
 	recoveryMarker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerRecovery, bucket, shard)
 	_, err := r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: []sharedaws.TransactWriteItem{
 		{Update: &sharedaws.Update{
-			TableName: sharedaws.String(r.tableName),
-			Key: sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap(),
-			UpdateExpression: sharedaws.String("SET #status = :skipped, CompletedAt = :completedAt, TerminalReason = :reason"),
-			ConditionExpression: sharedaws.String("#status = :inProgress AND FencingToken = :token"),
+			TableName:                sharedaws.String(r.tableName),
+			Key:                      sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap(),
+			UpdateExpression:         sharedaws.String("SET #status = :skipped, CompletedAt = :completedAt, TerminalReason = :reason"),
+			ConditionExpression:      sharedaws.String("#status = :inProgress AND FencingToken = :token"),
 			ExpressionAttributeNames: map[string]string{"#status": "Status"},
 			ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-				":skipped": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkSkipped)},
-				":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
+				":skipped":     &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkSkipped)},
+				":inProgress":  &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
 				":completedAt": &sharedaws.AttributeValueMemberS{Value: completedAt.Format(time.RFC3339)},
-				":reason": &sharedaws.AttributeValueMemberS{Value: reason},
-				":token": &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
+				":reason":      &sharedaws.AttributeValueMemberS{Value: reason},
+				":token":       &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
 			},
 		}},
 		{Delete: &sharedaws.Delete{
@@ -579,7 +596,7 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 			transition = eventID
 			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, result.ServiceID, result.MonitorID, eventID, work.RunID, incidentID, transitionType, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
 			records = append(records, outbox)
-			bucket, shard := executionRecoveryBucket(work)
+			bucket, shard := dispatchPendingBucket(work)
 			pending := dynamodbrecord.NewDispatchPendingRecord(result.TenantID, eventID, bucket, shard)
 			records = append(records, pending)
 		}
@@ -602,22 +619,22 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	workKey := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
 	completion := sharedaws.TransactWriteItem{Update: &sharedaws.Update{
 		TableName: sharedaws.String(r.tableName), Key: workKey,
-		UpdateExpression: sharedaws.String("SET #status = :completed, CompletedAt = :completedAt, LastError = :lastError"),
-		ConditionExpression: sharedaws.String("#status = :inProgress AND FencingToken = :token"),
+		UpdateExpression:         sharedaws.String("SET #status = :completed, CompletedAt = :completedAt, LastError = :lastError"),
+		ConditionExpression:      sharedaws.String("#status = :inProgress AND FencingToken = :token"),
 		ExpressionAttributeNames: map[string]string{"#status": "Status"},
 		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":completed": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkCompleted)},
-			":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
+			":completed":   &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkCompleted)},
+			":inProgress":  &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
 			":completedAt": &sharedaws.AttributeValueMemberS{Value: completedAt.Format(time.RFC3339)},
-			":lastError": &sharedaws.AttributeValueMemberS{Value: result.Error},
-			":token": &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
+			":lastError":   &sharedaws.AttributeValueMemberS{Value: result.Error},
+			":token":       &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
 		},
 	}}
 	bucket, shard := executionRecoveryBucket(work)
 	recoveryMarker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerRecovery, bucket, shard)
 	markerDelete := sharedaws.TransactWriteItem{Delete: &sharedaws.Delete{
 		TableName: sharedaws.String(r.tableName),
-		Key: sharedaws.NewPrimaryKey(recoveryMarker.PK, recoveryMarker.SK).AttributeMap(),
+		Key:       sharedaws.NewPrimaryKey(recoveryMarker.PK, recoveryMarker.SK).AttributeMap(),
 	}}
 	items = append([]sharedaws.TransactWriteItem{completion, runIdentity}, items...)
 	items = append(items, markerDelete)

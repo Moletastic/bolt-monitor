@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +71,23 @@ func (f *fakeDynamoClient) DeleteItem(context.Context, *sharedaws.DynamoDBDelete
 
 func (f *fakeDynamoClient) Scan(context.Context, *sharedaws.DynamoDBScanInput) (*sharedaws.DynamoDBScanOutput, error) {
 	return &sharedaws.DynamoDBScanOutput{}, nil
+}
+
+func TestDispatchPendingBucketShardsByShardCount(t *testing.T) {
+	work := checkexecution.ExecutionWork{RunID: "RUN_BUCKET", AcceptedAt: time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)}
+	bucket, shard := dispatchPendingBucket(work)
+	if !strings.HasPrefix(bucket, "2026071912") {
+		t.Fatalf("bucket = %q", bucket)
+	}
+	found := false
+	for i := 0; i < dispatchPendingShards; i++ {
+		if shard == fmt.Sprintf("%02x", i) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("shard = %q not in 0..%d", shard, dispatchPendingShards)
+	}
 }
 
 func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
