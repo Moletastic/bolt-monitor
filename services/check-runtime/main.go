@@ -45,8 +45,8 @@ func main() {
 			return handler.handle(ctx, event)
 		})
 	case modeWorker:
-		lambda.Start(func(ctx context.Context, event events.SQSEvent) (runtimeSummary, error) {
-			return handler.handleSQSEvent(ctx, event)
+		lambda.Start(func(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
+			return handler.handleSQSEventBatch(ctx, event)
 		})
 	default:
 		log.Fatalf("unsupported runtime mode %q", os.Getenv("RUNTIME_MODE"))
