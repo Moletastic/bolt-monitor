@@ -715,7 +715,15 @@ func (r *dynamoRuntimeRepository) getMonitorStatus(ctx context.Context, tenantID
 	if err != nil {
 		return resultstatus.MonitorStatus{}, false, err
 	}
-	return resultstatus.MonitorStatus{ServiceID: record.ServiceID, MonitorID: record.MonitorID, TenantID: record.TenantID, CurrentStatus: record.CurrentStatus, ConsecutiveFailures: record.ConsecutiveFailures, ConsecutiveSuccesses: record.ConsecutiveSuccesses, LastCheckedAt: lastCheckedAt, LastDurationMs: record.LastDurationMs, LastError: record.LastError, LastFailureCode: record.LastFailureCode, LastOutcome: checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, "unknown")))}, true, nil
+	status := resultstatus.MonitorStatus{ServiceID: record.ServiceID, MonitorID: record.MonitorID, TenantID: record.TenantID, CurrentStatus: record.CurrentStatus, ConsecutiveFailures: record.ConsecutiveFailures, ConsecutiveSuccesses: record.ConsecutiveSuccesses, LastCheckedAt: lastCheckedAt, LastDurationMs: record.LastDurationMs, LastError: record.LastError, LastFailureCode: record.LastFailureCode, LastOutcome: checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, "unknown"))), RecurringRunID: strings.TrimSpace(record.RecurringRunID)}
+	if strings.TrimSpace(record.RecurringScheduledFor) != "" {
+		scheduledFor, err := time.Parse(time.RFC3339, record.RecurringScheduledFor)
+		if err != nil {
+			return resultstatus.MonitorStatus{}, false, err
+		}
+		status.RecurringScheduledFor = &scheduledFor
+	}
+	return status, true, nil
 }
 
 func (r *dynamoRuntimeRepository) GetMonitorStatus(ctx context.Context, tenantID, serviceID, monitorID string) (resultstatus.MonitorStatus, bool, error) {
