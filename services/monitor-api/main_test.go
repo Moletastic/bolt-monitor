@@ -31,6 +31,8 @@ type fakeMonitorRepositoryState struct {
 	monitors         map[string]monitorconfig.Monitor
 	statuses         map[string]resultstatus.MonitorStatus
 	runs             map[string][]resultstatus.CheckRun
+	results          map[string][]checkexecution.ExecutionResult
+	idempotency      map[string]manualIdempotencyRecord
 	manual           map[string]manualRunRequestRecord
 	policies         map[string]escalation.EscalationPolicy
 	channels         map[string]escalation.NotificationChannel
@@ -466,6 +468,35 @@ func (r *fakeMonitorRepositoryState) CreateManualRun(_ context.Context, monitor 
 }
 
 func (r *fakeMonitorRepositoryState) RecordExecutionResult(_ context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error {
+	if r.results == nil {
+		r.results = map[string][]checkexecution.ExecutionResult{}
+	}
+	r.results[monitor.ServiceID+"/"+monitor.MonitorID] = append(r.results[monitor.ServiceID+"/"+monitor.MonitorID], result)
+	return nil
+}
+
+func (r *fakeMonitorRepositoryState) ReserveManualIdempotency(_ context.Context, record manualIdempotencyRecord) (manualIdempotencyRecord, error) {
+	if r.idempotency == nil {
+		r.idempotency = map[string]manualIdempotencyRecord{}
+	}
+	address := manualIdempotencyAddress(record.TenantID, record.ServiceID, record.MonitorID, record.Key)
+	if existing, ok := r.idempotency[address]; ok {
+		return existing, nil
+	}
+	r.idempotency[address] = record
+	return record, nil
+}
+
+func (r *fakeMonitorRepositoryState) LoadManualIdempotency(_ context.Context, tenantID, serviceID, monitorID, key string) (manualIdempotencyRecord, bool, error) {
+	if r.idempotency == nil {
+		return manualIdempotencyRecord{}, false, nil
+	}
+	address := manualIdempotencyAddress(tenantID, serviceID, monitorID, key)
+	record, ok := r.idempotency[address]
+	return record, ok, nil
+}
+
+func (r *fakeMonitorRepositoryState) RecordExecutionResultLegacy(_ context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error {
 	key := monitorKey(monitor.ServiceID, monitor.MonitorID)
 	status := resultstatus.NewMonitorStatus(result)
 	r.statuses[key] = status
@@ -1469,7 +1500,7 @@ func TestManualRunRecordsUnsafeStoredTargetWithoutDialing(t *testing.T) {
 	handler.executor = &outboundhttp.Executor{Dialer: dialer}
 	handler.now = func() time.Time { return time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC) }
 
-	response, err := handler.runMonitor(context.Background(), "auth", "public-http")
+	response, err := handler.runMonitor(context.Background(), "auth", "public-http", events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "idempotent-key-12345"}})
 	if err != nil {
 		t.Fatalf("runMonitor returned error: %v", err)
 	}
@@ -1480,8 +1511,8 @@ func TestManualRunRecordsUnsafeStoredTargetWithoutDialing(t *testing.T) {
 		t.Fatalf("unsafe manual target dialed %d times", dialer.calls)
 	}
 	status := repo.statuses[monitorKey("auth", "public-http")]
-	if status.LastFailureCode != string(outboundhttp.KindAddressBlocked) {
-		t.Fatalf("recorded status = %#v", status)
+	if status.LastFailureCode != "" {
+		t.Fatalf("manual run unexpectedly mutated recurring status: %#v", status)
 	}
 }
 
@@ -1498,7 +1529,7 @@ func TestManualRunExecutesSafePublicTargetWithFakeExecutor(t *testing.T) {
 	handler.tenantID = defaultTenantID
 	handler.executor = executor
 
-	response, err := handler.runMonitor(context.Background(), "auth", "public-http")
+	response, err := handler.runMonitor(context.Background(), "auth", "public-http", events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "idempotent-key-67890"}})
 	if err != nil {
 		t.Fatalf("runMonitor returned error: %v", err)
 	}

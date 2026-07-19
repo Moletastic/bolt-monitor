@@ -83,6 +83,38 @@ func (r *dynamoEscalationRepository) GetChannel(ctx context.Context, tenantID, c
 	return &channel, nil
 }
 
+func (r *dynamoEscalationRepository) LoadTransitionOutbox(ctx context.Context, tenantID, eventID string) (*dynamodbrecord.TransitionOutboxRecord, error) {
+	item, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{
+		TableName: sharedaws.String(r.tableName),
+		Key:      sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "TRANSITION_OUTBOX#"+dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
+	})
+	if err != nil || len(item.Item) == 0 {
+		return nil, err
+	}
+	var record dynamodbrecord.TransitionOutboxRecord
+	if err := sharedaws.UnmarshalMap(item.Item, &record); err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func (r *dynamoEscalationRepository) AcknowledgeDispatch(ctx context.Context, tenantID, eventID string) error {
+	_, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
+		TableName: sharedaws.String(r.tableName),
+		Key:      sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "TRANSITION_OUTBOX#"+dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
+		UpdateExpression: sharedaws.String("SET DispatchStatus = :acknowledged"),
+		ConditionExpression: sharedaws.String("DispatchStatus = :pending"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":pending":     &sharedaws.AttributeValueMemberS{Value: dynamodbrecord.DispatchPending},
+			":acknowledged": &sharedaws.AttributeValueMemberS{Value: "acknowledged"},
+		},
+	})
+	if sharedaws.IsConditionalCheckFailure(err) {
+		return nil
+	}
+	return err
+}
+
 func (r *dynamoEscalationRepository) PutEscalationState(ctx context.Context, state escalation.EscalationState) error {
 	record := dynamodbrecord.NewEscalationStateItemRecord(state)
 	item, err := sharedaws.MarshalMap(record)

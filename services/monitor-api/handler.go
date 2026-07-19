@@ -52,6 +52,8 @@ type monitorRepository interface {
 	GetServiceCardMetrics(context.Context, string, string) (serviceCardMetricsResponse, error)
 	CreateManualRun(context.Context, monitorconfig.Monitor, time.Time) (manualRunRequestRecord, error)
 	RecordExecutionResult(ctx context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error
+	ReserveManualIdempotency(context.Context, manualIdempotencyRecord) (manualIdempotencyRecord, error)
+	LoadManualIdempotency(context.Context, string, string, string, string) (manualIdempotencyRecord, bool, error)
 	ListIncidents(context.Context, string, string) ([]dynamodbrecord.IncidentRecord, error)
 	GetIncident(context.Context, string, string) (dynamodbrecord.IncidentRecord, bool, error)
 	ListIncidentActivities(context.Context, string, string) ([]dynamodbrecord.IncidentActivityRecord, error)
@@ -226,7 +228,7 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	case method == http.MethodGet && strings.HasSuffix(path, "/runs") && serviceID != "" && monitorID != "":
 		return h.getMonitorRuns(ctx, serviceID, monitorID, request)
 	case method == http.MethodPost && strings.HasSuffix(path, "/run") && serviceID != "" && monitorID != "":
-		return h.runMonitor(ctx, serviceID, monitorID)
+		return h.runMonitor(ctx, serviceID, monitorID, request)
 	case method == http.MethodGet && strings.HasSuffix(path, "/incidents") && serviceID != "" && monitorID == "":
 		return h.getServiceIncidents(ctx, serviceID, request)
 	case method == http.MethodGet && strings.HasSuffix(path, "/incidents") && serviceID != "" && monitorID != "":
@@ -647,7 +649,24 @@ func (h monitorHandler) getMonitorRuns(ctx context.Context, serviceID, monitorID
 	return envelopeResponse(http.StatusOK, response.OkCursorPaginated(payload, len(payload.Runs), nextCursor))
 }
 
-func (h monitorHandler) runMonitor(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
+func (h monitorHandler) runMonitor(ctx context.Context, serviceID, monitorID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	idempotencyKey, err := parseIdempotencyKey(requestHeader(request.Headers, "Idempotency-Key"))
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	fingerprint := manualRequestFingerprint(h.tenantID, serviceID, monitorID, idempotencyKey)
+	now := h.now()
+	reserved := newManualIdempotencyRecord(h.tenantID, serviceID, monitorID, idempotencyKey, fingerprint, newRunID(now), now, manualIdempotencyRetentionSeconds)
+	existing, err := h.repo.ReserveManualIdempotency(ctx, reserved)
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	if existing.Fingerprint != fingerprint {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "idempotencyKey", "reason": "idempotency key reused with different request"}))
+	}
+	if existing.RunID != reserved.RunID {
+		return envelopeResponse(http.StatusOK, response.Ok(manualRunResponseFromRecord(existing)))
+	}
 	monitor, found, err := h.repo.GetMonitor(ctx, h.tenantID, serviceID, monitorID)
 	if err != nil {
 		return respondAPIGateway(err)
@@ -658,19 +677,17 @@ func (h monitorHandler) runMonitor(ctx context.Context, serviceID, monitorID str
 	if !monitor.Enabled {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorDisabled, nil))
 	}
-	now := h.now()
-	runID := newRunID(now)
-	request := checkexecution.ExecutionRequest{
+	exec := checkexecution.ExecutionRequest{
 		Monitor: monitor,
-		RunID:   runID,
+		RunID:   reserved.RunID,
 		Trigger: checkexecution.TriggerTypeManual,
 	}
-	result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
-	if err := h.repo.RecordExecutionResult(ctx, monitor, runID, result); err != nil {
+	result := checkexecution.ExecuteHTTP(ctx, h.executor, exec)
+	if err := h.repo.RecordExecutionResult(ctx, monitor, reserved.RunID, result); err != nil {
 		return respondAPIGateway(err)
 	}
 	runRecord := manualRunRequestRecord{
-		RunID:      runID,
+		RunID:      reserved.RunID,
 		ServiceID:  monitor.ServiceID,
 		MonitorID:  monitor.MonitorID,
 		TenantID:   monitor.TenantID,

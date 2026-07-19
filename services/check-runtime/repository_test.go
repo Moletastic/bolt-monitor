@@ -2,25 +2,40 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/dynamodbrecord"
+	"bolt-monitor/shared/dynamodbschema"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/resultstatus"
 )
 
 type fakeDynamoClient struct {
-	transactInput *sharedaws.DynamoDBTransactWriteItemsInput
-	queryOutput   *sharedaws.DynamoDBQueryOutput
-	getItemOutput *sharedaws.DynamoDBGetItemOutput
+	transactInput    *sharedaws.DynamoDBTransactWriteItemsInput
+	queryOutput      *sharedaws.DynamoDBQueryOutput
+	getItemOutput    *sharedaws.DynamoDBGetItemOutput
+	transactErr      error
+	updateErr        error
+	updateOutputs    []*sharedaws.DynamoDBUpdateItemOutput
+	store            map[string]map[string]sharedaws.AttributeValue
+	updateItemInputs []*sharedaws.DynamoDBUpdateItemInput
 }
 
-func (f *fakeDynamoClient) GetItem(context.Context, *sharedaws.DynamoDBGetItemInput) (*sharedaws.DynamoDBGetItemOutput, error) {
+func (f *fakeDynamoClient) GetItem(_ context.Context, input *sharedaws.DynamoDBGetItemInput) (*sharedaws.DynamoDBGetItemOutput, error) {
 	if f.getItemOutput != nil {
 		return f.getItemOutput, nil
+	}
+	if f.store != nil {
+		pk, _ := input.Key["PK"].(*sharedaws.AttributeValueMemberS)
+		sk, _ := input.Key["SK"].(*sharedaws.AttributeValueMemberS)
+		if row, ok := f.store[pk.Value+"/"+sk.Value]; ok {
+			return &sharedaws.DynamoDBGetItemOutput{Item: row}, nil
+		}
 	}
 	return &sharedaws.DynamoDBGetItemOutput{}, nil
 }
@@ -34,6 +49,9 @@ func (f *fakeDynamoClient) Query(context.Context, *sharedaws.DynamoDBQueryInput)
 
 func (f *fakeDynamoClient) TransactWriteItems(_ context.Context, input *sharedaws.DynamoDBTransactWriteItemsInput) (*sharedaws.DynamoDBTransactWriteItemsOutput, error) {
 	f.transactInput = input
+	if f.transactErr != nil {
+		return nil, f.transactErr
+	}
 	return &sharedaws.DynamoDBTransactWriteItemsOutput{}, nil
 }
 
@@ -46,7 +64,7 @@ func TestEnqueueExecutionRequestsConditionallyCreatesWork(t *testing.T) {
 	repo := newDynamoRuntimeRepository(client, "table-name")
 	acceptedAt := time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC)
 	request := checkexecution.ExecutionRequest{Monitor: testMonitor("https://example.com", true), RunID: "RUN_1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: acceptedAt}
-	if err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
+	if _, err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
 		t.Fatalf("EnqueueExecutionRequests returned error: %v", err)
 	}
 	if client.transactInput == nil || len(client.transactInput.TransactItems) != 3 {
@@ -59,7 +77,18 @@ func TestEnqueueExecutionRequestsConditionallyCreatesWork(t *testing.T) {
 	}
 }
 
-func (f *fakeDynamoClient) UpdateItem(context.Context, *sharedaws.DynamoDBUpdateItemInput) (*sharedaws.DynamoDBUpdateItemOutput, error) {
+func (f *fakeDynamoClient) UpdateItem(_ context.Context, input *sharedaws.DynamoDBUpdateItemInput) (*sharedaws.DynamoDBUpdateItemOutput, error) {
+	f.updateItemInputs = append(f.updateItemInputs, input)
+	if f.updateErr != nil {
+		return nil, f.updateErr
+	}
+	if len(f.updateOutputs) > 0 {
+		out := f.updateOutputs[0]
+		if len(f.updateOutputs) > 1 {
+			f.updateOutputs = f.updateOutputs[1:]
+		}
+		return out, nil
+	}
 	return &sharedaws.DynamoDBUpdateItemOutput{}, nil
 }
 
@@ -69,6 +98,276 @@ func (f *fakeDynamoClient) DeleteItem(context.Context, *sharedaws.DynamoDBDelete
 
 func (f *fakeDynamoClient) Scan(context.Context, *sharedaws.DynamoDBScanInput) (*sharedaws.DynamoDBScanOutput, error) {
 	return &sharedaws.DynamoDBScanOutput{}, nil
+}
+
+func TestEnqueueExecutionRequestsIsNoOpWhenWorkAlreadyExists(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	existing := dynamodbrecord.ExecutionWorkItemRecordFromWork(checkexecution.ExecutionWork{
+		TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now,
+	})
+	item, err := sharedaws.MarshalMap(existing)
+	if err != nil {
+		t.Fatalf("MarshalMap: %v", err)
+	}
+	store := map[string]map[string]sharedaws.AttributeValue{
+		sharedaws.NewPrimaryKey("TENANT#DEFAULT", "RUN_REQUEST#RUN_1").PK + "/" + sharedaws.NewPrimaryKey("TENANT#DEFAULT", "RUN_REQUEST#RUN_1").SK: item,
+	}
+	client := &fakeDynamoClient{store: store, transactErr: sharedaws.NewConditionalCheckFailedError()}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	request := checkexecution.ExecutionRequest{Monitor: testMonitor("https://example.com", true), RunID: "RUN_1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now}
+	if _, err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, now); err != nil {
+		t.Fatalf("EnqueueExecutionRequests returned error: %v", err)
+	}
+}
+
+func TestEnqueueExecutionRequestsRejectsIdentityConflict(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	conflicting := dynamodbrecord.ExecutionWorkItemRecordFromWork(checkexecution.ExecutionWork{
+		TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now,
+	})
+	item, err := sharedaws.MarshalMap(conflicting)
+	if err != nil {
+		t.Fatalf("MarshalMap: %v", err)
+	}
+	store := map[string]map[string]sharedaws.AttributeValue{
+		sharedaws.NewPrimaryKey("TENANT#DEFAULT", "RUN_REQUEST#RUN_1").PK + "/" + sharedaws.NewPrimaryKey("TENANT#DEFAULT", "RUN_REQUEST#RUN_1").SK: item,
+	}
+	client := &fakeDynamoClient{store: store, transactErr: sharedaws.NewConditionalCheckFailedError()}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	request := checkexecution.ExecutionRequest{Monitor: testMonitor("https://example.com", true), RunID: "RUN_1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now}
+	if _, err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, now); err == nil || !strings.Contains(err.Error(), "immutable_identity_conflict") {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestClaimExecutionWorkReportsActiveLeaseConflict(t *testing.T) {
+	client := &fakeDynamoClient{updateErr: sharedaws.NewConditionalCheckFailedError()}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now}
+	if _, claimed, err := repo.ClaimExecutionWork(context.Background(), work, now); err != nil || claimed {
+		t.Fatalf("ClaimExecutionWork = (%v, %v)", err, claimed)
+	}
+}
+
+func TestMarkExecutionWorkSkippedDetectsLeaseLoss(t *testing.T) {
+	client := &fakeDynamoClient{transactErr: sharedaws.NewConditionalCheckFailedError()}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, RunID: "RUN_1", AcceptedAt: now, FencingToken: "TOKEN"}
+	err := repo.MarkExecutionWorkSkipped(context.Background(), work, now, "monitor disabled")
+	if err == nil || !strings.Contains(err.Error(), "lease_lost") {
+		t.Fatalf("expected lease lost, got %v", err)
+	}
+}
+
+func TestRecordExecutionResultDetectsDuplicate(t *testing.T) {
+	client := &fakeDynamoClient{transactErr: sharedaws.NewTransactionCanceledException([]string{"None", "ConditionalCheckFailed", "None"})}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	monitor := testMonitor("https://example.com", true)
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now, FencingToken: "TOKEN"}
+	result := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Outcome: checkexecution.OutcomeSuccess, FinishedAt: now}
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, result); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected duplicate, got %v", err)
+	}
+}
+
+func TestExecutionSafetyConfigAcceptsValidSettings(t *testing.T) {
+	t.Setenv("WORKER_LAMBDA_TIMEOUT_SECONDS", "45")
+	t.Setenv("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", "60")
+	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
+	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
+	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
+	if _, _, _, _, _, err := executionSafetyConfig(); err != nil {
+		t.Fatalf("executionSafetyConfig returned error: %v", err)
+	}
+}
+
+func TestExecutionSafetyConfigRejectsShortWorkerTimeout(t *testing.T) {
+	t.Setenv("WORKER_LAMBDA_TIMEOUT_SECONDS", "40")
+	t.Setenv("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", "60")
+	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
+	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
+	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
+	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+		t.Fatal("expected worker timeout violation")
+	}
+}
+
+func TestExecutionSafetyConfigRejectsShortLease(t *testing.T) {
+	t.Setenv("WORKER_LAMBDA_TIMEOUT_SECONDS", "45")
+	t.Setenv("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", "60")
+	t.Setenv("WORK_LEASE_DURATION_SECONDS", "30")
+	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
+	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
+	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+		t.Fatal("expected lease violation")
+	}
+}
+
+func TestExecutionSafetyConfigRejectsShortVisibility(t *testing.T) {
+	t.Setenv("WORKER_LAMBDA_TIMEOUT_SECONDS", "45")
+	t.Setenv("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", "45")
+	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
+	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
+	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
+	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+		t.Fatal("expected visibility violation")
+	}
+}
+
+func TestRecordExecutionResultSkipsOlderRecurringProjection(t *testing.T) {
+	cursor := time.Date(2026, 7, 19, 12, 5, 0, 0, time.UTC)
+	record := resultstatus.MonitorStatus{
+		TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http",
+		CurrentStatus: "DOWN", ConsecutiveFailures: 1, ConsecutiveSuccesses: 0,
+		LastCheckedAt: cursor, LastOutcome: checkexecution.OutcomeFailure,
+		RecurringScheduledFor: &cursor, RecurringRunID: "RUN_FUTURE",
+	}
+	statusItem, err := sharedaws.MarshalMap(record.ToRecord())
+	if err != nil {
+		t.Fatalf("MarshalMap: %v", err)
+	}
+	client := &fakeDynamoClient{getItemOutput: &sharedaws.DynamoDBGetItemOutput{Item: statusItem}}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, FailureThreshold: 1, RecoveryThreshold: 1}
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OLD", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: cursor.Add(-time.Minute), FencingToken: "TOKEN"}
+	older := cursor.Add(-time.Minute)
+	result := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OLD", Outcome: checkexecution.OutcomeSuccess, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &older, FinishedAt: older}
+
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, result); err != nil {
+		t.Fatalf("RecordExecutionResult returned error: %v", err)
+	}
+	if client.transactInput == nil {
+		t.Fatal("transaction not captured")
+	}
+	for i, item := range client.transactInput.TransactItems {
+		if item.Put != nil {
+			if entity, _ := item.Put.Item["EntityType"].(*sharedaws.AttributeValueMemberS); entity != nil && entity.Value == dynamodbschema.EntityMonitorStatus {
+				t.Fatalf("MonitorStatus projection should be skipped for older recurring key (index %d)", i)
+			}
+			if entity, _ := item.Put.Item["EntityType"].(*sharedaws.AttributeValueMemberS); entity != nil && entity.Value == dynamodbschema.EntityServiceStatus {
+				t.Fatalf("ServiceStatus projection should be skipped for older recurring key (index %d)", i)
+			}
+		}
+	}
+}
+
+func TestRecordExecutionResultWritesEqualTransitionAndOutboxIdentities(t *testing.T) {
+	client := &fakeDynamoClient{}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, FailureThreshold: 1, RecoveryThreshold: 1}
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_T1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: time.Now(), FencingToken: "TOKEN"}
+	scheduledFor := time.Now()
+	result := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_T1", Outcome: checkexecution.OutcomeFailure, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &scheduledFor, FinishedAt: time.Now()}
+
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, result); err != nil {
+		t.Fatalf("RecordExecutionResult returned error: %v", err)
+	}
+	if client.transactInput == nil {
+		t.Fatal("transaction not captured")
+	}
+	var outboxID, activityID string
+	for _, item := range client.transactInput.TransactItems {
+		if item.Put == nil {
+			continue
+		}
+		entity, _ := item.Put.Item["EntityType"].(*sharedaws.AttributeValueMemberS)
+		if entity == nil {
+			continue
+		}
+		switch entity.Value {
+		case dynamodbschema.EntityTransitionOutbox:
+			if v, _ := item.Put.Item["TransitionID"].(*sharedaws.AttributeValueMemberS); v != nil {
+				outboxID = v.Value
+			}
+		case dynamodbschema.EntityIncidentActivity:
+			if v, _ := item.Put.Item["ActivityID"].(*sharedaws.AttributeValueMemberS); v != nil {
+				activityID = v.Value
+			}
+		}
+	}
+	if outboxID == "" || activityID == "" || outboxID != activityID {
+		t.Fatalf("transition identity must match activity identity: outbox=%q activity=%q", outboxID, activityID)
+	}
+}
+
+func TestExecutionMaxConcurrencyAcceptsPositiveSetting(t *testing.T) {
+	t.Setenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY", "8")
+	if got := executionMaxConcurrency(); got != 8 {
+		t.Fatalf("executionMaxConcurrency = %d, want 8", got)
+	}
+}
+
+func TestExecutionMaxConcurrencyFallsBackToDefault(t *testing.T) {
+	t.Setenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY", "")
+	if got := executionMaxConcurrency(); got != defaultMaxConcurrency {
+		t.Fatalf("executionMaxConcurrency = %d, want %d", got, defaultMaxConcurrency)
+	}
+}
+
+func TestCanonicalInvariantsAcrossRecurringLifecycle(t *testing.T) {
+	client := &fakeDynamoClient{}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, FailureThreshold: 1, RecoveryThreshold: 1}
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	scheduled := now
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_INV", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now, ScheduleDefinitionVersion: "v1", ScheduledFor: &scheduled, FencingToken: "TOKEN"}
+	failure := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_INV", Outcome: checkexecution.OutcomeFailure, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &scheduled, FinishedAt: now}
+	success := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_INV", Outcome: checkexecution.OutcomeSuccess, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &scheduled, FinishedAt: now.Add(time.Minute)}
+
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, failure); err != nil {
+		t.Fatalf("first commit: %v", err)
+	}
+	recurrenceID := checkexecution.TransitionID(work.RunID)
+	var sawOutbox, sawActivity, sawRun bool
+	for _, item := range client.transactInput.TransactItems {
+		if item.Put == nil {
+			continue
+		}
+		entity, _ := item.Put.Item["EntityType"].(*sharedaws.AttributeValueMemberS)
+		if entity == nil {
+			continue
+		}
+		switch entity.Value {
+		case dynamodbschema.EntityTransitionOutbox:
+			if v, _ := item.Put.Item["TransitionID"].(*sharedaws.AttributeValueMemberS); v != nil && v.Value != recurrenceID {
+				t.Fatalf("transition identity drift: outbox=%q recurrence=%q", v.Value, recurrenceID)
+			}
+			sawOutbox = true
+		case dynamodbschema.EntityIncidentActivity:
+			if v, _ := item.Put.Item["ActivityID"].(*sharedaws.AttributeValueMemberS); v != nil && v.Value != recurrenceID {
+				t.Fatalf("activity identity drift: activity=%q recurrence=%q", v.Value, recurrenceID)
+			}
+			sawActivity = true
+		case dynamodbschema.EntityCheckRun:
+			sawRun = true
+		}
+	}
+	if !sawOutbox || !sawActivity || !sawRun {
+		t.Fatalf("expected one outbox+activity+run, got %v/%v/%v", sawOutbox, sawActivity, sawRun)
+	}
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, success); err != nil {
+		t.Fatalf("recovery commit: %v", err)
+	}
+}
+
+func TestDispatchPendingBucketShardsByShardCount(t *testing.T) {
+	work := checkexecution.ExecutionWork{RunID: "RUN_BUCKET", AcceptedAt: time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)}
+	bucket, shard := dispatchPendingBucket(work)
+	if !strings.HasPrefix(bucket, "2026071912") {
+		t.Fatalf("bucket = %q", bucket)
+	}
+	found := false
+	for i := 0; i < dispatchPendingShards; i++ {
+		if shard == fmt.Sprintf("%02x", i) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("shard = %q not in 0..%d", shard, dispatchPendingShards)
+	}
 }
 
 func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
@@ -93,6 +392,29 @@ func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
 	}
 	if sharedaws.ToString(client.transactInput.TransactItems[0].Update.ConditionExpression) != "#status = :inProgress AND FencingToken = :token" {
 		t.Fatalf("completion condition = %v", client.transactInput.TransactItems[0].Update.ConditionExpression)
+	}
+}
+
+func TestMarkExecutionWorkSkippedFencesAndRemovesRecoveryMarker(t *testing.T) {
+	client := &fakeDynamoClient{}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	work := checkexecution.ExecutionWork{
+		TenantID: defaultTenantID, RunID: "RUN_1", AcceptedAt: time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC),
+		Status: checkexecution.ExecutionWorkInProgress, FencingToken: "token",
+	}
+
+	if err := repo.MarkExecutionWorkSkipped(context.Background(), work, work.AcceptedAt, "monitor disabled"); err != nil {
+		t.Fatalf("MarkExecutionWorkSkipped returned error: %v", err)
+	}
+	if client.transactInput == nil || len(client.transactInput.TransactItems) != 2 {
+		t.Fatalf("transaction = %#v", client.transactInput)
+	}
+	update := client.transactInput.TransactItems[0].Update
+	if sharedaws.ToString(update.ConditionExpression) != "#status = :inProgress AND FencingToken = :token" {
+		t.Fatalf("skip condition = %v", update.ConditionExpression)
+	}
+	if client.transactInput.TransactItems[1].Delete == nil {
+		t.Fatal("recovery marker delete missing")
 	}
 }
 
