@@ -18,6 +18,7 @@ const (
 	EntityCheckRun            = "CheckRun"
 	EntityCheckRunIdentity    = "CheckRunIdentity"
 	EntityTransitionOutbox    = "TransitionOutbox"
+	EntityManualIdempotency   = "ManualIdempotency"
 	EntityAlertState          = "AlertState"
 	EntityIncident            = "Incident"
 	EntityAuditEvent          = "AuditEvent"
@@ -121,6 +122,10 @@ func CheckRunIdentityItem(tenantID, serviceID, monitorID, runID string, ttl int6
 
 func TransitionOutboxItem(tenantID, eventID string) Item {
 	return Item{PK: TenantPK(tenantID), SK: "TRANSITION_OUTBOX#" + normalizeToken(eventID), EntityType: EntityTransitionOutbox, TenantID: normalizeField(tenantID), RunID: normalizeField(eventID)}
+}
+
+func ManualIdempotencyItem(tenantID, address string, ttl int64) Item {
+	return Item{PK: TenantPK(tenantID), SK: normalizeToken(address), EntityType: EntityManualIdempotency, TenantID: normalizeField(tenantID), TTL: ttl}
 }
 
 func AlertStateItem(tenantID, serviceID, monitorID string) Item {
