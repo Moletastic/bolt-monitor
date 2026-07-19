@@ -455,6 +455,12 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 			}
 			records = append(records, serviceStatus)
 		}
+		if transition != "" {
+			eventID := checkexecution.TransitionID(work.RunID)
+			transition = eventID
+			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, eventID, work.RunID, incidentID, transition, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
+			records = append(records, outbox)
+		}
 	} else {
 		transition = ""
 		incidentID = ""
@@ -786,6 +792,13 @@ func marshalItems(tableName string, records ...any) ([]sharedaws.TransactWriteIt
 		items = append(items, sharedaws.TransactWriteItem{Put: &sharedaws.Put{TableName: sharedaws.String(tableName), Item: item}})
 	}
 	return items, nil
+}
+
+func formatScheduledFor(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 func deriveServiceRollup(lifecycle monitorconfig.ServiceLifecycle, monitors []monitorconfig.Monitor, statuses map[string]resultstatus.MonitorStatus) string {
