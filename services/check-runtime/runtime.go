@@ -212,18 +212,9 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			continue
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
-		transition, incidentID, err := h.repo.RecordExecutionResult(ctx, monitor, work, result)
+		_, _, err = h.repo.RecordExecutionResult(ctx, monitor, work, result)
 		if err != nil {
 			return summary, err
-		}
-		if transition != "" && h.escalationQueueURL != "" {
-			service, found, err := h.repo.GetService(ctx, h.tenantID, monitor.ServiceID)
-			if err == nil && found {
-				escalationMsg := buildEscalationMessage(transition, monitor, service, incidentID, result)
-				if escalationMsg != "" {
-					_ = h.sqsClient.SendMessage(ctx, h.escalationQueueURL, escalationMsg)
-				}
-			}
 		}
 		summary.Processed++
 	}
@@ -274,18 +265,9 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 			return summary, checkexecution.Skip("validate-monitor", work.RunID, skipReason)
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
-		transition, incidentID, err := h.repo.RecordExecutionResult(ctx, monitor, work, result)
+		_, _, err = h.repo.RecordExecutionResult(ctx, monitor, work, result)
 		if err != nil {
 			return summary, err
-		}
-		if transition != "" && h.escalationQueueURL != "" {
-			service, found, err := h.repo.GetService(ctx, h.tenantID, req.Monitor.ServiceID)
-			if err == nil && found {
-				escalationMsg := buildEscalationMessage(transition, req.Monitor, service, incidentID, result)
-				if escalationMsg != "" {
-					_ = h.sqsClient.SendMessage(ctx, h.escalationQueueURL, escalationMsg)
-				}
-			}
 		}
 		summary.Processed++
 	}
