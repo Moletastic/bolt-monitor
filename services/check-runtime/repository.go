@@ -234,6 +234,20 @@ func (r *dynamoRuntimeRepository) listExecutionMarkers(ctx context.Context, tena
 	return markers, page.NextKey, nil
 }
 
+func (r *dynamoRuntimeRepository) ListPublicationMarkers(ctx context.Context, tenantID, bucketShard string, limit int32, cursor map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error) {
+	bucketShard = strings.TrimSpace(bucketShard)
+	parts := strings.SplitN(bucketShard, "|", 2)
+	bucket := ""
+	shard := ""
+	if len(parts) > 0 {
+		bucket = parts[0]
+	}
+	if len(parts) > 1 {
+		shard = parts[1]
+	}
+	return r.listExecutionMarkers(ctx, tenantID, dynamodbrecord.ExecutionMarkerPublication, bucket, shard, limit, cursor)
+}
+
 func (r *dynamoRuntimeRepository) AcknowledgeExecutionPublication(ctx context.Context, work checkexecution.ExecutionWork) error {
 	bucket, shard := executionRecoveryBucket(work)
 	marker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerPublication, bucket, shard)

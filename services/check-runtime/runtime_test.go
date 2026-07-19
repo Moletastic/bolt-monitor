@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
+	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/outboundhttp"
 	"bolt-monitor/shared/resultstatus"
@@ -112,6 +114,10 @@ func (r *fakeRuntimeRepository) LoadExecutionWork(_ context.Context, tenantID, r
 
 func (r *fakeRuntimeRepository) ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error) {
 	return append([]checkexecution.ExecutionWork(nil), r.works...), nil
+}
+
+func (r *fakeRuntimeRepository) ListPublicationMarkers(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error) {
+	return nil, nil, nil
 }
 
 func (r *fakeRuntimeRepository) ClaimExecutionWork(_ context.Context, work checkexecution.ExecutionWork, now time.Time) (checkexecution.ExecutionWork, bool, error) {

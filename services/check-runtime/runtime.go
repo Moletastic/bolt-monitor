@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
+	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/outboundhttp"
 	"bolt-monitor/shared/resultstatus"
@@ -25,6 +27,7 @@ type runtimeRepository interface {
 	AcknowledgeExecutionPublication(context.Context, checkexecution.ExecutionWork) error
 	LoadExecutionWork(context.Context, string, string) (checkexecution.ExecutionWork, bool, error)
 	ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error)
+	ListPublicationMarkers(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error)
 	ClaimExecutionWork(context.Context, checkexecution.ExecutionWork, time.Time) (checkexecution.ExecutionWork, bool, error)
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
 	GetService(context.Context, string, string) (monitorconfig.Service, bool, error)
@@ -83,6 +86,9 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 	}
 	if !config.RecurringEnabled {
 		return runtimeSummary{Mode: modeScheduler}, nil
+	}
+	if _, err := h.recoverPublicationMarkers(ctx); err != nil {
+		return runtimeSummary{}, err
 	}
 	monitors, err := h.repo.ListMonitors(ctx, h.tenantID)
 	if err != nil {
@@ -316,4 +322,67 @@ func buildEscalationMessage(transition string, monitor monitorconfig.Monitor, se
 		return ""
 	}
 	return string(data)
+}
+
+const (
+	recoveryShards         = 16
+	recoveryBucketsPerHour = 4
+	recoveryPageLimit      = 25
+)
+
+func (h runtimeHandler) recoverPublicationMarkers(ctx context.Context) (int, error) {
+	if h.queueURL == "" {
+		return 0, nil
+	}
+	now := h.now().UTC()
+	recovered := 0
+	for bucketOffset := 0; bucketOffset < recoveryBucketsPerHour; bucketOffset++ {
+		bucket := now.Add(time.Duration(-bucketOffset*15) * time.Minute).Format("200601021504")
+		for shard := 0; shard < recoveryShards; shard++ {
+			shardHex := fmt.Sprintf("%02x", shard)
+			var cursor map[string]sharedaws.AttributeValue
+			for {
+				markers, nextKey, err := h.repo.ListPublicationMarkers(ctx, h.tenantID, bucket+"|"+shardHex, recoveryPageLimit, cursor)
+				if err != nil {
+					return recovered, err
+				}
+				for _, marker := range markers {
+					work, found, err := h.repo.LoadExecutionWork(ctx, marker.TenantID, marker.RunID)
+					if err != nil {
+						return recovered, err
+					}
+					if !found || work.Status != checkexecution.ExecutionWorkPending {
+						continue
+					}
+					payload, err := json.Marshal(checkexecution.ExecutionRequest{
+						Monitor:                   buildMonitorFromWork(work),
+						RunID:                     work.RunID,
+						Trigger:                   work.Trigger,
+						AcceptedAt:                work.AcceptedAt,
+						ScheduleDefinitionVersion: work.ScheduleDefinitionVersion,
+						ScheduledFor:              work.ScheduledFor,
+					})
+					if err != nil {
+						return recovered, err
+					}
+					if err := h.sqsClient.SendMessage(ctx, h.queueURL, string(payload)); err != nil {
+						return recovered, checkexecution.Publication("recover-publication", work.RunID)
+					}
+					if err := h.repo.AcknowledgeExecutionPublication(ctx, work); err != nil {
+						return recovered, err
+					}
+					recovered++
+				}
+				if nextKey == nil {
+					break
+				}
+				cursor = nextKey
+			}
+		}
+	}
+	return recovered, nil
+}
+
+func buildMonitorFromWork(work checkexecution.ExecutionWork) monitorconfig.Monitor {
+	return monitorconfig.Monitor{TenantID: work.TenantID, ServiceID: work.ServiceID, MonitorID: work.MonitorID, Enabled: true, IntervalSeconds: 60, HTTP: &monitorconfig.HTTPConfiguration{}}
 }
