@@ -59,7 +59,7 @@
 
 ## 8. Infrastructure And Rollout Safety
 
-- [ ] 8.1 Define, validate, document, and boundary-test named configuration satisfying `WORKER_LAMBDA_TIMEOUT > MAX_OUTBOUND_EXECUTION + RESULT_COMMIT_BUFFER`, `EXECUTION_QUEUE_VISIBILITY_TIMEOUT > WORKER_LAMBDA_TIMEOUT + VISIBILITY_MARGIN`, and `WORK_LEASE_DURATION > MAX_OUTBOUND_EXECUTION + RESULT_COMMIT_BUFFER`; keep standard non-FIFO queues and current DLQs.
+- [x] 8.1 Define, validate, document, and boundary-test named configuration satisfying `WORKER_LAMBDA_TIMEOUT > MAX_OUTBOUND_EXECUTION + RESULT_COMMIT_BUFFER`, `EXECUTION_QUEUE_VISIBILITY_TIMEOUT > WORKER_LAMBDA_TIMEOUT + VISIBILITY_MARGIN`, and `WORK_LEASE_DURATION > MAX_OUTBOUND_EXECUTION + RESULT_COMMIT_BUFFER`; keep standard non-FIFO queues and current DLQs.
 - [ ] 8.2 Enable SQS `ReportBatchItemFailures`, configure finite `EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY`, and test mixed-success batches plus infrastructure bounds.
 - [ ] 8.3 Add bounded recovery bucket/shard/page/deadline configuration and safe structured metrics/logging for created, existing, published, recovered, claimed, reclaimed, skipped, duplicate, stale, completed, marker-cleaned, publication-failed, and dispatch-pending outcomes without recording secrets.
 - [x] 8.4 Document the atomic/dependency-ordered deploy sequence: pause recurring and manual producers, drain execution workers, provision and verify the notification-assurance dispatcher first, deploy the sole outbox producer without direct send, smoke-test manual/recurring/outbox flows, then re-enable producers.

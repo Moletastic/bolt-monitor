@@ -172,6 +172,50 @@ func TestRecordExecutionResultDetectsDuplicate(t *testing.T) {
 	}
 }
 
+func TestExecutionSafetyConfigAcceptsValidSettings(t *testing.T) {
+	t.Setenv("WORKER_LAMBDA_TIMEOUT_SECONDS", "45")
+	t.Setenv("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", "60")
+	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
+	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
+	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
+	if _, _, _, _, _, err := executionSafetyConfig(); err != nil {
+		t.Fatalf("executionSafetyConfig returned error: %v", err)
+	}
+}
+
+func TestExecutionSafetyConfigRejectsShortWorkerTimeout(t *testing.T) {
+	t.Setenv("WORKER_LAMBDA_TIMEOUT_SECONDS", "40")
+	t.Setenv("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", "60")
+	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
+	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
+	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
+	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+		t.Fatal("expected worker timeout violation")
+	}
+}
+
+func TestExecutionSafetyConfigRejectsShortLease(t *testing.T) {
+	t.Setenv("WORKER_LAMBDA_TIMEOUT_SECONDS", "45")
+	t.Setenv("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", "60")
+	t.Setenv("WORK_LEASE_DURATION_SECONDS", "30")
+	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
+	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
+	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+		t.Fatal("expected lease violation")
+	}
+}
+
+func TestExecutionSafetyConfigRejectsShortVisibility(t *testing.T) {
+	t.Setenv("WORKER_LAMBDA_TIMEOUT_SECONDS", "45")
+	t.Setenv("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", "45")
+	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
+	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
+	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
+	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+		t.Fatal("expected visibility violation")
+	}
+}
+
 func TestDispatchPendingBucketShardsByShardCount(t *testing.T) {
 	work := checkexecution.ExecutionWork{RunID: "RUN_BUCKET", AcceptedAt: time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)}
 	bucket, shard := dispatchPendingBucket(work)
