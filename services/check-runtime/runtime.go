@@ -253,7 +253,7 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 					FailureCode: string(failureKind),
 					Error:       outboundhttp.SafeMessage(&outboundhttp.Error{Kind: failureKind}),
 				}
-				if _, _, err := h.repo.RecordExecutionResult(ctx, monitor, work, result); err != nil {
+				if _, _, err := commitExecutionResult(ctx, h.repo, monitor, work, result); err != nil {
 					return summary, err
 				}
 				summary.Processed++
@@ -266,7 +266,7 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			continue
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
-		_, _, err = h.repo.RecordExecutionResult(ctx, monitor, work, result)
+		_, _, err = commitExecutionResult(ctx, h.repo, monitor, work, result)
 		if err != nil {
 			return summary, err
 		}
@@ -348,6 +348,26 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		summary.Processed++
 	}
 	return summary, nil
+}
+
+func commitExecutionResult(ctx context.Context, repo runtimeRepository, monitor monitorconfig.Monitor, work checkexecution.ExecutionWork, result checkexecution.ExecutionResult) (string, string, error) {
+	if !resultIdentityMatchesWork(result, work) {
+		return "", "", checkexecution.Conflict("commit-result", work.RunID)
+	}
+	return repo.RecordExecutionResult(ctx, monitor, work, result)
+}
+
+func resultIdentityMatchesWork(result checkexecution.ExecutionResult, work checkexecution.ExecutionWork) bool {
+	if !strings.EqualFold(result.TenantID, work.TenantID) || !strings.EqualFold(result.ServiceID, work.ServiceID) || !strings.EqualFold(result.MonitorID, work.MonitorID) || !strings.EqualFold(result.RunID, work.RunID) || result.Trigger != work.Trigger {
+		return false
+	}
+	if work.ScheduleDefinitionVersion != "" && result.ScheduleDefinitionVersion != work.ScheduleDefinitionVersion {
+		return false
+	}
+	if work.ScheduledFor == nil {
+		return result.ScheduledFor == nil
+	}
+	return result.ScheduledFor != nil && result.ScheduledFor.Equal(*work.ScheduledFor)
 }
 
 func (h runtimeHandler) currentWorkSkipReason(ctx context.Context, monitor monitorconfig.Monitor, work checkexecution.ExecutionWork) (string, error) {

@@ -210,6 +210,17 @@ func TestRunSchedulerStopsAtDiscoveryDeadline(t *testing.T) {
 	}
 }
 
+func TestCommitExecutionResultRejectsIdentityMismatch(t *testing.T) {
+	repo := newFakeRuntimeRepository()
+	monitor := testMonitor("https://example.com", true)
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: time.Now()}
+	mismatched := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OTHER", Outcome: checkexecution.OutcomeSuccess, FinishedAt: time.Now()}
+
+	if _, _, err := commitExecutionResult(context.Background(), repo, monitor, work, mismatched); err == nil || !strings.Contains(err.Error(), "immutable_identity_conflict") {
+		t.Fatalf("expected identity conflict, got %v", err)
+	}
+}
+
 func TestRunSchedulerIgnoresExpiredFakeClockForDeadline(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}

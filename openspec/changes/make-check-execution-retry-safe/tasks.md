@@ -34,7 +34,7 @@
 
 ## 5. Canonical Results And Ordered Projections
 
-- [ ] 5.1 Refactor recurring and manual result handling behind one conditional result-commit service that validates work/result identity and current fencing token.
+- [x] 5.1 Refactor recurring and manual result handling behind one conditional result-commit service that validates work/result identity and current fencing token.
 - [ ] 5.2 Extend `CheckRun` storage and API mapping with trigger and optional `scheduleDefinitionVersion`/`scheduledFor`, use a uniqueness condition for `runId`, and retain existing raw-run TTL behavior.
 - [ ] 5.3 Add recurring observation cursor/run identity to `MonitorStatus` and condition recurring projection updates on a strictly newer `(scheduledFor, runId)` ordering key.
 - [ ] 5.4 Commit work completion, work-marker removal, canonical `CheckRun`, in-order monitor status/counters, service rollup, deterministic incident transition/activity, and one canonical notification outbox item in one DynamoDB transaction.
