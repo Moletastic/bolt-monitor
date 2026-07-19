@@ -16,6 +16,7 @@ const (
 	EntityMonitor             = "Monitor"
 	EntityMonitorStatus       = "MonitorStatus"
 	EntityCheckRun            = "CheckRun"
+	EntityCheckRunIdentity    = "CheckRunIdentity"
 	EntityAlertState          = "AlertState"
 	EntityIncident            = "Incident"
 	EntityAuditEvent          = "AuditEvent"
@@ -111,6 +112,10 @@ func MonitorStatusItem(tenantID, serviceID, monitorID, currentStatus, lastChecke
 
 func CheckRunItem(tenantID, serviceID, monitorID, startedAt, runID string, ttl int64) Item {
 	return Item{PK: MonitorPK(tenantID, serviceID, monitorID), SK: fmt.Sprintf("RUN#%s#%s", startedAt, normalizeToken(runID)), EntityType: EntityCheckRun, TenantID: normalizeField(tenantID), ServiceID: normalizeField(serviceID), MonitorID: normalizeField(monitorID), RunID: normalizeField(runID), TTL: ttl}
+}
+
+func CheckRunIdentityItem(tenantID, serviceID, monitorID, runID string, ttl int64) Item {
+	return Item{PK: MonitorPK(tenantID, serviceID, monitorID), SK: "RUN_ID#" + normalizeToken(runID), EntityType: EntityCheckRunIdentity, TenantID: normalizeField(tenantID), ServiceID: normalizeField(serviceID), MonitorID: normalizeField(monitorID), RunID: normalizeField(runID), TTL: ttl}
 }
 
 func AlertStateItem(tenantID, serviceID, monitorID string) Item {

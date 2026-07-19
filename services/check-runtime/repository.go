@@ -454,6 +454,14 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	if err != nil {
 		return "", "", err
 	}
+	identityItem, err := sharedaws.MarshalMap(run.IdentityRecord())
+	if err != nil {
+		return "", "", err
+	}
+	runIdentity := sharedaws.TransactWriteItem{Put: &sharedaws.Put{
+		TableName: sharedaws.String(r.tableName), Item: identityItem,
+		ConditionExpression: sharedaws.String("attribute_not_exists(PK) AND attribute_not_exists(SK)"),
+	}}
 	workKey := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
 	completion := sharedaws.TransactWriteItem{Update: &sharedaws.Update{
 		TableName: sharedaws.String(r.tableName), Key: workKey,
@@ -474,7 +482,7 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 		TableName: sharedaws.String(r.tableName),
 		Key: sharedaws.NewPrimaryKey(recoveryMarker.PK, recoveryMarker.SK).AttributeMap(),
 	}}
-	items = append([]sharedaws.TransactWriteItem{completion}, items...)
+	items = append([]sharedaws.TransactWriteItem{completion, runIdentity}, items...)
 	items = append(items, markerDelete)
 	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
 	if err != nil {
