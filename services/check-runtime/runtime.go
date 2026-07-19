@@ -30,6 +30,7 @@ type runtimeRepository interface {
 	ListPublicationMarkers(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error)
 	ListDispatchPending(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error)
 	RemoveDispatchPending(context.Context, string, string, string, string) error
+	LoadTransitionOutbox(context.Context, string, string) (dynamodbrecord.TransitionOutboxRecord, bool, error)
 	ClaimExecutionWork(context.Context, checkexecution.ExecutionWork, time.Time) (checkexecution.ExecutionWork, bool, error)
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
 	GetService(context.Context, string, string) (monitorconfig.Service, bool, error)
@@ -353,14 +354,16 @@ func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, erro
 					return dispatched, err
 				}
 				for _, pending := range records {
-					if _, found, err := h.repo.LoadExecutionWork(ctx, pending.TenantID, pending.RunID); err != nil {
+					outbox, found, err := h.repo.LoadTransitionOutbox(ctx, pending.TenantID, pending.RunID)
+					if err != nil {
 						return dispatched, err
-					} else if !found {
+					}
+					if !found || outbox.DispatchStatus != dynamodbrecord.DispatchPending {
 						_ = h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.Bucket, pending.Shard, pending.RunID)
 						continue
 					}
 					envelope, err := json.Marshal(map[string]string{
-						"tenantId": pending.TenantID, "runId": pending.RunID, "kind": "transition",
+						"tenantId": pending.TenantID, "runId": outbox.EventID, "kind": "transition",
 					})
 					if err != nil {
 						return dispatched, err

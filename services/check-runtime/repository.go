@@ -292,6 +292,21 @@ func (r *dynamoRuntimeRepository) RemoveDispatchPending(ctx context.Context, ten
 	return err
 }
 
+func (r *dynamoRuntimeRepository) LoadTransitionOutbox(ctx context.Context, tenantID, eventID string) (dynamodbrecord.TransitionOutboxRecord, bool, error) {
+	if err := r.requireTableName(); err != nil {
+		return dynamodbrecord.TransitionOutboxRecord{}, false, err
+	}
+	item, found, err := sharedaws.GetByPrimaryKey(ctx, r.client, r.tableName, sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "TRANSITION_OUTBOX#"+dynamodbschema.NormalizeToken(eventID)))
+	if err != nil || !found {
+		return dynamodbrecord.TransitionOutboxRecord{}, found, err
+	}
+	var record dynamodbrecord.TransitionOutboxRecord
+	if err := sharedaws.UnmarshalMap(item, &record); err != nil {
+		return dynamodbrecord.TransitionOutboxRecord{}, false, err
+	}
+	return record, true, nil
+}
+
 func (r *dynamoRuntimeRepository) AcknowledgeExecutionPublication(ctx context.Context, work checkexecution.ExecutionWork) error {
 	bucket, shard := executionRecoveryBucket(work)
 	marker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerPublication, bucket, shard)
