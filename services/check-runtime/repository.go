@@ -430,6 +430,38 @@ func executionWorkLeaseDuration() time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
+const (
+	defaultMaxOutboundExecution = 30 * time.Second
+	defaultResultCommitBuffer   = 10 * time.Second
+	defaultVisibilityMargin     = 5 * time.Second
+)
+
+func executionSafetyConfig() (worker, visibility, lease, maxOutbound, commitBuffer time.Duration, err error) {
+	worker = readDurationSeconds("WORKER_LAMBDA_TIMEOUT_SECONDS", 45*time.Second)
+	visibility = readDurationSeconds("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", worker+defaultVisibilityMargin)
+	lease = readDurationSeconds("WORK_LEASE_DURATION_SECONDS", defaultExecutionWorkLeaseDuration)
+	maxOutbound = readDurationSeconds("MAX_OUTBOUND_EXECUTION_SECONDS", defaultMaxOutboundExecution)
+	commitBuffer = readDurationSeconds("RESULT_COMMIT_BUFFER_SECONDS", defaultResultCommitBuffer)
+	if worker <= maxOutbound+commitBuffer {
+		return 0, 0, 0, 0, 0, fmt.Errorf("WORKER_LAMBDA_TIMEOUT_SECONDS=%s must exceed MAX_OUTBOUND_EXECUTION_SECONDS+RESULT_COMMIT_BUFFER_SECONDS=%s", worker, maxOutbound+commitBuffer)
+	}
+	if visibility <= worker+defaultVisibilityMargin {
+		return 0, 0, 0, 0, 0, fmt.Errorf("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS=%s must exceed WORKER_LAMBDA_TIMEOUT_SECONDS+VISIBILITY_MARGIN=%s", visibility, worker+defaultVisibilityMargin)
+	}
+	if lease <= maxOutbound+commitBuffer {
+		return 0, 0, 0, 0, 0, fmt.Errorf("WORK_LEASE_DURATION_SECONDS=%s must exceed MAX_OUTBOUND_EXECUTION_SECONDS+RESULT_COMMIT_BUFFER_SECONDS=%s", lease, maxOutbound+commitBuffer)
+	}
+	return worker, visibility, lease, maxOutbound, commitBuffer, nil
+}
+
+func readDurationSeconds(envKey string, fallback time.Duration) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(os.Getenv(envKey)))
+	if err != nil || seconds <= 0 {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 func (r *dynamoRuntimeRepository) ClaimExecutionWork(ctx context.Context, work checkexecution.ExecutionWork, now time.Time) (checkexecution.ExecutionWork, bool, error) {
 	if err := r.requireTableName(); err != nil {
 		return checkexecution.ExecutionWork{}, false, err
