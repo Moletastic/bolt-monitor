@@ -96,6 +96,29 @@ func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
 	}
 }
 
+func TestMarkExecutionWorkSkippedFencesAndRemovesRecoveryMarker(t *testing.T) {
+	client := &fakeDynamoClient{}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	work := checkexecution.ExecutionWork{
+		TenantID: defaultTenantID, RunID: "RUN_1", AcceptedAt: time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC),
+		Status: checkexecution.ExecutionWorkInProgress, FencingToken: "token",
+	}
+
+	if err := repo.MarkExecutionWorkSkipped(context.Background(), work, work.AcceptedAt, "monitor disabled"); err != nil {
+		t.Fatalf("MarkExecutionWorkSkipped returned error: %v", err)
+	}
+	if client.transactInput == nil || len(client.transactInput.TransactItems) != 2 {
+		t.Fatalf("transaction = %#v", client.transactInput)
+	}
+	update := client.transactInput.TransactItems[0].Update
+	if sharedaws.ToString(update.ConditionExpression) != "#status = :inProgress AND FencingToken = :token" {
+		t.Fatalf("skip condition = %v", update.ConditionExpression)
+	}
+	if client.transactInput.TransactItems[1].Delete == nil {
+		t.Fatal("recovery marker delete missing")
+	}
+}
+
 func TestIncidentRecordsForResultOpensIncidentOnFirstFailure(t *testing.T) {
 	repo := newDynamoRuntimeRepository(&fakeDynamoClient{}, "table-name")
 	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", FailureThreshold: 1, RecoveryThreshold: 1}

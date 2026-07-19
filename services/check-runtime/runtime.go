@@ -146,12 +146,12 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 		scheduledFor := checkexecution.ScheduledFor(acceptedAt, executionMonitor.IntervalSeconds)
 		scheduleDefinitionVersion := checkexecution.ScheduleDefinitionVersion(executionMonitor)
 		request := checkexecution.ExecutionRequest{
-			Monitor: executionMonitor,
-			RunID: checkexecution.RecurringRunID(executionMonitor.TenantID, executionMonitor.ServiceID, executionMonitor.MonitorID, scheduleDefinitionVersion, scheduledFor),
-			Trigger: checkexecution.TriggerTypeRecurring,
-			AcceptedAt: acceptedAt,
+			Monitor:                   executionMonitor,
+			RunID:                     checkexecution.RecurringRunID(executionMonitor.TenantID, executionMonitor.ServiceID, executionMonitor.MonitorID, scheduleDefinitionVersion, scheduledFor),
+			Trigger:                   checkexecution.TriggerTypeRecurring,
+			AcceptedAt:                acceptedAt,
 			ScheduleDefinitionVersion: scheduleDefinitionVersion,
-			ScheduledFor: &scheduledFor,
+			ScheduledFor:              &scheduledFor,
 		}
 		// Durable work is authority. SQS only wakes a worker for this identity.
 		if err := h.repo.EnqueueExecutionRequests(ctx, []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
@@ -298,8 +298,15 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		}
 		work = claimedWork
 		monitor, found, err := h.repo.GetMonitor(ctx, work.TenantID, work.ServiceID, work.MonitorID)
-		if err != nil || !found {
-			return summary, checkexecution.Skip("load-monitor", work.RunID, "monitor not found")
+		if err != nil {
+			return summary, checkexecution.Storage("load-monitor", work.RunID)
+		}
+		if !found {
+			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), "monitor not found"); err != nil {
+				return summary, err
+			}
+			summary.Skipped++
+			continue
 		}
 		if skipReason, err := h.currentWorkSkipReason(ctx, monitor, work); err != nil {
 			return summary, err
@@ -310,8 +317,15 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 			return summary, nil
 		}
 		request, skipReason, err := buildExecutionRequest(monitor, work)
-		if err != nil || skipReason != "" {
-			return summary, checkexecution.Skip("validate-monitor", work.RunID, skipReason)
+		if err != nil {
+			return summary, err
+		}
+		if skipReason != "" {
+			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), skipReason); err != nil {
+				return summary, err
+			}
+			summary.Skipped++
+			continue
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
 		_, _, err = h.repo.RecordExecutionResult(ctx, monitor, work, result)
@@ -388,6 +402,8 @@ const (
 	recoveryShards         = 16
 	recoveryBucketsPerHour = 4
 	recoveryPageLimit      = 25
+	dispatchPendingShards  = 4
+	dispatchPendingBuckets = 1
 )
 
 func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, error) {
@@ -396,9 +412,9 @@ func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, erro
 	}
 	now := h.now().UTC()
 	dispatched := 0
-	for bucketOffset := 0; bucketOffset < recoveryBucketsPerHour; bucketOffset++ {
-		bucket := now.Add(time.Duration(-bucketOffset*15) * time.Minute).Format("200601021504")
-		for shard := 0; shard < recoveryShards; shard++ {
+	for bucketOffset := 0; bucketOffset < dispatchPendingBuckets; bucketOffset++ {
+		bucket := now.Add(time.Duration(-bucketOffset) * time.Hour).Format(dynamodbrecord.DispatchPendingBucketFormat)
+		for shard := 0; shard < dispatchPendingShards; shard++ {
 			shardHex := fmt.Sprintf("%02x", shard)
 			bucketShard := bucket + "|" + shardHex
 			var cursor map[string]sharedaws.AttributeValue
@@ -447,7 +463,7 @@ func (h runtimeHandler) recoverPublicationMarkers(ctx context.Context) (int, err
 	now := h.now().UTC()
 	recovered := 0
 	for bucketOffset := 0; bucketOffset < recoveryBucketsPerHour; bucketOffset++ {
-		bucket := now.Add(time.Duration(-bucketOffset*15) * time.Minute).Format("200601021504")
+		bucket := now.Add(time.Duration(-bucketOffset) * time.Hour).Format("2006010215")
 		for shard := 0; shard < recoveryShards; shard++ {
 			shardHex := fmt.Sprintf("%02x", shard)
 			var cursor map[string]sharedaws.AttributeValue

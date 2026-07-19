@@ -11,7 +11,7 @@
 - [x] 2.2 Implement conditional create that returns created, identical-existing, or typed immutable-identity conflict and never overwrites existing work.
 - [ ] 2.3 Add directly queryable tenant-scoped, bounded/sharded publication and work-recovery marker item patterns; query configured current/overlap buckets with limits/cursors rather than tenant scans, and conditionally remove or move markers on publication acknowledgement, lease changes, skip, and completion.
 - [x] 2.4 Implement conditional claim/reclaim for pending or lease-expired work with a fresh fencing token and lease sized above the maximum supported check timeout plus persistence buffer.
-- [ ] 2.5 Implement fenced conditional complete and skip transitions so terminal work cannot reopen and an obsolete claimant cannot mutate reclaimed work.
+- [x] 2.5 Implement fenced conditional complete and skip transitions so terminal work cannot reopen and an obsolete claimant cannot mutate reclaimed work.
 - [ ] 2.6 Add repository tests for create races, conflicting identity, duplicate publication acknowledgement, active lease conflict, stale reclaim, fencing-token loss, terminal immutability, bounded marker queries, stale-marker cleanup, conditional terminal removal, pagination, and TTL retention.
 
 ## 3. Retry-Safe Scheduler
@@ -19,7 +19,7 @@
 - [x] 3.1 Replace elapsed `LastExecutionAt` uniqueness with captured-invocation-time `scheduleDefinitionVersion`/UTC `scheduledFor` eligibility and stable `runId` assignment before any scheduler side effect.
 - [ ] 3.2 Make tenant service and monitor discovery consume every DynamoDB page with a Lambda safety deadline and current enabled/maintenance filtering.
 - [x] 3.3 Change per-monitor scheduling to conditionally persist work before SQS send, publish the stable envelope, and conditionally acknowledge publication.
-- [ ] 3.4 Add a bounded scheduler recovery pass that queries publication markers directly, including successful-send/failed-ack ambiguity, without creating a new run or scanning a tenant.
+- [x] 3.4 Add a bounded scheduler recovery pass that queries publication markers directly, including successful-send/failed-ack ambiguity, without creating a new run or scanning a tenant.
 - [ ] 3.5 Preserve earlier per-monitor progress on later persistence/publication failure and return typed retryable context that lets EventBridge retry the same captured event time.
 - [ ] 3.6 Add scheduler tests for duplicate/overlapping invocation under one schedule definition/time, schedule-version changes, default interval, no missed later pages, deadline stop, middle-page failure, bounded marker recovery, persisted/send-failed recovery, and send-succeeded/ack-failed duplicate publication.
 
@@ -27,9 +27,9 @@
 
 - [x] 4.1 Parse and validate immutable SQS execution envelopes, load canonical work by identity, and reject malformed or conflicting envelopes with typed outcomes.
 - [x] 4.2 Claim work before external side effects and handle active claims, terminal duplicates, expired-lease reclaim, and stale fencing tokens according to acknowledgement policy.
-- [ ] 4.3 Strongly reload current monitor and status after claim; fenced-skip missing, disabled, maintenance, invalid, or recurring work no longer eligible under current interval configuration.
-- [ ] 4.4 Execute only the current persisted monitor configuration while preserving canonical work identity and trigger in the normalized result.
-- [ ] 4.5 Return SQS partial batch item failures for only retryable/malformed records and success for completed skips or duplicates; do not couple successful records to another record's failure.
+- [x] 4.3 Strongly reload current monitor and status after claim; fenced-skip missing, disabled, maintenance, invalid, or recurring work no longer eligible under current interval configuration.
+- [x] 4.4 Execute only the current persisted monitor configuration while preserving canonical work identity and trigger in the normalized result.
+- [x] 4.5 Return SQS partial batch item failures for only retryable/malformed records and success for completed skips or duplicates; do not couple successful records to another record's failure.
 - [ ] 4.6 Add worker tests for duplicate concurrent delivery, no HTTP under active claim, disabled/maintenance/deleted races, current target/config use, superseded schedule definition/time, crash recovery, and stale worker completion rejection.
 
 ## 5. Canonical Results And Ordered Projections
