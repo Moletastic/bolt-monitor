@@ -48,6 +48,7 @@ type runtimeHandler struct {
 	mode               string
 	now                func() time.Time
 	executor           checkexecution.HTTPExecutor
+	schedulerDeadline  time.Duration
 }
 
 type runtimeSummary struct {
@@ -78,6 +79,8 @@ func isTerminalSQSError(err error) bool {
 	return !runtimeFailure.Retryable && runtimeFailure.Code != checkexecution.FailureMalformedEnvelope
 }
 
+const defaultSchedulerDeadline = 50 * time.Second
+
 func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, escalationQueueURL, tenantID, mode string) runtimeHandler {
 	return runtimeHandler{
 		repo:               repo,
@@ -88,6 +91,7 @@ func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, es
 		mode:               strings.ToLower(strings.TrimSpace(mode)),
 		now:                time.Now,
 		executor:           outboundhttp.NewExecutor(),
+		schedulerDeadline:  defaultSchedulerDeadline,
 	}
 }
 
@@ -116,8 +120,17 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 	if _, err := h.reconcileDispatchPending(ctx); err != nil {
 		return runtimeSummary{}, err
 	}
-	monitors, err := h.repo.ListMonitors(ctx, h.tenantID)
+	deadline := h.schedulerDeadline
+	if deadline <= 0 {
+		deadline = defaultSchedulerDeadline
+	}
+	discoveryCtx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
+	monitors, err := h.repo.ListMonitors(discoveryCtx, h.tenantID)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return runtimeSummary{Mode: modeScheduler}, checkexecution.Publication("scheduler-deadline", "")
+		}
 		return runtimeSummary{}, err
 	}
 
@@ -126,7 +139,7 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 		if !monitor.Enabled {
 			continue
 		}
-		status, found, err := h.repo.GetMonitorStatus(ctx, monitor.TenantID, monitor.ServiceID, monitor.MonitorID)
+		status, found, err := h.repo.GetMonitorStatus(discoveryCtx, monitor.TenantID, monitor.ServiceID, monitor.MonitorID)
 		if err != nil {
 			return runtimeSummary{}, err
 		}
