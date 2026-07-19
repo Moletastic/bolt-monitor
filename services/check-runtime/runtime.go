@@ -25,7 +25,7 @@ type runtimeRepository interface {
 	AcknowledgeExecutionPublication(context.Context, checkexecution.ExecutionWork) error
 	LoadExecutionWork(context.Context, string, string) (checkexecution.ExecutionWork, bool, error)
 	ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error)
-	ClaimExecutionWork(context.Context, checkexecution.ExecutionWork, time.Time) (bool, error)
+	ClaimExecutionWork(context.Context, checkexecution.ExecutionWork, time.Time) (checkexecution.ExecutionWork, bool, error)
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
 	GetService(context.Context, string, string) (monitorconfig.Service, bool, error)
 	MarkExecutionWorkSkipped(context.Context, checkexecution.ExecutionWork, time.Time, string) error
@@ -151,13 +151,14 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 	}
 	summary := runtimeSummary{Mode: modeWorker, PendingScanned: len(works)}
 	for _, work := range works {
-		claimed, err := h.repo.ClaimExecutionWork(ctx, work, h.now())
+		claimedWork, claimed, err := h.repo.ClaimExecutionWork(ctx, work, h.now())
 		if err != nil {
 			return summary, err
 		}
 		if !claimed {
 			continue
 		}
+		work = claimedWork
 		monitor, found, err := h.repo.GetMonitor(ctx, h.tenantID, work.ServiceID, work.MonitorID)
 		if err != nil {
 			return summary, err
@@ -256,6 +257,14 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		if !found || !sameEnvelopeIdentity(req, work) {
 			return summary, checkexecution.Conflict("validate-envelope", req.RunID)
 		}
+		claimedWork, claimed, err := h.repo.ClaimExecutionWork(ctx, work, h.now())
+		if err != nil {
+			return summary, checkexecution.Storage("claim-work", work.RunID)
+		}
+		if !claimed {
+			return summary, checkexecution.Duplicate("claim-work", work.RunID)
+		}
+		work = claimedWork
 		monitor, found, err := h.repo.GetMonitor(ctx, work.TenantID, work.ServiceID, work.MonitorID)
 		if err != nil || !found {
 			return summary, checkexecution.Skip("load-monitor", work.RunID, "monitor not found")

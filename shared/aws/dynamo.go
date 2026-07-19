@@ -41,6 +41,7 @@ type Delete = ddbtypes.Delete
 type Update = ddbtypes.Update
 type ConditionCheck = ddbtypes.ConditionCheck
 type AttributeValueMemberS = ddbtypes.AttributeValueMemberS
+type AttributeValueMemberN = ddbtypes.AttributeValueMemberN
 type TransactionCancellationReason = ddbtypes.CancellationReason
 
 type TransactionCancellation struct {

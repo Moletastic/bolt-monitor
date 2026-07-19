@@ -301,37 +301,45 @@ func (r *dynamoRuntimeRepository) ListPendingExecutionWork(ctx context.Context, 
 	return works, nil
 }
 
-func (r *dynamoRuntimeRepository) ClaimExecutionWork(ctx context.Context, work checkexecution.ExecutionWork, now time.Time) (bool, error) {
+const executionWorkLeaseDuration = 45 * time.Second
+
+func (r *dynamoRuntimeRepository) ClaimExecutionWork(ctx context.Context, work checkexecution.ExecutionWork, now time.Time) (checkexecution.ExecutionWork, bool, error) {
 	if err := r.requireTableName(); err != nil {
-		return false, err
+		return checkexecution.ExecutionWork{}, false, err
 	}
 	startedAt := now.UTC()
-	updated := work
-	updated.Status = checkexecution.ExecutionWorkInProgress
-	updated.StartedAt = &startedAt
-	record := dynamodbrecord.ExecutionWorkItemRecordFromWork(updated)
-	item, err := sharedaws.MarshalMap(record)
-	if err != nil {
-		return false, err
-	}
-	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: []sharedaws.TransactWriteItem{{Put: &sharedaws.Put{
-		TableName:           sharedaws.String(r.tableName),
-		Item:                item,
-		ConditionExpression: sharedaws.String("#status = :pending"),
-		ExpressionAttributeNames: map[string]string{
-			"#status": "Status",
-		},
+	leaseUntil := startedAt.Add(executionWorkLeaseDuration)
+	token := newFencingToken(now)
+	key := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
+	out, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
+		TableName: sharedaws.String(r.tableName), Key: key,
+		UpdateExpression: sharedaws.String("SET #status = :inProgress, StartedAt = :startedAt, LeaseUntil = :leaseUntil, FencingToken = :token, AttemptCount = if_not_exists(AttemptCount, :zero) + :one"),
+		ConditionExpression: sharedaws.String("#status = :pending OR (#status = :inProgress AND LeaseUntil < :now)"),
+		ExpressionAttributeNames: map[string]string{"#status": "Status"},
 		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
 			":pending": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkPending)},
+			":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
+			":startedAt": &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
+			":leaseUntil": &sharedaws.AttributeValueMemberS{Value: leaseUntil.Format(time.RFC3339)},
+			":token": &sharedaws.AttributeValueMemberS{Value: token},
+			":now": &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
+			":zero": &sharedaws.AttributeValueMemberN{Value: "0"},
+			":one": &sharedaws.AttributeValueMemberN{Value: "1"},
 		},
-	}}}})
+		ReturnValues: "ALL_NEW",
+	})
 	if err != nil {
-		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "TransactionCanceled") {
-			return false, nil
+		if sharedaws.IsConditionalCheckFailure(err) {
+			return work, false, nil
 		}
-		return false, err
+		return checkexecution.ExecutionWork{}, false, err
 	}
-	return true, nil
+	var record dynamodbrecord.ExecutionWorkItemRecord
+	if err := sharedaws.UnmarshalMap(out.Attributes, &record); err != nil {
+		return checkexecution.ExecutionWork{}, false, err
+	}
+	claimed, err := record.ToWork()
+	return claimed, err == nil, err
 }
 
 func (r *dynamoRuntimeRepository) GetMonitor(ctx context.Context, tenantID, serviceID, monitorID string) (monitorconfig.Monitor, bool, error) {
