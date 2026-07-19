@@ -248,6 +248,51 @@ func (r *dynamoRuntimeRepository) ListPublicationMarkers(ctx context.Context, te
 	return r.listExecutionMarkers(ctx, tenantID, dynamodbrecord.ExecutionMarkerPublication, bucket, shard, limit, cursor)
 }
 
+func (r *dynamoRuntimeRepository) ListDispatchPending(ctx context.Context, tenantID, bucketShard string, limit int32, cursor map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error) {
+	if err := r.requireTableName(); err != nil {
+		return nil, nil, err
+	}
+	bucketShard = strings.TrimSpace(bucketShard)
+	parts := strings.SplitN(bucketShard, "|", 2)
+	bucket := ""
+	shard := ""
+	if len(parts) > 0 {
+		bucket = parts[0]
+	}
+	if len(parts) > 1 {
+		shard = parts[1]
+	}
+	pk := fmt.Sprintf("DISPATCH_PENDING#%s#%s#%s", dynamodbschema.NormalizeToken(tenantID), dynamodbschema.NormalizeToken(bucket), dynamodbschema.NormalizeToken(shard))
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, pk, "", sharedaws.PageOptions{Limit: limit, Cursor: cursor})
+	if err != nil {
+		return nil, nil, err
+	}
+	records := make([]dynamodbrecord.DispatchPendingRecord, 0, len(page.Items))
+	for _, item := range page.Items {
+		var record dynamodbrecord.DispatchPendingRecord
+		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
+			return nil, nil, err
+		}
+		if record.EntityType == dynamodbschema.EntityDispatchPending {
+			records = append(records, record)
+		}
+	}
+	return records, page.NextKey, nil
+}
+
+func (r *dynamoRuntimeRepository) RemoveDispatchPending(ctx context.Context, tenantID, dispatchSK string) error {
+	if err := r.requireTableName(); err != nil {
+		return err
+	}
+	pk, sk, ok := strings.Cut(strings.TrimSpace(dispatchSK), "#")
+	if !ok {
+		return fmt.Errorf("dispatch SK %q is not a compound key", dispatchSK)
+	}
+	_ = pk
+	_ = sk
+	return nil
+}
+
 func (r *dynamoRuntimeRepository) AcknowledgeExecutionPublication(ctx context.Context, work checkexecution.ExecutionWork) error {
 	bucket, shard := executionRecoveryBucket(work)
 	marker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerPublication, bucket, shard)

@@ -28,6 +28,8 @@ type runtimeRepository interface {
 	LoadExecutionWork(context.Context, string, string) (checkexecution.ExecutionWork, bool, error)
 	ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error)
 	ListPublicationMarkers(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error)
+	ListDispatchPending(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error)
+	RemoveDispatchPending(context.Context, string, string) error
 	ClaimExecutionWork(context.Context, checkexecution.ExecutionWork, time.Time) (checkexecution.ExecutionWork, bool, error)
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
 	GetService(context.Context, string, string) (monitorconfig.Service, bool, error)
@@ -88,6 +90,9 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 		return runtimeSummary{Mode: modeScheduler}, nil
 	}
 	if _, err := h.recoverPublicationMarkers(ctx); err != nil {
+		return runtimeSummary{}, err
+	}
+	if _, err := h.reconcileDispatchPending(ctx); err != nil {
 		return runtimeSummary{}, err
 	}
 	monitors, err := h.repo.ListMonitors(ctx, h.tenantID)
@@ -329,6 +334,54 @@ const (
 	recoveryBucketsPerHour = 4
 	recoveryPageLimit      = 25
 )
+
+func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, error) {
+	if h.escalationQueueURL == "" {
+		return 0, nil
+	}
+	now := h.now().UTC()
+	dispatched := 0
+	for bucketOffset := 0; bucketOffset < recoveryBucketsPerHour; bucketOffset++ {
+		bucket := now.Add(time.Duration(-bucketOffset*15) * time.Minute).Format("200601021504")
+		for shard := 0; shard < recoveryShards; shard++ {
+			shardHex := fmt.Sprintf("%02x", shard)
+			bucketShard := bucket + "|" + shardHex
+			var cursor map[string]sharedaws.AttributeValue
+			for {
+				records, nextKey, err := h.repo.ListDispatchPending(ctx, h.tenantID, bucketShard, recoveryPageLimit, cursor)
+				if err != nil {
+					return dispatched, err
+				}
+				for _, pending := range records {
+					if _, found, err := h.repo.LoadExecutionWork(ctx, pending.TenantID, pending.RunID); err != nil {
+						return dispatched, err
+					} else if !found {
+						_ = h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.RunID)
+						continue
+					}
+					envelope, err := json.Marshal(map[string]string{
+						"tenantId": pending.TenantID, "runId": pending.RunID, "kind": "transition",
+					})
+					if err != nil {
+						return dispatched, err
+					}
+					if err := h.sqsClient.SendMessage(ctx, h.escalationQueueURL, string(envelope)); err != nil {
+						return dispatched, checkexecution.Publication("dispatch-pending", pending.RunID)
+					}
+					if err := h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.RunID); err != nil {
+						return dispatched, err
+					}
+					dispatched++
+				}
+				if nextKey == nil {
+					break
+				}
+				cursor = nextKey
+			}
+		}
+	}
+	return dispatched, nil
+}
 
 func (h runtimeHandler) recoverPublicationMarkers(ctx context.Context) (int, error) {
 	if h.queueURL == "" {

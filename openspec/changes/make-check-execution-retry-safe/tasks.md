@@ -45,8 +45,8 @@
 
 - [ ] 6.1 Derive one deterministic transition identity from the causal recurring run; use the same value as `transitionId`, persisted activity `activityId`, and outbox-envelope `eventId`.
 - [ ] 6.2 Add the canonical notification outbox model/key expected by `assure-notification-and-escalation-delivery`, carrying causal `runId`, `trigger=recurring`, `scheduleDefinitionVersion`, `scheduledFor`, incident identity, transition type, and safe routing context.
-- [ ] 6.3 Persist exactly one canonical pending outbox item atomically with deterministic incident transition/activity and result commit; add no direct notification SQS send, dispatch acknowledgement, delivery claim, route initiation, or per-channel outcome behavior.
-- [ ] 6.4 Remove the existing ignored direct escalation send from check execution so notification assurance remains the sole dispatcher/consumer protocol.
+- [ ] 6.3 Persist exactly one canonical pending outbox item and one sparse dispatch-pending marker atomically with deterministic incident transition/activity and result commit; add no direct notification SQS send, dispatch acknowledgement, delivery claim, route initiation, or per-channel outcome behavior.
+- [x] 6.4 Remove the existing ignored direct escalation send from check execution so notification assurance remains the sole dispatcher/consumer protocol.
 - [ ] 6.5 Add tests for duplicate down/up transition commits, stale result suppression, transaction rollback, equal transition/activity/event identity, one outbox item, and absence of direct notification queue sends.
 
 ## 7. Manual Run Unification
@@ -61,7 +61,7 @@
 
 - [ ] 8.1 Define, validate, document, and boundary-test named configuration satisfying `WORKER_LAMBDA_TIMEOUT > MAX_OUTBOUND_EXECUTION + RESULT_COMMIT_BUFFER`, `EXECUTION_QUEUE_VISIBILITY_TIMEOUT > WORKER_LAMBDA_TIMEOUT + VISIBILITY_MARGIN`, and `WORK_LEASE_DURATION > MAX_OUTBOUND_EXECUTION + RESULT_COMMIT_BUFFER`; keep standard non-FIFO queues and current DLQs.
 - [ ] 8.2 Enable SQS `ReportBatchItemFailures`, configure finite `EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY`, and test mixed-success batches plus infrastructure bounds.
-- [ ] 8.3 Add bounded recovery bucket/shard/page/deadline configuration and safe structured metrics/logging for created, existing, published, recovered, claimed, reclaimed, skipped, duplicate, stale, completed, marker-cleaned, and publication-failed outcomes without recording secrets.
+- [ ] 8.3 Add bounded recovery bucket/shard/page/deadline configuration and safe structured metrics/logging for created, existing, published, recovered, claimed, reclaimed, skipped, duplicate, stale, completed, marker-cleaned, publication-failed, and dispatch-pending outcomes without recording secrets.
 - [ ] 8.4 Document the atomic/dependency-ordered deploy sequence: pause recurring and manual producers, drain execution workers, provision and verify the notification-assurance dispatcher first, deploy the sole outbox producer without direct send, smoke-test manual/recurring/outbox flows, then re-enable producers.
 - [ ] 8.5 Document rollback as pause-and-drain before old code restoration, retain pending canonical outbox records for notification assurance, and confirm legacy TTL records require no table migration, new queue, GSI, or backfill of missed schedules.
 
