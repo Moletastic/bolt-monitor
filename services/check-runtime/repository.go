@@ -437,7 +437,7 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 		return "", "", err
 	}
 
-	records := []any{dynamodbrecord.ExecutionWorkItemRecordFromWork(updatedWork), run.ToRecord(), updatedStatus.ToRecord()}
+	records := []any{run.ToRecord(), updatedStatus.ToRecord()}
 	records = append(records, incidentRecords...)
 	service, found, err := r.getService(ctx, result.TenantID, result.ServiceID)
 	if err != nil {
@@ -454,8 +454,26 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	if err != nil {
 		return "", "", err
 	}
+	workKey := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
+	completion := sharedaws.TransactWriteItem{Update: &sharedaws.Update{
+		TableName: sharedaws.String(r.tableName), Key: workKey,
+		UpdateExpression: sharedaws.String("SET #status = :completed, CompletedAt = :completedAt, LastError = :lastError"),
+		ConditionExpression: sharedaws.String("#status = :inProgress AND FencingToken = :token"),
+		ExpressionAttributeNames: map[string]string{"#status": "Status"},
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":completed": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkCompleted)},
+			":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
+			":completedAt": &sharedaws.AttributeValueMemberS{Value: completedAt.Format(time.RFC3339)},
+			":lastError": &sharedaws.AttributeValueMemberS{Value: result.Error},
+			":token": &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
+		},
+	}}
+	items = append([]sharedaws.TransactWriteItem{completion}, items...)
 	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
 	if err != nil {
+		if len(sharedaws.TransactionCancellations(err)) > 0 {
+			return "", "", checkexecution.LeaseLost("complete-work", work.RunID)
+		}
 		return "", "", err
 	}
 	return transition, incidentID, nil

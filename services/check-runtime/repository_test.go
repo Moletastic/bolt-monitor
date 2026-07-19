@@ -88,16 +88,11 @@ func TestRecordExecutionResultWritesWorkRunAndStatusTogether(t *testing.T) {
 	if len(client.transactInput.TransactItems) != 3 {
 		t.Fatalf("transact items = %d, want 3", len(client.transactInput.TransactItems))
 	}
-	if got := sharedaws.ToString(client.transactInput.TransactItems[0].Put.TableName); got != "table-name" {
+	if got := sharedaws.ToString(client.transactInput.TransactItems[0].Update.TableName); got != "table-name" {
 		t.Fatalf("table name = %q, want table-name", got)
 	}
-	var workRecord dynamodbrecord.ExecutionWorkItemRecord
-	if err := sharedaws.UnmarshalMap(client.transactInput.TransactItems[0].Put.Item, &workRecord); err != nil {
-		t.Fatalf("UnmarshalMap returned error: %v", err)
-	}
-	expectedTTL := work.RequestedAt.Add(checkexecution.DefaultExecutionWorkRetentionDays * 24 * time.Hour).Unix()
-	if workRecord.TTL != expectedTTL {
-		t.Fatalf("work TTL = %d, want %d", workRecord.TTL, expectedTTL)
+	if sharedaws.ToString(client.transactInput.TransactItems[0].Update.ConditionExpression) != "#status = :inProgress AND FencingToken = :token" {
+		t.Fatalf("completion condition = %v", client.transactInput.TransactItems[0].Update.ConditionExpression)
 	}
 }
 
