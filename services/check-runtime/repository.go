@@ -280,17 +280,16 @@ func (r *dynamoRuntimeRepository) ListDispatchPending(ctx context.Context, tenan
 	return records, page.NextKey, nil
 }
 
-func (r *dynamoRuntimeRepository) RemoveDispatchPending(ctx context.Context, tenantID, dispatchSK string) error {
+func (r *dynamoRuntimeRepository) RemoveDispatchPending(ctx context.Context, tenantID, bucket, shard, eventID string) error {
 	if err := r.requireTableName(); err != nil {
 		return err
 	}
-	pk, sk, ok := strings.Cut(strings.TrimSpace(dispatchSK), "#")
-	if !ok {
-		return fmt.Errorf("dispatch SK %q is not a compound key", dispatchSK)
-	}
-	_ = pk
-	_ = sk
-	return nil
+	pk := fmt.Sprintf("DISPATCH_PENDING#%s#%s#%s", dynamodbschema.NormalizeToken(tenantID), dynamodbschema.NormalizeToken(bucket), dynamodbschema.NormalizeToken(shard))
+	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{
+		TableName: sharedaws.String(r.tableName),
+		Key:      sharedaws.NewPrimaryKey(pk, dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
+	})
+	return err
 }
 
 func (r *dynamoRuntimeRepository) AcknowledgeExecutionPublication(ctx context.Context, work checkexecution.ExecutionWork) error {
@@ -537,6 +536,9 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 			transition = eventID
 			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, eventID, work.RunID, incidentID, transition, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
 			records = append(records, outbox)
+			bucket, shard := executionRecoveryBucket(work)
+			pending := dynamodbrecord.NewDispatchPendingRecord(result.TenantID, eventID, bucket, shard)
+			records = append(records, pending)
 		}
 	} else {
 		transition = ""

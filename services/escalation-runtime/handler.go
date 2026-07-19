@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/notifications"
 	"github.com/aws/aws-lambda-go/events"
@@ -26,6 +27,8 @@ type escalationRepository interface {
 	GetIncident(context.Context, string) (*incidentRecord, error)
 	CreateIncident(context.Context, incidentRecord) error
 	GetChannel(context.Context, string, string) (*escalation.NotificationChannel, error)
+	LoadTransitionOutbox(context.Context, string, string) (*dynamodbrecord.TransitionOutboxRecord, error)
+	AcknowledgeDispatch(context.Context, string, string) error
 }
 
 type escalationHandler struct {
@@ -103,6 +106,12 @@ func (h *escalationHandler) exhaustIfNeeded(ctx context.Context, state *escalati
 
 func (h *escalationHandler) handleSQSEvent(ctx context.Context, event events.SQSEvent) error {
 	for _, msg := range event.Records {
+		if handled, err := h.handleTransitionEnvelope(ctx, msg.Body); handled {
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		eventData, err := notifications.ParseNotificationEvent(msg.Body)
 		if err != nil {
 			log.Printf("failed to parse escalation event: %v", err)
@@ -122,6 +131,28 @@ func (h *escalationHandler) handleSQSEvent(ctx context.Context, event events.SQS
 		}
 	}
 	return nil
+}
+
+func (h *escalationHandler) handleTransitionEnvelope(ctx context.Context, body string) (bool, error) {
+	var envelope struct {
+		TenantID string `json:"tenantId"`
+		RunID    string `json:"runId"`
+		Kind     string `json:"kind"`
+	}
+	if err := json.Unmarshal([]byte(body), &envelope); err != nil || envelope.Kind != "transition" {
+		return false, nil
+	}
+	canonical, err := h.repo.LoadTransitionOutbox(ctx, envelope.TenantID, envelope.RunID)
+	if err != nil {
+		return true, err
+	}
+	if canonical == nil || canonical.DispatchStatus != "pending" {
+		return true, nil
+	}
+	if err := h.repo.AcknowledgeDispatch(ctx, canonical.TenantID, canonical.RunID); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 func (h *escalationHandler) handleIncidentUp(ctx context.Context, event notifications.NotificationEvent) error {
