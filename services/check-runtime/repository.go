@@ -586,9 +586,6 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	if err != nil {
 		return "", "", err
 	}
-	if !statusFound {
-		currentStatus = resultstatus.NewMonitorStatus(result)
-	}
 
 	openIncident, incidentFound, err := r.getOpenIncident(ctx, result.TenantID, result.ServiceID, result.MonitorID)
 	if err != nil {
@@ -599,12 +596,14 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 		FailureThreshold:  monitor.FailureThreshold,
 		RecoveryThreshold: monitor.RecoveryThreshold,
 	}
+	if !statusFound {
+		currentStatus = resultstatus.NewMonitorStatus(result)
+	}
 	incidentRecords, transition, incidentID, updatedStatus, err := r.incidentRecordsForResult(monitor, result, currentStatus, thresholdConfig, openIncident, incidentFound)
 	if err != nil {
 		return "", "", err
 	}
-
-	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && resultstatus.IsNewerRecurringObservation(currentStatus, *result.ScheduledFor, result.RunID)
+	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && (statusFound == false || resultstatus.IsNewerRecurringObservation(currentStatus, *result.ScheduledFor, result.RunID))
 	records := []any{run.ToRecord()}
 	if applyProjection {
 		updatedStatus.RecurringScheduledFor = result.ScheduledFor

@@ -254,6 +254,45 @@ func TestRecordExecutionResultSkipsOlderRecurringProjection(t *testing.T) {
 	}
 }
 
+func TestRecordExecutionResultWritesEqualTransitionAndOutboxIdentities(t *testing.T) {
+	client := &fakeDynamoClient{}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, FailureThreshold: 1, RecoveryThreshold: 1}
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_T1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: time.Now(), FencingToken: "TOKEN"}
+	scheduledFor := time.Now()
+	result := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_T1", Outcome: checkexecution.OutcomeFailure, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &scheduledFor, FinishedAt: time.Now()}
+
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, result); err != nil {
+		t.Fatalf("RecordExecutionResult returned error: %v", err)
+	}
+	if client.transactInput == nil {
+		t.Fatal("transaction not captured")
+	}
+	var outboxID, activityID string
+	for _, item := range client.transactInput.TransactItems {
+		if item.Put == nil {
+			continue
+		}
+		entity, _ := item.Put.Item["EntityType"].(*sharedaws.AttributeValueMemberS)
+		if entity == nil {
+			continue
+		}
+		switch entity.Value {
+		case dynamodbschema.EntityTransitionOutbox:
+			if v, _ := item.Put.Item["TransitionID"].(*sharedaws.AttributeValueMemberS); v != nil {
+				outboxID = v.Value
+			}
+		case dynamodbschema.EntityIncidentActivity:
+			if v, _ := item.Put.Item["ActivityID"].(*sharedaws.AttributeValueMemberS); v != nil {
+				activityID = v.Value
+			}
+		}
+	}
+	if outboxID == "" || activityID == "" || outboxID != activityID {
+		t.Fatalf("transition identity must match activity identity: outbox=%q activity=%q", outboxID, activityID)
+	}
+}
+
 func TestDispatchPendingBucketShardsByShardCount(t *testing.T) {
 	work := checkexecution.ExecutionWork{RunID: "RUN_BUCKET", AcceptedAt: time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)}
 	bucket, shard := dispatchPendingBucket(work)

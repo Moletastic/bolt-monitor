@@ -61,8 +61,8 @@ func TestNewMonitorStatusProducesUpperCaseState(t *testing.T) {
 		Outcome: checkexecution.OutcomeFailure,
 	}
 	failedStatus := NewMonitorStatus(failed)
-	if failedStatus.CurrentStatus != "DOWN" {
-		t.Fatalf("failed CurrentStatus = %q, want DOWN", failedStatus.CurrentStatus)
+	if failedStatus.CurrentStatus != string(MonitorStateUp) {
+		t.Fatalf("failed CurrentStatus = %q, want %q (first observation seeds UP)", failedStatus.CurrentStatus, MonitorStateUp)
 	}
 }
 

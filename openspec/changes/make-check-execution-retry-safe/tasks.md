@@ -43,11 +43,11 @@
 
 ## 6. Incident Transition And Outbox Idempotency
 
-- [ ] 6.1 Derive one deterministic transition identity from the causal recurring run; use the same value as `transitionId`, persisted activity `activityId`, and outbox-envelope `eventId`.
-- [ ] 6.2 Add the canonical notification outbox model/key expected by `assure-notification-and-escalation-delivery`, carrying causal `runId`, `trigger=recurring`, `scheduleDefinitionVersion`, `scheduledFor`, incident identity, transition type, and safe routing context.
-- [ ] 6.3 Persist exactly one canonical pending outbox item and one sparse dispatch-pending marker atomically with deterministic incident transition/activity and result commit; add no direct notification SQS send, dispatch acknowledgement, delivery claim, route initiation, or per-channel outcome behavior.
+- [x] 6.1 Derive one deterministic transition identity from the causal recurring run; use the same value as `transitionId`, persisted activity `activityId`, and outbox-envelope `eventId`.
+- [x] 6.2 Add the canonical notification outbox model/key expected by `assure-notification-and-escalation-delivery`, carrying causal `runId`, `trigger=recurring`, `scheduleDefinitionVersion`, `scheduledFor`, incident identity, transition type, and safe routing context.
+- [x] 6.3 Persist exactly one canonical pending outbox item and one sparse dispatch-pending marker atomically with deterministic incident transition/activity and result commit; add no direct notification SQS send, dispatch acknowledgement, delivery claim, route initiation, or per-channel outcome behavior.
 - [x] 6.4 Remove the existing ignored direct escalation send from check execution so notification assurance remains the sole dispatcher/consumer protocol.
-- [ ] 6.5 Add tests for duplicate down/up transition commits, stale result suppression, transaction rollback, equal transition/activity/event identity, one outbox item, and absence of direct notification queue sends.
+- [x] 6.5 Add tests for duplicate down/up transition commits, stale result suppression, transaction rollback, equal transition/activity/event identity, one outbox item, and absence of direct notification queue sends.
 
 ## 7. Manual Run Unification
 
