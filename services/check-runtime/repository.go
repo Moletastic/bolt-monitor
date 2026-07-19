@@ -437,8 +437,11 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 		return "", "", err
 	}
 
+	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && resultstatus.IsNewerRecurringObservation(currentStatus, *result.ScheduledFor, result.RunID)
 	records := []any{run.ToRecord()}
-	if result.Trigger == checkexecution.TriggerTypeRecurring {
+	if applyProjection {
+		updatedStatus.RecurringScheduledFor = result.ScheduledFor
+		updatedStatus.RecurringRunID = result.RunID
 		records = append(records, updatedStatus.ToRecord())
 		records = append(records, incidentRecords...)
 		service, found, err := r.getService(ctx, result.TenantID, result.ServiceID)
