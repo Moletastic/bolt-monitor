@@ -10,6 +10,7 @@ import (
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
 	"bolt-monitor/shared/dynamodbrecord"
+	"bolt-monitor/shared/dynamodbschema"
 	"bolt-monitor/shared/monitorconfig"
 	"bolt-monitor/shared/resultstatus"
 )
@@ -213,6 +214,43 @@ func TestExecutionSafetyConfigRejectsShortVisibility(t *testing.T) {
 	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
 	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
 		t.Fatal("expected visibility violation")
+	}
+}
+
+func TestRecordExecutionResultSkipsOlderRecurringProjection(t *testing.T) {
+	cursor := time.Date(2026, 7, 19, 12, 5, 0, 0, time.UTC)
+	record := resultstatus.MonitorStatus{
+		TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http",
+		CurrentStatus: "DOWN", ConsecutiveFailures: 1, ConsecutiveSuccesses: 0,
+		LastCheckedAt: cursor, LastOutcome: checkexecution.OutcomeFailure,
+		RecurringScheduledFor: &cursor, RecurringRunID: "RUN_FUTURE",
+	}
+	statusItem, err := sharedaws.MarshalMap(record.ToRecord())
+	if err != nil {
+		t.Fatalf("MarshalMap: %v", err)
+	}
+	client := &fakeDynamoClient{getItemOutput: &sharedaws.DynamoDBGetItemOutput{Item: statusItem}}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, FailureThreshold: 1, RecoveryThreshold: 1}
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OLD", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: cursor.Add(-time.Minute), FencingToken: "TOKEN"}
+	older := cursor.Add(-time.Minute)
+	result := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OLD", Outcome: checkexecution.OutcomeSuccess, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &older, FinishedAt: older}
+
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, result); err != nil {
+		t.Fatalf("RecordExecutionResult returned error: %v", err)
+	}
+	if client.transactInput == nil {
+		t.Fatal("transaction not captured")
+	}
+	for i, item := range client.transactInput.TransactItems {
+		if item.Put != nil {
+			if entity, _ := item.Put.Item["EntityType"].(*sharedaws.AttributeValueMemberS); entity != nil && entity.Value == dynamodbschema.EntityMonitorStatus {
+				t.Fatalf("MonitorStatus projection should be skipped for older recurring key (index %d)", i)
+			}
+			if entity, _ := item.Put.Item["EntityType"].(*sharedaws.AttributeValueMemberS); entity != nil && entity.Value == dynamodbschema.EntityServiceStatus {
+				t.Fatalf("ServiceStatus projection should be skipped for older recurring key (index %d)", i)
+			}
+		}
 	}
 }
 

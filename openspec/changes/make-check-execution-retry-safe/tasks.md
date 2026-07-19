@@ -35,11 +35,11 @@
 ## 5. Canonical Results And Ordered Projections
 
 - [x] 5.1 Refactor recurring and manual result handling behind one conditional result-commit service that validates work/result identity and current fencing token.
-- [ ] 5.2 Extend `CheckRun` storage and API mapping with trigger and optional `scheduleDefinitionVersion`/`scheduledFor`, use a uniqueness condition for `runId`, and retain existing raw-run TTL behavior.
-- [ ] 5.3 Add recurring observation cursor/run identity to `MonitorStatus` and condition recurring projection updates on a strictly newer `(scheduledFor, runId)` ordering key.
-- [ ] 5.4 Commit work completion, work-marker removal, canonical `CheckRun`, in-order monitor status/counters, service rollup, deterministic incident transition/activity, and one canonical notification outbox item in one DynamoDB transaction.
-- [ ] 5.5 Resolve duplicate terminal commits idempotently and store out-of-order recurring `CheckRun` history without changing status, counters, rollup, incidents, audit/activity, or outbox items.
-- [ ] 5.6 Add result repository tests for atomic rollback, duplicate commit, conflicting result identity, lease loss, equal/older/newer ordering keys, first status creation, and service-rollup ordering.
+- [x] 5.2 Extend `CheckRun` storage and API mapping with trigger and optional `scheduleDefinitionVersion`/`scheduledFor`, use a uniqueness condition for `runId`, and retain existing raw-run TTL behavior.
+- [x] 5.3 Add recurring observation cursor/run identity to `MonitorStatus` and condition recurring projection updates on a strictly newer `(scheduledFor, runId)` ordering key.
+- [x] 5.4 Commit work completion, work-marker removal, canonical `CheckRun`, in-order monitor status/counters, service rollup, deterministic incident transition/activity, and one canonical notification outbox item in one DynamoDB transaction.
+- [x] 5.5 Resolve duplicate terminal commits idempotently and store out-of-order recurring `CheckRun` history without changing status, counters, rollup, incidents, audit/activity, or outbox items.
+- [x] 5.6 Add result repository tests for atomic rollback, duplicate commit, conflicting result identity, lease loss, equal/older/newer ordering keys, first status creation, and service-rollup ordering.
 
 ## 6. Incident Transition And Outbox Idempotency
 
