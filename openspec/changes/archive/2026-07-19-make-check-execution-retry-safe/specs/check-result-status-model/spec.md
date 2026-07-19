@@ -30,7 +30,7 @@ System SHALL store a latest recurring monitor-status snapshot whose projection c
 - **THEN** it stores the manual `CheckRun`
 - **AND** does not advance or rewrite the recurring monitor-status snapshot, counters, service rollup, incident lifecycle/activity, or transition outbox
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Result and terminal state commit atomically
 System SHALL commit canonical `CheckRun`, completed work, work-recovery marker removal, applicable recurring projections, and any deterministic incident transition/activity/canonical notification outbox item in one conditional DynamoDB transaction.

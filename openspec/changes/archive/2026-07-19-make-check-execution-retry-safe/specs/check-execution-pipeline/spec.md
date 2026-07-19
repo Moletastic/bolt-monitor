@@ -14,7 +14,7 @@ System SHALL conditionally create one canonical execution work record for each a
 - **THEN** system resolves the same work identity
 - **AND** does not create a second run for that identity
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Execution follows an at-least-once durable state machine
 System SHALL coordinate execution through conditional `pending`, `in_progress`, `completed`, and `skipped` work transitions with publication state, lease metadata, and terminal metadata.

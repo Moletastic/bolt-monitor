@@ -64,7 +64,7 @@ System SHALL report per-record SQS success after work reaches a terminal state a
 - **WHEN** worker receives a duplicate for completed or skipped work
 - **THEN** it returns success without another HTTP request
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Worker claims work with a recoverable lease
 System SHALL use conditional claims, expiring leases, and fencing tokens rather than relying on SQS visibility as the execution claim.
