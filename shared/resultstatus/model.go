@@ -28,6 +28,8 @@ type CheckRun struct {
 	RunID       string                     `json:"runId"`
 	Type        string                     `json:"type"`
 	Trigger     checkexecution.TriggerType `json:"trigger"`
+	ScheduleDefinitionVersion string `json:"scheduleDefinitionVersion,omitempty"`
+	ScheduledFor              *time.Time `json:"scheduledFor,omitempty"`
 	StartedAt   time.Time                  `json:"startedAt"`
 	FinishedAt  time.Time                  `json:"finishedAt"`
 	DurationMs  int64                      `json:"durationMs"`
@@ -50,6 +52,8 @@ type MonitorStatus struct {
 	LastError            string                 `json:"lastError,omitempty"`
 	LastFailureCode      string                 `json:"lastFailureCode,omitempty"`
 	LastOutcome          checkexecution.Outcome `json:"lastOutcome"`
+	RecurringScheduledFor *time.Time              `json:"recurringScheduledFor,omitempty"`
+	RecurringRunID        string                  `json:"recurringRunId,omitempty"`
 }
 
 type CheckRunRecord struct {
@@ -62,6 +66,8 @@ type CheckRunRecord struct {
 	RunID       string `json:"runId"`
 	Type        string `json:"type"`
 	Trigger     string `json:"trigger"`
+	ScheduleDefinitionVersion string `json:"scheduleDefinitionVersion,omitempty"`
+	ScheduledFor              string `json:"scheduledFor,omitempty"`
 	StartedAt   string `json:"startedAt"`
 	FinishedAt  string `json:"finishedAt"`
 	DurationMs  int64  `json:"durationMs"`
@@ -88,6 +94,8 @@ type MonitorStatusRecord struct {
 	LastError            string `json:"lastError,omitempty" dynamodbav:"LastError,omitempty"`
 	LastFailureCode      string `json:"lastFailureCode,omitempty" dynamodbav:"LastFailureCode,omitempty"`
 	LastOutcome          string `json:"lastOutcome" dynamodbav:"LastOutcome"`
+	RecurringScheduledFor string `json:"recurringScheduledFor,omitempty" dynamodbav:"RecurringScheduledFor,omitempty"`
+	RecurringRunID        string `json:"recurringRunId,omitempty" dynamodbav:"RecurringRunID,omitempty"`
 	GSI2PK               string `json:"gsi2pk,omitempty" dynamodbav:"GSI2PK,omitempty"`
 	GSI2SK               string `json:"gsi2sk,omitempty" dynamodbav:"GSI2SK,omitempty"`
 }
@@ -104,6 +112,8 @@ func NewCheckRun(result checkexecution.ExecutionResult, now time.Time) CheckRun 
 		RunID:       strings.ToUpper(runID),
 		Type:        result.Type,
 		Trigger:     result.Trigger,
+		ScheduleDefinitionVersion: result.ScheduleDefinitionVersion,
+		ScheduledFor: result.ScheduledFor,
 		StartedAt:   result.StartedAt.UTC(),
 		FinishedAt:  result.FinishedAt.UTC(),
 		DurationMs:  result.DurationMs,
@@ -132,6 +142,8 @@ func NewMonitorStatus(result checkexecution.ExecutionResult) MonitorStatus {
 		LastError:            result.Error,
 		LastFailureCode:      result.FailureCode,
 		LastOutcome:          result.Outcome,
+		RecurringScheduledFor: result.ScheduledFor,
+		RecurringRunID:        result.RunID,
 	}
 }
 
@@ -179,7 +191,7 @@ func NewMonitorStatusWithConfig(result checkexecution.ExecutionResult, config Th
 
 func (r CheckRun) ToRecord() CheckRunRecord {
 	item := dynamodbschema.CheckRunItem(r.TenantID, r.ServiceID, r.MonitorID, r.StartedAt.UTC().Format(time.RFC3339), r.RunID, r.TTL)
-	return CheckRunRecord{
+	record := CheckRunRecord{
 		PK:          item.PK,
 		SK:          item.SK,
 		EntityType:  item.EntityType,
@@ -189,6 +201,7 @@ func (r CheckRun) ToRecord() CheckRunRecord {
 		RunID:       r.RunID,
 		Type:        r.Type,
 		Trigger:     string(r.Trigger),
+		ScheduleDefinitionVersion: r.ScheduleDefinitionVersion,
 		StartedAt:   r.StartedAt.UTC().Format(time.RFC3339),
 		FinishedAt:  r.FinishedAt.UTC().Format(time.RFC3339),
 		DurationMs:  r.DurationMs,
@@ -198,11 +211,15 @@ func (r CheckRun) ToRecord() CheckRunRecord {
 		FailureCode: r.FailureCode,
 		TTL:         r.TTL,
 	}
+	if r.ScheduledFor != nil {
+		record.ScheduledFor = r.ScheduledFor.UTC().Format(time.RFC3339)
+	}
+	return record
 }
 
 func (s MonitorStatus) ToRecord() MonitorStatusRecord {
 	item := dynamodbschema.MonitorStatusItem(s.TenantID, s.ServiceID, s.MonitorID, s.CurrentStatus, s.LastCheckedAt.UTC().Format(time.RFC3339))
-	return MonitorStatusRecord{
+	record := MonitorStatusRecord{
 		PK:                   item.PK,
 		SK:                   item.SK,
 		EntityType:           item.EntityType,
@@ -218,5 +235,10 @@ func (s MonitorStatus) ToRecord() MonitorStatusRecord {
 		LastError:            s.LastError,
 		LastFailureCode:      s.LastFailureCode,
 		LastOutcome:          string(s.LastOutcome),
+		RecurringRunID:        s.RecurringRunID,
 	}
+	if s.RecurringScheduledFor != nil {
+		record.RecurringScheduledFor = s.RecurringScheduledFor.UTC().Format(time.RFC3339)
+	}
+	return record
 }

@@ -152,7 +152,7 @@ func TestRunSchedulerRespectsRecurringGate(t *testing.T) {
 	}
 }
 
-func TestRunSchedulerEnqueuesMonitorWithNoLastExecution(t *testing.T) {
+func TestRunSchedulerEnqueuesStableRecurringIdentity(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
@@ -168,8 +168,12 @@ func TestRunSchedulerEnqueuesMonitorWithNoLastExecution(t *testing.T) {
 	if summary.Enqueued != 1 || len(sqs.sentMessages) != 1 || len(repo.works) != 1 {
 		t.Fatalf("summary = %+v, messages = %d, works = %d, want one enqueued", summary, len(sqs.sentMessages), len(repo.works))
 	}
-	if got := repo.lastExec["auth/public-http"]; !got.Equal(now) {
-		t.Fatalf("lastExec = %v, want %v", got, now)
+	var request checkexecution.ExecutionRequest
+	if err := json.Unmarshal([]byte(sqs.sentMessages[0]), &request); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	if request.RunID == "" || request.AcceptedAt != now || request.ScheduledFor == nil || !request.ScheduledFor.Equal(now) {
+		t.Fatalf("request = %#v", request)
 	}
 }
 
@@ -193,7 +197,7 @@ func TestRunSchedulerEnqueuesEnabledMonitorUnderDraftService(t *testing.T) {
 	}
 }
 
-func TestRunSchedulerSkipsMonitorBeforeIntervalElapsed(t *testing.T) {
+func TestRunSchedulerDoesNotUseLastExecutionForIdentity(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
@@ -206,8 +210,8 @@ func TestRunSchedulerSkipsMonitorBeforeIntervalElapsed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runScheduler returned error: %v", err)
 	}
-	if summary.Enqueued != 0 || summary.Skipped != 1 || len(sqs.sentMessages) != 0 || len(repo.works) != 0 {
-		t.Fatalf("summary = %+v, messages = %d, works = %d, want skipped", summary, len(sqs.sentMessages), len(repo.works))
+	if summary.Enqueued != 1 || len(sqs.sentMessages) != 1 || len(repo.works) != 1 {
+		t.Fatalf("summary = %+v, messages = %d, works = %d, want one", summary, len(sqs.sentMessages), len(repo.works))
 	}
 }
 

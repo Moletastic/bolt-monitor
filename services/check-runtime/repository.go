@@ -123,21 +123,75 @@ func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, 
 	if err := r.requireTableName(); err != nil {
 		return err
 	}
-	acceptedAt := now.UTC().Format(time.RFC3339)
-	records := make([]any, 0, len(requests))
 	for _, request := range requests {
 		runID := request.RunID
 		if strings.TrimSpace(runID) == "" {
 			runID = newRunID(now)
 		}
-		records = append(records, dynamodbrecord.NewExecutionWorkItemRecord(request.Monitor.TenantID, request.Monitor.ServiceID, request.Monitor.MonitorID, runID, request.Trigger, acceptedAt, checkexecution.ExecutionWorkPending, nil, nil, ""))
+		acceptedAt := request.AcceptedAt
+		if acceptedAt.IsZero() {
+			acceptedAt = now.UTC()
+		}
+		work := checkexecution.ExecutionWork{
+			TenantID: request.Monitor.TenantID, ServiceID: request.Monitor.ServiceID, MonitorID: request.Monitor.MonitorID,
+			RunID: runID, Trigger: request.Trigger, AcceptedAt: acceptedAt, RequestedAt: acceptedAt,
+			ScheduleDefinitionVersion: request.ScheduleDefinitionVersion, ScheduledFor: request.ScheduledFor,
+			Status: checkexecution.ExecutionWorkPending, PublicationState: checkexecution.PublicationPending,
+		}
+		if err := r.createExecutionWork(ctx, work); err != nil {
+			return err
+		}
 	}
-	items, err := marshalItems(r.tableName, records...)
+	return nil
+}
+
+func (r *dynamoRuntimeRepository) createExecutionWork(ctx context.Context, work checkexecution.ExecutionWork) error {
+	record := dynamodbrecord.ExecutionWorkItemRecordFromWork(work)
+	item, err := sharedaws.MarshalMap(record)
 	if err != nil {
 		return err
 	}
-	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
-	return err
+	_, err = r.client.PutItem(ctx, &sharedaws.DynamoDBPutItemInput{
+		TableName: sharedaws.String(r.tableName), Item: item,
+		ConditionExpression: sharedaws.String("attribute_not_exists(PK) AND attribute_not_exists(SK)"),
+	})
+	if err == nil {
+		return nil
+	}
+	if !sharedaws.IsConditionalCheckFailure(err) {
+		return err
+	}
+	existing, found, loadErr := r.loadExecutionWork(ctx, work.TenantID, work.RunID)
+	if loadErr != nil {
+		return loadErr
+	}
+	if !found || !sameWorkIdentity(existing, work) {
+		return checkexecution.Conflict("create-work", work.RunID)
+	}
+	return nil
+}
+
+func (r *dynamoRuntimeRepository) loadExecutionWork(ctx context.Context, tenantID, runID string) (checkexecution.ExecutionWork, bool, error) {
+	item, found, err := sharedaws.GetByPrimaryKey(ctx, r.client, r.tableName, sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(runID)))
+	if err != nil || !found {
+		return checkexecution.ExecutionWork{}, found, err
+	}
+	var record dynamodbrecord.ExecutionWorkItemRecord
+	if err := sharedaws.UnmarshalMap(item, &record); err != nil {
+		return checkexecution.ExecutionWork{}, false, err
+	}
+	work, err := record.ToWork()
+	return work, err == nil, err
+}
+
+func sameWorkIdentity(left, right checkexecution.ExecutionWork) bool {
+	if !strings.EqualFold(left.TenantID, right.TenantID) || !strings.EqualFold(left.ServiceID, right.ServiceID) || !strings.EqualFold(left.MonitorID, right.MonitorID) || !strings.EqualFold(left.RunID, right.RunID) || left.Trigger != right.Trigger || left.ScheduleDefinitionVersion != right.ScheduleDefinitionVersion {
+		return false
+	}
+	if left.ScheduledFor == nil || right.ScheduledFor == nil {
+		return left.ScheduledFor == nil && right.ScheduledFor == nil
+	}
+	return left.ScheduledFor.Equal(*right.ScheduledFor)
 }
 
 func (r *dynamoRuntimeRepository) ListPendingExecutionWork(ctx context.Context, tenantID string, limit int32) ([]checkexecution.ExecutionWork, error) {

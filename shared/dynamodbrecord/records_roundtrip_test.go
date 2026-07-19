@@ -309,7 +309,7 @@ func TestExecutionWorkItemRecordRoundTripPreservesKeyAttributes(t *testing.T) {
 	)
 	roundTripAssertKeyAttributes(t, record,
 		"TENANT#DEFAULT",
-		"RUN_REQUEST#2026-05-17T22:00:00Z#RUN_ABC",
+		"RUN_REQUEST#RUN_ABC",
 		dynamodbschema.EntityExecutionWork,
 		map[string]string{
 			"RunID":     "RUN_ABC",

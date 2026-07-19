@@ -2,6 +2,9 @@ package checkexecution
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,9 +40,12 @@ const (
 )
 
 type ExecutionRequest struct {
-	Monitor monitorconfig.Monitor `json:"monitor"`
-	RunID   string                `json:"runId,omitempty"`
-	Trigger TriggerType           `json:"trigger"`
+	Monitor                   monitorconfig.Monitor `json:"monitor"`
+	RunID                     string                `json:"runId"`
+	Trigger                   TriggerType           `json:"trigger"`
+	AcceptedAt                time.Time             `json:"acceptedAt"`
+	ScheduleDefinitionVersion string                `json:"scheduleDefinitionVersion,omitempty"`
+	ScheduledFor              *time.Time            `json:"scheduledFor,omitempty"`
 }
 
 type ExecutionResult struct {
@@ -49,6 +55,10 @@ type ExecutionResult struct {
 	RunID       string      `json:"runId,omitempty"`
 	Type        string      `json:"type"`
 	Trigger     TriggerType `json:"trigger"`
+	AcceptedAt  time.Time   `json:"acceptedAt"`
+	ScheduleDefinitionVersion string     `json:"scheduleDefinitionVersion,omitempty"`
+	ScheduledFor              *time.Time `json:"scheduledFor,omitempty"`
+	TransitionID              string     `json:"transitionId,omitempty"`
 	StartedAt   time.Time   `json:"startedAt"`
 	FinishedAt  time.Time   `json:"finishedAt"`
 	DurationMs  int64       `json:"durationMs"`
@@ -56,6 +66,38 @@ type ExecutionResult struct {
 	StatusCode  *int        `json:"statusCode,omitempty"`
 	Error       string      `json:"error,omitempty"`
 	FailureCode string      `json:"failureCode,omitempty"`
+}
+
+// RecurringRunID derives the durable identity used by scheduler retries.
+func RecurringRunID(tenantID, serviceID, monitorID, scheduleDefinitionVersion string, scheduledFor time.Time) string {
+	identity := strings.Join([]string{
+		strings.ToUpper(strings.TrimSpace(tenantID)),
+		strings.ToLower(strings.TrimSpace(serviceID)),
+		strings.ToLower(strings.TrimSpace(monitorID)),
+		strings.TrimSpace(scheduleDefinitionVersion),
+		scheduledFor.UTC().Format(time.RFC3339Nano),
+	}, "\n")
+	sum := sha256.Sum256([]byte(identity))
+	return "RUN_" + strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+// ScheduleDefinitionVersion changes only when execution-relevant monitor state changes.
+func ScheduleDefinitionVersion(monitor monitorconfig.Monitor) string {
+	payload, _ := json.Marshal(struct {
+		Type            monitorconfig.MonitorType
+		IntervalSeconds int
+		HTTP            *monitorconfig.HTTPConfiguration
+	}{monitor.Type, monitor.IntervalSeconds, monitor.HTTP})
+	sum := sha256.Sum256(payload)
+	return "SCHEDULE_" + strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+func ScheduledFor(invokedAt time.Time, intervalSeconds int) time.Time {
+	if intervalSeconds <= 0 {
+		intervalSeconds = 60
+	}
+	interval := time.Duration(intervalSeconds) * time.Second
+	return invokedAt.UTC().Truncate(interval)
 }
 
 type SchedulerConfig struct {
