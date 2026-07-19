@@ -64,7 +64,7 @@ func TestEnqueueExecutionRequestsConditionallyCreatesWork(t *testing.T) {
 	repo := newDynamoRuntimeRepository(client, "table-name")
 	acceptedAt := time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC)
 	request := checkexecution.ExecutionRequest{Monitor: testMonitor("https://example.com", true), RunID: "RUN_1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: acceptedAt}
-	if err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
+	if _, err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
 		t.Fatalf("EnqueueExecutionRequests returned error: %v", err)
 	}
 	if client.transactInput == nil || len(client.transactInput.TransactItems) != 3 {
@@ -115,7 +115,7 @@ func TestEnqueueExecutionRequestsIsNoOpWhenWorkAlreadyExists(t *testing.T) {
 	client := &fakeDynamoClient{store: store, transactErr: sharedaws.NewConditionalCheckFailedError()}
 	repo := newDynamoRuntimeRepository(client, "table-name")
 	request := checkexecution.ExecutionRequest{Monitor: testMonitor("https://example.com", true), RunID: "RUN_1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now}
-	if err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, now); err != nil {
+	if _, err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, now); err != nil {
 		t.Fatalf("EnqueueExecutionRequests returned error: %v", err)
 	}
 }
@@ -135,7 +135,7 @@ func TestEnqueueExecutionRequestsRejectsIdentityConflict(t *testing.T) {
 	client := &fakeDynamoClient{store: store, transactErr: sharedaws.NewConditionalCheckFailedError()}
 	repo := newDynamoRuntimeRepository(client, "table-name")
 	request := checkexecution.ExecutionRequest{Monitor: testMonitor("https://example.com", true), RunID: "RUN_1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now}
-	if err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, now); err == nil || !strings.Contains(err.Error(), "immutable_identity_conflict") {
+	if _, err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, now); err == nil || !strings.Contains(err.Error(), "immutable_identity_conflict") {
 		t.Fatalf("expected conflict, got %v", err)
 	}
 }
