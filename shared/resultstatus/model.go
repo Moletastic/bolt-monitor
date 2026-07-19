@@ -158,6 +158,21 @@ func NewMonitorStatus(result checkexecution.ExecutionResult) MonitorStatus {
 	}
 }
 
+// IsNewerRecurringObservation prevents late recurring work from regressing
+// projections after a newer schedule boundary has committed.
+func IsNewerRecurringObservation(status MonitorStatus, scheduledFor time.Time, runID string) bool {
+	if status.RecurringScheduledFor == nil {
+		return true
+	}
+	if scheduledFor.After(*status.RecurringScheduledFor) {
+		return true
+	}
+	if scheduledFor.Before(*status.RecurringScheduledFor) {
+		return false
+	}
+	return strings.Compare(strings.ToUpper(strings.TrimSpace(runID)), strings.ToUpper(strings.TrimSpace(status.RecurringRunID))) > 0
+}
+
 type ThresholdConfig struct {
 	FailureThreshold  int
 	RecoveryThreshold int

@@ -38,6 +38,20 @@ func TestNewCheckRunSetsTTL(t *testing.T) {
 	}
 }
 
+func TestIsNewerRecurringObservationOrdersScheduleThenRunID(t *testing.T) {
+	cursor := time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC)
+	status := MonitorStatus{RecurringScheduledFor: &cursor, RecurringRunID: "RUN_B"}
+	if IsNewerRecurringObservation(status, cursor.Add(-time.Minute), "RUN_Z") {
+		t.Fatal("older schedule boundary advanced cursor")
+	}
+	if IsNewerRecurringObservation(status, cursor, "RUN_A") {
+		t.Fatal("lower equal-time run ID advanced cursor")
+	}
+	if !IsNewerRecurringObservation(status, cursor, "RUN_C") || !IsNewerRecurringObservation(status, cursor.Add(time.Minute), "RUN_A") {
+		t.Fatal("newer observation did not advance cursor")
+	}
+}
+
 func TestMonitorStatusToRecordUsesStatusItemKeys(t *testing.T) {
 	status := NewMonitorStatus(sampleResult())
 	record := status.ToRecord()
