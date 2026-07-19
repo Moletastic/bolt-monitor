@@ -210,22 +210,21 @@ export function createBootstrapStack(target: DeploymentTarget) {
     {
       runtime: 'go',
       handler: '../services/check-runtime',
+      timeout: '45 seconds',
+      memory: '512 MB',
       link: [table],
-      permissions: [
-        {
-          actions: ['sqs:SendMessage'],
-          resources: [notificationQueue.arn],
-        },
-      ],
       environment: {
         TABLE_NAME: table.name,
         RUNTIME_MODE: 'worker',
-        ESCALATION_QUEUE_URL: notificationQueue.url,
+        WORKER_LAMBDA_TIMEOUT_SECONDS: '45',
+        WORK_LEASE_DURATION_SECONDS: '60',
+        EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY: '5',
       },
     },
     {
       batch: {
-        size: 1,
+        size: 10,
+        partialResponses: true,
       },
     }
   )

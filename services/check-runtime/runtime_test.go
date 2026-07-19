@@ -138,7 +138,7 @@ func (r *fakeRuntimeRepository) ClaimExecutionWork(_ context.Context, work check
 	}
 	r.claims[work.RunID] = true
 	work.FencingToken = "LEASE_TEST"
-	leaseUntil := now.UTC().Add(executionWorkLeaseDuration)
+	leaseUntil := now.UTC().Add(executionWorkLeaseDuration())
 	work.LeaseUntil = &leaseUntil
 	work.Status = checkexecution.ExecutionWorkInProgress
 	return work, true, nil
