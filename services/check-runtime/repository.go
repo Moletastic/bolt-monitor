@@ -637,7 +637,7 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 					current.Status = incidentStatusResolved
 					current.ResolvedAt = result.FinishedAt.UTC().Format(time.RFC3339)
 					current.UpdatedAt = current.ResolvedAt
-					incidentRecords = buildIncidentRecords(current, "INCIDENT_RESOLVED", current.ResolvedAt, result.FinishedAt)
+					incidentRecords = buildIncidentRecords(current, "INCIDENT_RESOLVED", current.ResolvedAt, result.RunID, result.FinishedAt)
 					transition = "incident.up"
 					incidentID = current.IncidentID
 				}
@@ -675,7 +675,7 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 			if found {
 				current.Summary = incidentSummary(monitor, result)
 				current.UpdatedAt = result.FinishedAt.UTC().Format(time.RFC3339)
-				incidentRecords = buildIncidentRecords(current, "INCIDENT_UPDATED", current.UpdatedAt, result.FinishedAt)
+				incidentRecords = buildIncidentRecords(current, "INCIDENT_UPDATED", current.UpdatedAt, result.RunID, result.FinishedAt)
 			}
 
 		case domainvalues.MonitorStateRecovering:
@@ -705,7 +705,7 @@ func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig
 				UpdatedAt:  result.FinishedAt.UTC().Format(time.RFC3339),
 				Origin:     "system",
 			}
-			incidentRecords = buildIncidentRecords(incident, "INCIDENT_OPENED", incident.IncidentID, result.FinishedAt)
+			incidentRecords = buildIncidentRecords(incident, "INCIDENT_OPENED", incident.IncidentID, result.RunID, result.FinishedAt)
 			transition = "incident.down"
 			incidentID = incident.IncidentID
 		}
@@ -759,9 +759,9 @@ const (
 	incidentStatusResolved     = "resolved"
 )
 
-func buildIncidentRecords(incident dynamodbrecord.IncidentRecord, action, changeValue string, now time.Time) []any {
+func buildIncidentRecords(incident dynamodbrecord.IncidentRecord, action, changeValue string, runID string, now time.Time) []any {
 	auditID := newAuditID(now)
-	activityID := newActivityID(now)
+	activityID := checkexecution.TransitionID(runID)
 	auditEvent := dynamodbrecord.NewAuditEventRecord(now, auditID, incident.TenantID, action, incident.ServiceID, incident.MonitorID)
 	change := dynamodbrecord.NewAuditChangeRecord(auditEvent.AuditID, "incident", "", changeValue)
 	activity := dynamodbrecord.NewIncidentActivityRecord(incident.TenantID, incident.IncidentID, activityID, action, now)
