@@ -169,16 +169,20 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 		// Durable work is authority. SQS only wakes a worker for this identity.
 		created, err := h.repo.EnqueueExecutionRequests(ctx, []checkexecution.ExecutionRequest{request}, acceptedAt)
 		if err != nil {
+			runtimeOutcomeLog(outcomePublicationErr, "persist-work", request.Monitor.TenantID, request.RunID, request.Monitor.MonitorID, err.Error())
 			return summary, checkexecution.Storage("persist-work", request.RunID)
 		}
 		if created == 0 {
+			runtimeOutcomeLog(outcomeExisting, "persist-work", request.Monitor.TenantID, request.RunID, request.Monitor.MonitorID, "")
 			continue
 		}
+		runtimeOutcomeLog(outcomeCreated, "persist-work", request.Monitor.TenantID, request.RunID, request.Monitor.MonitorID, "")
 		jsonReq, err := json.Marshal(request)
 		if err != nil {
 			return summary, err
 		}
 		if err := h.sqsClient.SendMessage(ctx, h.queueURL, string(jsonReq)); err != nil {
+			runtimeOutcomeLog(outcomePublicationErr, "publish-work", request.Monitor.TenantID, request.RunID, request.Monitor.MonitorID, err.Error())
 			return summary, checkexecution.Publication("publish-work", request.RunID)
 		}
 		if err := h.repo.AcknowledgeExecutionPublication(ctx, checkexecution.ExecutionWork{
@@ -482,6 +486,7 @@ func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, erro
 						return dispatched, err
 					}
 					dispatched++
+					runtimeOutcomeLog(outcomeDispatchPend, "dispatch-pending", pending.TenantID, pending.RunID, "", "")
 				}
 				if nextKey == nil {
 					break
@@ -535,6 +540,7 @@ func (h runtimeHandler) recoverPublicationMarkers(ctx context.Context) (int, err
 						return recovered, err
 					}
 					recovered++
+					runtimeOutcomeLog(outcomeRecovered, "recover-publication", work.TenantID, work.RunID, work.MonitorID, "")
 				}
 				if nextKey == nil {
 					break

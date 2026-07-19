@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -587,6 +588,26 @@ func TestHandleSQSEventRejectsDuplicateConcurrentDelivery(t *testing.T) {
 	}
 	if len(repo.results) != 0 {
 		t.Fatalf("expected no execution, got results = %#v", repo.results)
+	}
+}
+
+func TestRuntimeOutcomeLogRedactsSecrets(t *testing.T) {
+	buf := &bytes.Buffer{}
+	previous := runtimeLogWriter
+	runtimeLogWriter = buf
+	defer func() { runtimeLogWriter = previous }()
+
+	runtimeOutcomeLog(outcomeCompleted, "commit-result", "DEFAULT", "RUN_1", "monitor", "secret-with-newline\nvalue")
+
+	entry := map[string]string{}
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("log entry did not decode: %v", err)
+	}
+	if entry["reason"] != "" {
+		t.Fatalf("expected redacted reason, got %q", entry["reason"])
+	}
+	if entry["outcome"] != string(outcomeCompleted) {
+		t.Fatalf("outcome = %q, want %q", entry["outcome"], outcomeCompleted)
 	}
 }
 
