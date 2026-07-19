@@ -384,15 +384,23 @@ func (r *dynamoRuntimeRepository) MarkExecutionWorkSkipped(ctx context.Context, 
 		return err
 	}
 	completedAt := now.UTC()
-	updated := work
-	updated.Status = checkexecution.ExecutionWorkSkipped
-	updated.CompletedAt = &completedAt
-	updated.LastError = reason
-	items, err := marshalItems(r.tableName, dynamodbrecord.ExecutionWorkItemRecordFromWork(updated))
-	if err != nil {
-		return err
+	_, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
+		TableName: sharedaws.String(r.tableName),
+		Key: sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap(),
+		UpdateExpression: sharedaws.String("SET #status = :skipped, CompletedAt = :completedAt, TerminalReason = :reason"),
+		ConditionExpression: sharedaws.String("#status = :inProgress AND FencingToken = :token"),
+		ExpressionAttributeNames: map[string]string{"#status": "Status"},
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":skipped": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkSkipped)},
+			":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
+			":completedAt": &sharedaws.AttributeValueMemberS{Value: completedAt.Format(time.RFC3339)},
+			":reason": &sharedaws.AttributeValueMemberS{Value: reason},
+			":token": &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
+		},
+	})
+	if sharedaws.IsConditionalCheckFailure(err) {
+		return checkexecution.LeaseLost("skip-work", work.RunID)
 	}
-	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
 	return err
 }
 
