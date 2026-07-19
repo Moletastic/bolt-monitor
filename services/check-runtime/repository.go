@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"os"
+	"strconv"
 	"sort"
 	"strings"
 	"time"
@@ -392,14 +394,22 @@ func (r *dynamoRuntimeRepository) ListPendingExecutionWork(ctx context.Context, 
 	return works, nil
 }
 
-const executionWorkLeaseDuration = 45 * time.Second
+const defaultExecutionWorkLeaseDuration = 60 * time.Second
+
+func executionWorkLeaseDuration() time.Duration {
+	seconds, err := strconv.Atoi(os.Getenv("WORK_LEASE_DURATION_SECONDS"))
+	if err != nil || seconds <= 0 {
+		return defaultExecutionWorkLeaseDuration
+	}
+	return time.Duration(seconds) * time.Second
+}
 
 func (r *dynamoRuntimeRepository) ClaimExecutionWork(ctx context.Context, work checkexecution.ExecutionWork, now time.Time) (checkexecution.ExecutionWork, bool, error) {
 	if err := r.requireTableName(); err != nil {
 		return checkexecution.ExecutionWork{}, false, err
 	}
 	startedAt := now.UTC()
-	leaseUntil := startedAt.Add(executionWorkLeaseDuration)
+	leaseUntil := startedAt.Add(executionWorkLeaseDuration())
 	token := newFencingToken(now)
 	key := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
 	out, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
@@ -547,9 +557,10 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 			records = append(records, serviceStatus)
 		}
 		if transition != "" {
+			transitionType := transition
 			eventID := checkexecution.TransitionID(work.RunID)
 			transition = eventID
-			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, eventID, work.RunID, incidentID, transition, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
+			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, result.ServiceID, result.MonitorID, eventID, work.RunID, incidentID, transitionType, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
 			records = append(records, outbox)
 			bucket, shard := executionRecoveryBucket(work)
 			pending := dynamodbrecord.NewDispatchPendingRecord(result.TenantID, eventID, bucket, shard)

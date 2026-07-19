@@ -149,10 +149,27 @@ func (h *escalationHandler) handleTransitionEnvelope(ctx context.Context, body s
 	if canonical == nil || canonical.DispatchStatus != "pending" {
 		return true, nil
 	}
-	if err := h.repo.AcknowledgeDispatch(ctx, canonical.TenantID, canonical.RunID); err != nil {
+	timestamp, err := time.Parse(time.RFC3339, canonical.CreatedAt)
+	if err != nil {
 		return true, err
 	}
-	return true, nil
+	event := notifications.NotificationEvent{
+		EventType: notifications.EventType(canonical.TransitionType), TenantID: canonical.TenantID,
+		ServiceID: canonical.ServiceID, MonitorID: canonical.MonitorID, IncidentID: canonical.IncidentID,
+		Timestamp: timestamp,
+	}
+	switch event.EventType {
+	case notifications.EventTypeIncidentDown:
+		err = h.handleIncidentDown(ctx, event)
+	case notifications.EventTypeIncidentUp:
+		err = h.handleIncidentUp(ctx, event)
+	default:
+		return true, fmt.Errorf("unsupported transition type %q", canonical.TransitionType)
+	}
+	if err != nil {
+		return true, err
+	}
+	return true, h.repo.AcknowledgeDispatch(ctx, canonical.TenantID, canonical.EventID)
 }
 
 func (h *escalationHandler) handleIncidentUp(ctx context.Context, event notifications.NotificationEvent) error {
