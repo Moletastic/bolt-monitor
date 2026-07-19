@@ -78,6 +78,17 @@ type CheckRunRecord struct {
 	TTL         int64  `json:"ttl"`
 }
 
+type CheckRunIdentityRecord struct {
+	PK string `dynamodbav:"PK"`
+	SK string `dynamodbav:"SK"`
+	EntityType string `dynamodbav:"EntityType"`
+	TenantID string `dynamodbav:"TenantID"`
+	ServiceID string `dynamodbav:"ServiceID"`
+	MonitorID string `dynamodbav:"MonitorID"`
+	RunID string `dynamodbav:"RunID"`
+	TTL int64 `dynamodbav:"TTL"`
+}
+
 type MonitorStatusRecord struct {
 	PK                   string `json:"pk" dynamodbav:"PK"`
 	SK                   string `json:"sk" dynamodbav:"SK"`
@@ -215,6 +226,11 @@ func (r CheckRun) ToRecord() CheckRunRecord {
 		record.ScheduledFor = r.ScheduledFor.UTC().Format(time.RFC3339)
 	}
 	return record
+}
+
+func (r CheckRun) IdentityRecord() CheckRunIdentityRecord {
+	item := dynamodbschema.CheckRunIdentityItem(r.TenantID, r.ServiceID, r.MonitorID, r.RunID, r.TTL)
+	return CheckRunIdentityRecord{PK: item.PK, SK: item.SK, EntityType: item.EntityType, TenantID: item.TenantID, ServiceID: item.ServiceID, MonitorID: item.MonitorID, RunID: item.RunID, TTL: item.TTL}
 }
 
 func (s MonitorStatus) ToRecord() MonitorStatusRecord {
