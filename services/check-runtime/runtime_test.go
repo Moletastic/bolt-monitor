@@ -114,12 +114,16 @@ func (r *fakeRuntimeRepository) ListPendingExecutionWork(context.Context, string
 	return append([]checkexecution.ExecutionWork(nil), r.works...), nil
 }
 
-func (r *fakeRuntimeRepository) ClaimExecutionWork(_ context.Context, work checkexecution.ExecutionWork, _ time.Time) (bool, error) {
+func (r *fakeRuntimeRepository) ClaimExecutionWork(_ context.Context, work checkexecution.ExecutionWork, now time.Time) (checkexecution.ExecutionWork, bool, error) {
 	if r.claims[work.RunID] {
-		return false, nil
+		return work, false, nil
 	}
 	r.claims[work.RunID] = true
-	return true, nil
+	work.FencingToken = "LEASE_TEST"
+	leaseUntil := now.UTC().Add(executionWorkLeaseDuration)
+	work.LeaseUntil = &leaseUntil
+	work.Status = checkexecution.ExecutionWorkInProgress
+	return work, true, nil
 }
 
 func (r *fakeRuntimeRepository) GetMonitor(_ context.Context, _ string, serviceID, monitorID string) (monitorconfig.Monitor, bool, error) {
