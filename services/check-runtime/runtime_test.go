@@ -386,6 +386,21 @@ func TestHandleSQSEventRecordsUnsafeQueuedTargetWithoutDialing(t *testing.T) {
 	}
 }
 
+func TestHandleSQSEventBatchFailsOnlyMalformedRecord(t *testing.T) {
+	repo := newFakeRuntimeRepository()
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
+	response, err := handler.handleSQSEventBatch(context.Background(), events.SQSEvent{Records: []events.SQSMessage{
+		{MessageId: "bad", Body: "{"},
+		{MessageId: "duplicate", Body: `{"monitor":{"tenantId":"DEFAULT"},"runId":"RUN_MISSING","trigger":"manual"}`},
+	}})
+	if err != nil {
+		t.Fatalf("handleSQSEventBatch returned error: %v", err)
+	}
+	if len(response.BatchItemFailures) != 1 || response.BatchItemFailures[0].ItemIdentifier != "bad" {
+		t.Fatalf("batch failures = %#v", response.BatchItemFailures)
+	}
+}
+
 func TestIncidentSummaryUsesErrorDetails(t *testing.T) {
 	statusCode := 503
 	summary := incidentSummary(testMonitor("https://example.com", true), checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", Outcome: checkexecution.OutcomeFailure, StatusCode: &statusCode, Error: "unexpected status code 503"})

@@ -58,6 +58,26 @@ type runtimeSummary struct {
 	PendingScanned int    `json:"pendingScanned,omitempty"`
 }
 
+func (h runtimeHandler) handleSQSEventBatch(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
+	response := events.SQSEventResponse{BatchItemFailures: []events.SQSBatchItemFailure{}}
+	for _, record := range event.Records {
+		_, err := h.handleSQSEvent(ctx, events.SQSEvent{Records: []events.SQSMessage{record}})
+		if err == nil || isTerminalSQSError(err) {
+			continue
+		}
+		response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
+	}
+	return response, nil
+}
+
+func isTerminalSQSError(err error) bool {
+	var runtimeFailure *checkexecution.RuntimeFailure
+	if !errors.As(err, &runtimeFailure) {
+		return false
+	}
+	return !runtimeFailure.Retryable && runtimeFailure.Code != checkexecution.FailureMalformedEnvelope
+}
+
 func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, escalationQueueURL, tenantID, mode string) runtimeHandler {
 	return runtimeHandler{
 		repo:               repo,
@@ -182,6 +202,15 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			summary.Skipped++
 			continue
 		}
+		if skipReason, err := h.currentWorkSkipReason(ctx, monitor, work); err != nil {
+			return summary, err
+		} else if skipReason != "" {
+			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), skipReason); err != nil {
+				return summary, err
+			}
+			summary.Skipped++
+			continue
+		}
 		request, skipReason, err := buildExecutionRequest(monitor, work)
 		if err != nil {
 			return summary, err
@@ -272,6 +301,14 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		if err != nil || !found {
 			return summary, checkexecution.Skip("load-monitor", work.RunID, "monitor not found")
 		}
+		if skipReason, err := h.currentWorkSkipReason(ctx, monitor, work); err != nil {
+			return summary, err
+		} else if skipReason != "" {
+			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), skipReason); err != nil {
+				return summary, err
+			}
+			return summary, nil
+		}
 		request, skipReason, err := buildExecutionRequest(monitor, work)
 		if err != nil || skipReason != "" {
 			return summary, checkexecution.Skip("validate-monitor", work.RunID, skipReason)
@@ -284,6 +321,23 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		summary.Processed++
 	}
 	return summary, nil
+}
+
+func (h runtimeHandler) currentWorkSkipReason(ctx context.Context, monitor monitorconfig.Monitor, work checkexecution.ExecutionWork) (string, error) {
+	if !monitor.Enabled {
+		return "monitor disabled", nil
+	}
+	status, found, err := h.repo.GetMonitorStatus(ctx, monitor.TenantID, monitor.ServiceID, monitor.MonitorID)
+	if err != nil {
+		return "", err
+	}
+	if found && strings.EqualFold(status.CurrentStatus, string(resultstatus.MonitorStateMaintenance)) {
+		return "monitor maintenance", nil
+	}
+	if work.Trigger == checkexecution.TriggerTypeRecurring && work.ScheduleDefinitionVersion != checkexecution.ScheduleDefinitionVersion(monitor) {
+		return "schedule definition superseded", nil
+	}
+	return "", nil
 }
 
 func sameEnvelopeIdentity(request checkexecution.ExecutionRequest, work checkexecution.ExecutionWork) bool {
