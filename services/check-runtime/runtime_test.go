@@ -55,6 +55,7 @@ type fakeRuntimeRepository struct {
 	dispatchBuckets    []string
 	publicationBuckets []string
 	recordErr          map[string]error
+	listErr            error
 }
 
 func newFakeRuntimeRepository() *fakeRuntimeRepository {
@@ -65,7 +66,13 @@ func (r *fakeRuntimeRepository) GetSchedulerConfig(context.Context, string) (che
 	return r.config, nil
 }
 
-func (r *fakeRuntimeRepository) ListMonitors(context.Context, string) ([]monitorconfig.Monitor, error) {
+func (r *fakeRuntimeRepository) ListMonitors(ctx context.Context, _ string) ([]monitorconfig.Monitor, error) {
+	if r.listErr != nil {
+		return nil, r.listErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	out := make([]monitorconfig.Monitor, 0, len(r.monitors))
 	for _, monitor := range r.monitors {
 		out = append(out, monitor)
@@ -184,6 +191,42 @@ func testMonitor(target string, enabled bool) monitorconfig.Monitor {
 	return monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", Type: monitorconfig.MonitorTypeHTTP, IntervalSeconds: 60, Enabled: enabled, FailureThreshold: 1, RecoveryThreshold: 1, HTTP: &monitorconfig.HTTPConfiguration{Target: target, Method: "GET", TimeoutMs: 5000, ExpectedStatusCodes: []int{200}}}
 }
 
+func TestRunSchedulerStopsAtDiscoveryDeadline(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	repo := newFakeRuntimeRepository()
+	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
+	repo.listErr = context.DeadlineExceeded
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "execution-queue", "", defaultTenantID, modeScheduler)
+	handler.now = func() time.Time { return now }
+	handler.schedulerDeadline = 5 * time.Second
+
+	_, err := handler.runScheduler(context.Background())
+	if err == nil {
+		t.Fatal("expected typed retryable deadline error")
+	}
+	var failure *checkexecution.RuntimeFailure
+	if !errors.As(err, &failure) || !failure.Retryable || failure.Code != checkexecution.FailurePublication {
+		t.Fatalf("failure = %#v", failure)
+	}
+}
+
+func TestRunSchedulerIgnoresExpiredFakeClockForDeadline(t *testing.T) {
+	repo := newFakeRuntimeRepository()
+	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
+	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "queue-url", "", defaultTenantID, modeScheduler)
+	handler.schedulerDeadline = 5 * time.Second
+	now := time.Now().UTC()
+	handler.now = func() time.Time { return now }
+
+	summary, err := handler.runScheduler(context.Background())
+	if err != nil {
+		t.Fatalf("runScheduler returned error: %v", err)
+	}
+	if summary.Enqueued != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+}
 func TestRunSchedulerRespectsRecurringGate(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: false}

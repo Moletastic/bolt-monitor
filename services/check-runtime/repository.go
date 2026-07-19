@@ -50,14 +50,22 @@ func (r *dynamoRuntimeRepository) GetSchedulerConfig(ctx context.Context, tenant
 }
 
 func (r *dynamoRuntimeRepository) ListMonitors(ctx context.Context, tenantID string) ([]monitorconfig.Monitor, error) {
+	return r.listMonitorsBounded(ctx, tenantID, sharedaws.PageOptions{Limit: 100})
+}
+
+func (r *dynamoRuntimeRepository) listMonitorsBounded(ctx context.Context, tenantID string, pageOpts sharedaws.PageOptions) ([]monitorconfig.Monitor, error) {
 	if err := r.requireTableName(); err != nil {
 		return nil, err
+	}
+	if pageOpts.Limit <= 0 {
+		pageOpts.Limit = 100
 	}
 	monitors := make([]monitorconfig.Monitor, 0)
 	seen := map[string]struct{}{}
 	var serviceCursor map[string]sharedaws.AttributeValue
 	for {
-		page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "SERVICE#", sharedaws.PageOptions{Limit: 100, Cursor: serviceCursor})
+		pageOpts.Cursor = serviceCursor
+		page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "SERVICE#", pageOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +79,8 @@ func (r *dynamoRuntimeRepository) ListMonitors(ctx context.Context, tenantID str
 			}
 			var monitorCursor map[string]sharedaws.AttributeValue
 			for {
-				serviceMonitors, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.ServicePK(tenantID, service.ServiceID), "MONITOR#", sharedaws.PageOptions{Limit: 100, Cursor: monitorCursor})
+				pageOpts.Cursor = monitorCursor
+				serviceMonitors, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.ServicePK(tenantID, service.ServiceID), "MONITOR#", pageOpts)
 				if err != nil {
 					return nil, err
 				}

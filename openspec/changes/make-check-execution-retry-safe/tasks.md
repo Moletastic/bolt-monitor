@@ -17,10 +17,10 @@
 ## 3. Retry-Safe Scheduler
 
 - [x] 3.1 Replace elapsed `LastExecutionAt` uniqueness with captured-invocation-time `scheduleDefinitionVersion`/UTC `scheduledFor` eligibility and stable `runId` assignment before any scheduler side effect.
-- [ ] 3.2 Make tenant service and monitor discovery consume every DynamoDB page with a Lambda safety deadline and current enabled/maintenance filtering.
+- [x] 3.2 Make tenant service and monitor discovery consume every DynamoDB page with a Lambda safety deadline and current enabled/maintenance filtering.
 - [x] 3.3 Change per-monitor scheduling to conditionally persist work before SQS send, publish the stable envelope, and conditionally acknowledge publication.
 - [x] 3.4 Add a bounded scheduler recovery pass that queries publication markers directly, including successful-send/failed-ack ambiguity, without creating a new run or scanning a tenant.
-- [ ] 3.5 Preserve earlier per-monitor progress on later persistence/publication failure and return typed retryable context that lets EventBridge retry the same captured event time.
+- [x] 3.5 Preserve earlier per-monitor progress on later persistence/publication failure and return typed retryable context that lets EventBridge retry the same captured event time.
 - [ ] 3.6 Add scheduler tests for duplicate/overlapping invocation under one schedule definition/time, schedule-version changes, default interval, no missed later pages, deadline stop, middle-page failure, bounded marker recovery, persisted/send-failed recovery, and send-succeeded/ack-failed duplicate publication.
 
 ## 4. Leased SQS Worker
