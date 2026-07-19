@@ -81,6 +81,11 @@ func RecurringRunID(tenantID, serviceID, monitorID, scheduleDefinitionVersion st
 	return "RUN_" + strings.ToUpper(hex.EncodeToString(sum[:]))
 }
 
+func TransitionID(runID string) string {
+	sum := sha256.Sum256([]byte(strings.ToUpper(strings.TrimSpace(runID))))
+	return "TRANSITION_" + strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
 // ScheduleDefinitionVersion changes only when execution-relevant monitor state changes.
 func ScheduleDefinitionVersion(monitor monitorconfig.Monitor) string {
 	payload, _ := json.Marshal(struct {
