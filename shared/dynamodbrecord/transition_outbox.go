@@ -13,6 +13,8 @@ type TransitionOutboxRecord struct {
 	TransitionID string `dynamodbav:"TransitionID"`
 	ActivityID string `dynamodbav:"ActivityID"`
 	RunID string `dynamodbav:"RunID"`
+	ServiceID string `dynamodbav:"ServiceID"`
+	MonitorID string `dynamodbav:"MonitorID"`
 	IncidentID string `dynamodbav:"IncidentID"`
 	TransitionType string `dynamodbav:"TransitionType"`
 	ScheduleDefinitionVersion string `dynamodbav:"ScheduleDefinitionVersion"`
@@ -21,7 +23,7 @@ type TransitionOutboxRecord struct {
 	CreatedAt string `dynamodbav:"CreatedAt"`
 }
 
-func NewTransitionOutboxRecord(tenantID, transitionID, runID, incidentID, transitionType, scheduleDefinitionVersion, scheduledFor, createdAt string) TransitionOutboxRecord {
+func NewTransitionOutboxRecord(tenantID, serviceID, monitorID, transitionID, runID, incidentID, transitionType, scheduleDefinitionVersion, scheduledFor, createdAt string) TransitionOutboxRecord {
 	item := dynamodbschema.TransitionOutboxItem(tenantID, transitionID)
-	return TransitionOutboxRecord{PK: item.PK, SK: item.SK, EntityType: item.EntityType, TenantID: item.TenantID, EventID: transitionID, TransitionID: transitionID, ActivityID: transitionID, RunID: runID, IncidentID: incidentID, TransitionType: transitionType, ScheduleDefinitionVersion: scheduleDefinitionVersion, ScheduledFor: scheduledFor, DispatchStatus: DispatchPending, CreatedAt: createdAt}
+	return TransitionOutboxRecord{PK: item.PK, SK: item.SK, EntityType: item.EntityType, TenantID: item.TenantID, EventID: transitionID, TransitionID: transitionID, ActivityID: transitionID, RunID: runID, ServiceID: serviceID, MonitorID: monitorID, IncidentID: incidentID, TransitionType: transitionType, ScheduleDefinitionVersion: scheduleDefinitionVersion, ScheduledFor: scheduledFor, DispatchStatus: DispatchPending, CreatedAt: createdAt}
 }

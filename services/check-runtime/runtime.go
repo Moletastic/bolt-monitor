@@ -23,11 +23,14 @@ type runtimeRepository interface {
 	ListMonitors(context.Context, string) ([]monitorconfig.Monitor, error)
 	GetLastExecution(context.Context, string, string, string) (*time.Time, error)
 	RecordLastExecution(context.Context, string, string, string, time.Time) error
-	EnqueueExecutionRequests(context.Context, []checkexecution.ExecutionRequest, time.Time) error
+	EnqueueExecutionRequests(context.Context, []checkexecution.ExecutionRequest, time.Time) (int, error)
 	AcknowledgeExecutionPublication(context.Context, checkexecution.ExecutionWork) error
 	LoadExecutionWork(context.Context, string, string) (checkexecution.ExecutionWork, bool, error)
 	ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error)
 	ListPublicationMarkers(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error)
+	ListDispatchPending(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error)
+	RemoveDispatchPending(context.Context, string, string, string, string) error
+	LoadTransitionOutbox(context.Context, string, string) (dynamodbrecord.TransitionOutboxRecord, bool, error)
 	ClaimExecutionWork(context.Context, checkexecution.ExecutionWork, time.Time) (checkexecution.ExecutionWork, bool, error)
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
 	GetService(context.Context, string, string) (monitorconfig.Service, bool, error)
@@ -45,6 +48,7 @@ type runtimeHandler struct {
 	mode               string
 	now                func() time.Time
 	executor           checkexecution.HTTPExecutor
+	schedulerDeadline  time.Duration
 }
 
 type runtimeSummary struct {
@@ -54,6 +58,28 @@ type runtimeSummary struct {
 	Skipped        int    `json:"skipped,omitempty"`
 	PendingScanned int    `json:"pendingScanned,omitempty"`
 }
+
+func (h runtimeHandler) handleSQSEventBatch(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
+	response := events.SQSEventResponse{BatchItemFailures: []events.SQSBatchItemFailure{}}
+	for _, record := range event.Records {
+		_, err := h.handleSQSEvent(ctx, events.SQSEvent{Records: []events.SQSMessage{record}})
+		if err == nil || isTerminalSQSError(err) {
+			continue
+		}
+		response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
+	}
+	return response, nil
+}
+
+func isTerminalSQSError(err error) bool {
+	var runtimeFailure *checkexecution.RuntimeFailure
+	if !errors.As(err, &runtimeFailure) {
+		return false
+	}
+	return !runtimeFailure.Retryable && runtimeFailure.Code != checkexecution.FailureMalformedEnvelope
+}
+
+const defaultSchedulerDeadline = 50 * time.Second
 
 func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, escalationQueueURL, tenantID, mode string) runtimeHandler {
 	return runtimeHandler{
@@ -65,6 +91,7 @@ func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, es
 		mode:               strings.ToLower(strings.TrimSpace(mode)),
 		now:                time.Now,
 		executor:           outboundhttp.NewExecutor(),
+		schedulerDeadline:  defaultSchedulerDeadline,
 	}
 }
 
@@ -90,8 +117,20 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 	if _, err := h.recoverPublicationMarkers(ctx); err != nil {
 		return runtimeSummary{}, err
 	}
-	monitors, err := h.repo.ListMonitors(ctx, h.tenantID)
+	if _, err := h.reconcileDispatchPending(ctx); err != nil {
+		return runtimeSummary{}, err
+	}
+	deadline := h.schedulerDeadline
+	if deadline <= 0 {
+		deadline = defaultSchedulerDeadline
+	}
+	discoveryCtx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
+	monitors, err := h.repo.ListMonitors(discoveryCtx, h.tenantID)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return runtimeSummary{Mode: modeScheduler}, checkexecution.Publication("scheduler-deadline", "")
+		}
 		return runtimeSummary{}, err
 	}
 
@@ -100,7 +139,7 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 		if !monitor.Enabled {
 			continue
 		}
-		status, found, err := h.repo.GetMonitorStatus(ctx, monitor.TenantID, monitor.ServiceID, monitor.MonitorID)
+		status, found, err := h.repo.GetMonitorStatus(discoveryCtx, monitor.TenantID, monitor.ServiceID, monitor.MonitorID)
 		if err != nil {
 			return runtimeSummary{}, err
 		}
@@ -120,22 +159,30 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 		scheduledFor := checkexecution.ScheduledFor(acceptedAt, executionMonitor.IntervalSeconds)
 		scheduleDefinitionVersion := checkexecution.ScheduleDefinitionVersion(executionMonitor)
 		request := checkexecution.ExecutionRequest{
-			Monitor: executionMonitor,
-			RunID: checkexecution.RecurringRunID(executionMonitor.TenantID, executionMonitor.ServiceID, executionMonitor.MonitorID, scheduleDefinitionVersion, scheduledFor),
-			Trigger: checkexecution.TriggerTypeRecurring,
-			AcceptedAt: acceptedAt,
+			Monitor:                   executionMonitor,
+			RunID:                     checkexecution.RecurringRunID(executionMonitor.TenantID, executionMonitor.ServiceID, executionMonitor.MonitorID, scheduleDefinitionVersion, scheduledFor),
+			Trigger:                   checkexecution.TriggerTypeRecurring,
+			AcceptedAt:                acceptedAt,
 			ScheduleDefinitionVersion: scheduleDefinitionVersion,
-			ScheduledFor: &scheduledFor,
+			ScheduledFor:              &scheduledFor,
 		}
 		// Durable work is authority. SQS only wakes a worker for this identity.
-		if err := h.repo.EnqueueExecutionRequests(ctx, []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
+		created, err := h.repo.EnqueueExecutionRequests(ctx, []checkexecution.ExecutionRequest{request}, acceptedAt)
+		if err != nil {
+			runtimeOutcomeLog(outcomePublicationErr, "persist-work", request.Monitor.TenantID, request.RunID, request.Monitor.MonitorID, err.Error())
 			return summary, checkexecution.Storage("persist-work", request.RunID)
 		}
+		if created == 0 {
+			runtimeOutcomeLog(outcomeExisting, "persist-work", request.Monitor.TenantID, request.RunID, request.Monitor.MonitorID, "")
+			continue
+		}
+		runtimeOutcomeLog(outcomeCreated, "persist-work", request.Monitor.TenantID, request.RunID, request.Monitor.MonitorID, "")
 		jsonReq, err := json.Marshal(request)
 		if err != nil {
 			return summary, err
 		}
 		if err := h.sqsClient.SendMessage(ctx, h.queueURL, string(jsonReq)); err != nil {
+			runtimeOutcomeLog(outcomePublicationErr, "publish-work", request.Monitor.TenantID, request.RunID, request.Monitor.MonitorID, err.Error())
 			return summary, checkexecution.Publication("publish-work", request.RunID)
 		}
 		if err := h.repo.AcknowledgeExecutionPublication(ctx, checkexecution.ExecutionWork{
@@ -176,6 +223,15 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			summary.Skipped++
 			continue
 		}
+		if skipReason, err := h.currentWorkSkipReason(ctx, monitor, work); err != nil {
+			return summary, err
+		} else if skipReason != "" {
+			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), skipReason); err != nil {
+				return summary, err
+			}
+			summary.Skipped++
+			continue
+		}
 		request, skipReason, err := buildExecutionRequest(monitor, work)
 		if err != nil {
 			return summary, err
@@ -205,7 +261,7 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 					FailureCode: string(failureKind),
 					Error:       outboundhttp.SafeMessage(&outboundhttp.Error{Kind: failureKind}),
 				}
-				if _, _, err := h.repo.RecordExecutionResult(ctx, monitor, work, result); err != nil {
+				if _, _, err := commitExecutionResult(ctx, h.repo, monitor, work, result); err != nil {
 					return summary, err
 				}
 				summary.Processed++
@@ -218,7 +274,7 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			continue
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
-		_, _, err = h.repo.RecordExecutionResult(ctx, monitor, work, result)
+		_, _, err = commitExecutionResult(ctx, h.repo, monitor, work, result)
 		if err != nil {
 			return summary, err
 		}
@@ -263,12 +319,34 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		}
 		work = claimedWork
 		monitor, found, err := h.repo.GetMonitor(ctx, work.TenantID, work.ServiceID, work.MonitorID)
-		if err != nil || !found {
-			return summary, checkexecution.Skip("load-monitor", work.RunID, "monitor not found")
+		if err != nil {
+			return summary, checkexecution.Storage("load-monitor", work.RunID)
+		}
+		if !found {
+			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), "monitor not found"); err != nil {
+				return summary, err
+			}
+			summary.Skipped++
+			continue
+		}
+		if skipReason, err := h.currentWorkSkipReason(ctx, monitor, work); err != nil {
+			return summary, err
+		} else if skipReason != "" {
+			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), skipReason); err != nil {
+				return summary, err
+			}
+			return summary, nil
 		}
 		request, skipReason, err := buildExecutionRequest(monitor, work)
-		if err != nil || skipReason != "" {
-			return summary, checkexecution.Skip("validate-monitor", work.RunID, skipReason)
+		if err != nil {
+			return summary, err
+		}
+		if skipReason != "" {
+			if err := h.repo.MarkExecutionWorkSkipped(ctx, work, h.now(), skipReason); err != nil {
+				return summary, err
+			}
+			summary.Skipped++
+			continue
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
 		_, _, err = h.repo.RecordExecutionResult(ctx, monitor, work, result)
@@ -278,6 +356,43 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		summary.Processed++
 	}
 	return summary, nil
+}
+
+func commitExecutionResult(ctx context.Context, repo runtimeRepository, monitor monitorconfig.Monitor, work checkexecution.ExecutionWork, result checkexecution.ExecutionResult) (string, string, error) {
+	if !resultIdentityMatchesWork(result, work) {
+		return "", "", checkexecution.Conflict("commit-result", work.RunID)
+	}
+	return repo.RecordExecutionResult(ctx, monitor, work, result)
+}
+
+func resultIdentityMatchesWork(result checkexecution.ExecutionResult, work checkexecution.ExecutionWork) bool {
+	if !strings.EqualFold(result.TenantID, work.TenantID) || !strings.EqualFold(result.ServiceID, work.ServiceID) || !strings.EqualFold(result.MonitorID, work.MonitorID) || !strings.EqualFold(result.RunID, work.RunID) || result.Trigger != work.Trigger {
+		return false
+	}
+	if work.ScheduleDefinitionVersion != "" && result.ScheduleDefinitionVersion != work.ScheduleDefinitionVersion {
+		return false
+	}
+	if work.ScheduledFor == nil {
+		return result.ScheduledFor == nil
+	}
+	return result.ScheduledFor != nil && result.ScheduledFor.Equal(*work.ScheduledFor)
+}
+
+func (h runtimeHandler) currentWorkSkipReason(ctx context.Context, monitor monitorconfig.Monitor, work checkexecution.ExecutionWork) (string, error) {
+	if !monitor.Enabled {
+		return "monitor disabled", nil
+	}
+	status, found, err := h.repo.GetMonitorStatus(ctx, monitor.TenantID, monitor.ServiceID, monitor.MonitorID)
+	if err != nil {
+		return "", err
+	}
+	if found && strings.EqualFold(status.CurrentStatus, string(resultstatus.MonitorStateMaintenance)) {
+		return "monitor maintenance", nil
+	}
+	if work.Trigger == checkexecution.TriggerTypeRecurring && work.ScheduleDefinitionVersion != checkexecution.ScheduleDefinitionVersion(monitor) {
+		return "schedule definition superseded", nil
+	}
+	return "", nil
 }
 
 func sameEnvelopeIdentity(request checkexecution.ExecutionRequest, work checkexecution.ExecutionWork) bool {
@@ -328,7 +443,60 @@ const (
 	recoveryShards         = 16
 	recoveryBucketsPerHour = 4
 	recoveryPageLimit      = 25
+	dispatchPendingShards  = 4
+	dispatchPendingBuckets = 1
 )
+
+func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, error) {
+	if h.escalationQueueURL == "" {
+		return 0, nil
+	}
+	now := h.now().UTC()
+	dispatched := 0
+	for bucketOffset := 0; bucketOffset < dispatchPendingBuckets; bucketOffset++ {
+		bucket := now.Add(time.Duration(-bucketOffset) * time.Hour).Format(dynamodbrecord.DispatchPendingBucketFormat)
+		for shard := 0; shard < dispatchPendingShards; shard++ {
+			shardHex := fmt.Sprintf("%02x", shard)
+			bucketShard := bucket + "|" + shardHex
+			var cursor map[string]sharedaws.AttributeValue
+			for {
+				records, nextKey, err := h.repo.ListDispatchPending(ctx, h.tenantID, bucketShard, recoveryPageLimit, cursor)
+				if err != nil {
+					return dispatched, err
+				}
+				for _, pending := range records {
+					outbox, found, err := h.repo.LoadTransitionOutbox(ctx, pending.TenantID, pending.RunID)
+					if err != nil {
+						return dispatched, err
+					}
+					if !found || outbox.DispatchStatus != dynamodbrecord.DispatchPending {
+						_ = h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.Bucket, pending.Shard, pending.RunID)
+						continue
+					}
+					envelope, err := json.Marshal(map[string]string{
+						"tenantId": pending.TenantID, "runId": outbox.EventID, "kind": "transition",
+					})
+					if err != nil {
+						return dispatched, err
+					}
+					if err := h.sqsClient.SendMessage(ctx, h.escalationQueueURL, string(envelope)); err != nil {
+						return dispatched, checkexecution.Publication("dispatch-pending", pending.RunID)
+					}
+					if err := h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.Bucket, pending.Shard, pending.RunID); err != nil {
+						return dispatched, err
+					}
+					dispatched++
+					runtimeOutcomeLog(outcomeDispatchPend, "dispatch-pending", pending.TenantID, pending.RunID, "", "")
+				}
+				if nextKey == nil {
+					break
+				}
+				cursor = nextKey
+			}
+		}
+	}
+	return dispatched, nil
+}
 
 func (h runtimeHandler) recoverPublicationMarkers(ctx context.Context) (int, error) {
 	if h.queueURL == "" {
@@ -337,7 +505,7 @@ func (h runtimeHandler) recoverPublicationMarkers(ctx context.Context) (int, err
 	now := h.now().UTC()
 	recovered := 0
 	for bucketOffset := 0; bucketOffset < recoveryBucketsPerHour; bucketOffset++ {
-		bucket := now.Add(time.Duration(-bucketOffset*15) * time.Minute).Format("200601021504")
+		bucket := now.Add(time.Duration(-bucketOffset) * time.Hour).Format("2006010215")
 		for shard := 0; shard < recoveryShards; shard++ {
 			shardHex := fmt.Sprintf("%02x", shard)
 			var cursor map[string]sharedaws.AttributeValue
@@ -372,6 +540,7 @@ func (h runtimeHandler) recoverPublicationMarkers(ctx context.Context) (int, err
 						return recovered, err
 					}
 					recovered++
+					runtimeOutcomeLog(outcomeRecovered, "recover-publication", work.TenantID, work.RunID, work.MonitorID, "")
 				}
 				if nextKey == nil {
 					break

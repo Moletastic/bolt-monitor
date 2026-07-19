@@ -82,6 +82,19 @@ func IsConditionalCheckFailure(err error) bool {
 	return errors.As(err, &conditional)
 }
 
+func NewConditionalCheckFailedError() error {
+	return &ddbtypes.ConditionalCheckFailedException{}
+}
+
+func NewTransactionCanceledException(codes []string) error {
+	reasons := make([]ddbtypes.CancellationReason, 0, len(codes))
+	for _, code := range codes {
+		reason := ddbtypes.CancellationReason{Code: sdkaws.String(code)}
+		reasons = append(reasons, reason)
+	}
+	return &ddbtypes.TransactionCanceledException{CancellationReasons: reasons}
+}
+
 type dynamoDB struct {
 	client *dynamodb.Client
 }

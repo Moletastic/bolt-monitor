@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,14 +50,22 @@ func (r *dynamoRuntimeRepository) GetSchedulerConfig(ctx context.Context, tenant
 }
 
 func (r *dynamoRuntimeRepository) ListMonitors(ctx context.Context, tenantID string) ([]monitorconfig.Monitor, error) {
+	return r.listMonitorsBounded(ctx, tenantID, sharedaws.PageOptions{Limit: 100})
+}
+
+func (r *dynamoRuntimeRepository) listMonitorsBounded(ctx context.Context, tenantID string, pageOpts sharedaws.PageOptions) ([]monitorconfig.Monitor, error) {
 	if err := r.requireTableName(); err != nil {
 		return nil, err
+	}
+	if pageOpts.Limit <= 0 {
+		pageOpts.Limit = 100
 	}
 	monitors := make([]monitorconfig.Monitor, 0)
 	seen := map[string]struct{}{}
 	var serviceCursor map[string]sharedaws.AttributeValue
 	for {
-		page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "SERVICE#", sharedaws.PageOptions{Limit: 100, Cursor: serviceCursor})
+		pageOpts.Cursor = serviceCursor
+		page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "SERVICE#", pageOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +79,8 @@ func (r *dynamoRuntimeRepository) ListMonitors(ctx context.Context, tenantID str
 			}
 			var monitorCursor map[string]sharedaws.AttributeValue
 			for {
-				serviceMonitors, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.ServicePK(tenantID, service.ServiceID), "MONITOR#", sharedaws.PageOptions{Limit: 100, Cursor: monitorCursor})
+				pageOpts.Cursor = monitorCursor
+				serviceMonitors, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.ServicePK(tenantID, service.ServiceID), "MONITOR#", pageOpts)
 				if err != nil {
 					return nil, err
 				}
@@ -138,10 +149,11 @@ func (r *dynamoRuntimeRepository) RecordLastExecution(ctx context.Context, tenan
 	return err
 }
 
-func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, requests []checkexecution.ExecutionRequest, now time.Time) error {
+func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, requests []checkexecution.ExecutionRequest, now time.Time) (int, error) {
 	if err := r.requireTableName(); err != nil {
-		return err
+		return 0, err
 	}
+	created := 0
 	for _, request := range requests {
 		runID := request.RunID
 		if strings.TrimSpace(runID) == "" {
@@ -157,14 +169,18 @@ func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, 
 			ScheduleDefinitionVersion: request.ScheduleDefinitionVersion, ScheduledFor: request.ScheduledFor,
 			Status: checkexecution.ExecutionWorkPending, PublicationState: checkexecution.PublicationPending,
 		}
-		if err := r.createExecutionWork(ctx, work); err != nil {
-			return err
+		wasNew, err := r.createExecutionWorkDistinct(ctx, work)
+		if err != nil {
+			return created, err
+		}
+		if wasNew {
+			created++
 		}
 	}
-	return nil
+	return created, nil
 }
 
-func (r *dynamoRuntimeRepository) createExecutionWork(ctx context.Context, work checkexecution.ExecutionWork) error {
+func (r *dynamoRuntimeRepository) createExecutionWorkDistinct(ctx context.Context, work checkexecution.ExecutionWork) (bool, error) {
 	bucket, shard := executionRecoveryBucket(work)
 	records := []any{
 		dynamodbrecord.ExecutionWorkItemRecordFromWork(work),
@@ -173,23 +189,23 @@ func (r *dynamoRuntimeRepository) createExecutionWork(ctx context.Context, work 
 	}
 	items, err := conditionalPutItems(r.tableName, records...)
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
 	if err == nil {
-		return nil
+		return true, nil
 	}
 	if !sharedaws.IsConditionalCheckFailure(err) {
-		return err
+		return false, err
 	}
 	existing, found, loadErr := r.loadExecutionWork(ctx, work.TenantID, work.RunID)
 	if loadErr != nil {
-		return loadErr
+		return false, loadErr
 	}
 	if !found || !sameWorkIdentity(existing, work) {
-		return checkexecution.Conflict("create-work", work.RunID)
+		return false, checkexecution.Conflict("create-work", work.RunID)
 	}
-	return nil
+	return false, nil
 }
 
 func conditionalPutItems(tableName string, records ...any) ([]sharedaws.TransactWriteItem, error) {
@@ -213,7 +229,23 @@ func executionRecoveryBucket(work checkexecution.ExecutionWork) (string, string)
 		acceptedAt = work.RequestedAt
 	}
 	sum := sha256.Sum256([]byte(work.RunID))
-	return acceptedAt.UTC().Format("2006010215"), fmt.Sprintf("%02x", sum[0]%16)
+	return acceptedAt.UTC().Format("2006010215"), shardHex(sum, 16)
+}
+
+func dispatchPendingBucket(work checkexecution.ExecutionWork) (string, string) {
+	acceptedAt := work.AcceptedAt
+	if acceptedAt.IsZero() {
+		acceptedAt = work.RequestedAt
+	}
+	sum := sha256.Sum256([]byte(work.RunID))
+	return acceptedAt.UTC().Format(dynamodbrecord.DispatchPendingBucketFormat), shardHex(sum, dispatchPendingShards)
+}
+
+func shardHex(sum [32]byte, shards int) string {
+	if shards <= 0 {
+		shards = 1
+	}
+	return fmt.Sprintf("%02x", sum[0]%byte(shards))
 }
 
 func (r *dynamoRuntimeRepository) listExecutionMarkers(ctx context.Context, tenantID, kind, bucket, shard string, limit int32, cursor map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error) {
@@ -248,6 +280,66 @@ func (r *dynamoRuntimeRepository) ListPublicationMarkers(ctx context.Context, te
 	return r.listExecutionMarkers(ctx, tenantID, dynamodbrecord.ExecutionMarkerPublication, bucket, shard, limit, cursor)
 }
 
+func (r *dynamoRuntimeRepository) ListDispatchPending(ctx context.Context, tenantID, bucketShard string, limit int32, cursor map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error) {
+	if err := r.requireTableName(); err != nil {
+		return nil, nil, err
+	}
+	bucketShard = strings.TrimSpace(bucketShard)
+	parts := strings.SplitN(bucketShard, "|", 2)
+	bucket := ""
+	shard := ""
+	if len(parts) > 0 {
+		bucket = parts[0]
+	}
+	if len(parts) > 1 {
+		shard = parts[1]
+	}
+	pk := fmt.Sprintf("DISPATCH_PENDING#%s#%s#%s", dynamodbschema.NormalizeToken(tenantID), dynamodbschema.NormalizeToken(bucket), dynamodbschema.NormalizeToken(shard))
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, pk, "", sharedaws.PageOptions{Limit: limit, Cursor: cursor})
+	if err != nil {
+		return nil, nil, err
+	}
+	records := make([]dynamodbrecord.DispatchPendingRecord, 0, len(page.Items))
+	for _, item := range page.Items {
+		var record dynamodbrecord.DispatchPendingRecord
+		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
+			return nil, nil, err
+		}
+		if record.EntityType == dynamodbschema.EntityDispatchPending {
+			records = append(records, record)
+		}
+	}
+	return records, page.NextKey, nil
+}
+
+func (r *dynamoRuntimeRepository) RemoveDispatchPending(ctx context.Context, tenantID, bucket, shard, eventID string) error {
+	if err := r.requireTableName(); err != nil {
+		return err
+	}
+	pk := fmt.Sprintf("DISPATCH_PENDING#%s#%s#%s", dynamodbschema.NormalizeToken(tenantID), dynamodbschema.NormalizeToken(bucket), dynamodbschema.NormalizeToken(shard))
+	_, err := r.client.DeleteItem(ctx, &sharedaws.DynamoDBDeleteItemInput{
+		TableName:           sharedaws.String(r.tableName),
+		Key:                 sharedaws.NewPrimaryKey(pk, dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
+		ConditionExpression: sharedaws.String("attribute_exists(PK)"),
+	})
+	return err
+}
+
+func (r *dynamoRuntimeRepository) LoadTransitionOutbox(ctx context.Context, tenantID, eventID string) (dynamodbrecord.TransitionOutboxRecord, bool, error) {
+	if err := r.requireTableName(); err != nil {
+		return dynamodbrecord.TransitionOutboxRecord{}, false, err
+	}
+	item, found, err := sharedaws.GetByPrimaryKey(ctx, r.client, r.tableName, sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "TRANSITION_OUTBOX#"+dynamodbschema.NormalizeToken(eventID)))
+	if err != nil || !found {
+		return dynamodbrecord.TransitionOutboxRecord{}, found, err
+	}
+	var record dynamodbrecord.TransitionOutboxRecord
+	if err := sharedaws.UnmarshalMap(item, &record); err != nil {
+		return dynamodbrecord.TransitionOutboxRecord{}, false, err
+	}
+	return record, true, nil
+}
+
 func (r *dynamoRuntimeRepository) AcknowledgeExecutionPublication(ctx context.Context, work checkexecution.ExecutionWork) error {
 	bucket, shard := executionRecoveryBucket(work)
 	marker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerPublication, bucket, shard)
@@ -256,11 +348,11 @@ func (r *dynamoRuntimeRepository) AcknowledgeExecutionPublication(ctx context.Co
 	_, err := r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: []sharedaws.TransactWriteItem{
 		{Update: &sharedaws.Update{
 			TableName: sharedaws.String(r.tableName), Key: workKey,
-			UpdateExpression: sharedaws.String("SET PublicationState = :acknowledged"),
+			UpdateExpression:    sharedaws.String("SET PublicationState = :acknowledged"),
 			ConditionExpression: sharedaws.String("PublicationState = :pending"),
 			ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
 				":acknowledged": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.PublicationAcknowledged)},
-				":pending": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.PublicationPending)},
+				":pending":      &sharedaws.AttributeValueMemberS{Value: string(checkexecution.PublicationPending)},
 			},
 		}},
 		{Delete: &sharedaws.Delete{TableName: sharedaws.String(r.tableName), Key: markerKey}},
@@ -333,30 +425,79 @@ func (r *dynamoRuntimeRepository) ListPendingExecutionWork(ctx context.Context, 
 	return works, nil
 }
 
-const executionWorkLeaseDuration = 45 * time.Second
+const defaultExecutionWorkLeaseDuration = 60 * time.Second
+
+func executionWorkLeaseDuration() time.Duration {
+	seconds, err := strconv.Atoi(os.Getenv("WORK_LEASE_DURATION_SECONDS"))
+	if err != nil || seconds <= 0 {
+		return defaultExecutionWorkLeaseDuration
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+const (
+	defaultMaxOutboundExecution = 30 * time.Second
+	defaultResultCommitBuffer   = 10 * time.Second
+	defaultVisibilityMargin     = 5 * time.Second
+	defaultMaxConcurrency       = 5
+)
+
+func executionMaxConcurrency() int {
+	value, err := strconv.Atoi(strings.TrimSpace(os.Getenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY")))
+	if err != nil || value <= 0 {
+		return defaultMaxConcurrency
+	}
+	return value
+}
+
+func executionSafetyConfig() (worker, visibility, lease, maxOutbound, commitBuffer time.Duration, err error) {
+	worker = readDurationSeconds("WORKER_LAMBDA_TIMEOUT_SECONDS", 45*time.Second)
+	visibility = readDurationSeconds("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", worker+defaultVisibilityMargin)
+	lease = readDurationSeconds("WORK_LEASE_DURATION_SECONDS", defaultExecutionWorkLeaseDuration)
+	maxOutbound = readDurationSeconds("MAX_OUTBOUND_EXECUTION_SECONDS", defaultMaxOutboundExecution)
+	commitBuffer = readDurationSeconds("RESULT_COMMIT_BUFFER_SECONDS", defaultResultCommitBuffer)
+	if worker <= maxOutbound+commitBuffer {
+		return 0, 0, 0, 0, 0, fmt.Errorf("WORKER_LAMBDA_TIMEOUT_SECONDS=%s must exceed MAX_OUTBOUND_EXECUTION_SECONDS+RESULT_COMMIT_BUFFER_SECONDS=%s", worker, maxOutbound+commitBuffer)
+	}
+	if visibility <= worker+defaultVisibilityMargin {
+		return 0, 0, 0, 0, 0, fmt.Errorf("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS=%s must exceed WORKER_LAMBDA_TIMEOUT_SECONDS+VISIBILITY_MARGIN=%s", visibility, worker+defaultVisibilityMargin)
+	}
+	if lease <= maxOutbound+commitBuffer {
+		return 0, 0, 0, 0, 0, fmt.Errorf("WORK_LEASE_DURATION_SECONDS=%s must exceed MAX_OUTBOUND_EXECUTION_SECONDS+RESULT_COMMIT_BUFFER_SECONDS=%s", lease, maxOutbound+commitBuffer)
+	}
+	return worker, visibility, lease, maxOutbound, commitBuffer, nil
+}
+
+func readDurationSeconds(envKey string, fallback time.Duration) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(os.Getenv(envKey)))
+	if err != nil || seconds <= 0 {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
+}
 
 func (r *dynamoRuntimeRepository) ClaimExecutionWork(ctx context.Context, work checkexecution.ExecutionWork, now time.Time) (checkexecution.ExecutionWork, bool, error) {
 	if err := r.requireTableName(); err != nil {
 		return checkexecution.ExecutionWork{}, false, err
 	}
 	startedAt := now.UTC()
-	leaseUntil := startedAt.Add(executionWorkLeaseDuration)
+	leaseUntil := startedAt.Add(executionWorkLeaseDuration())
 	token := newFencingToken(now)
 	key := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
 	out, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
 		TableName: sharedaws.String(r.tableName), Key: key,
-		UpdateExpression: sharedaws.String("SET #status = :inProgress, StartedAt = :startedAt, LeaseUntil = :leaseUntil, FencingToken = :token, AttemptCount = if_not_exists(AttemptCount, :zero) + :one"),
-		ConditionExpression: sharedaws.String("#status = :pending OR (#status = :inProgress AND LeaseUntil < :now)"),
+		UpdateExpression:         sharedaws.String("SET #status = :inProgress, StartedAt = :startedAt, LeaseUntil = :leaseUntil, FencingToken = :token, AttemptCount = if_not_exists(AttemptCount, :zero) + :one"),
+		ConditionExpression:      sharedaws.String("#status = :pending OR (#status = :inProgress AND LeaseUntil < :now)"),
 		ExpressionAttributeNames: map[string]string{"#status": "Status"},
 		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pending": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkPending)},
+			":pending":    &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkPending)},
 			":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
-			":startedAt": &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
+			":startedAt":  &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
 			":leaseUntil": &sharedaws.AttributeValueMemberS{Value: leaseUntil.Format(time.RFC3339)},
-			":token": &sharedaws.AttributeValueMemberS{Value: token},
-			":now": &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
-			":zero": &sharedaws.AttributeValueMemberN{Value: "0"},
-			":one": &sharedaws.AttributeValueMemberN{Value: "1"},
+			":token":      &sharedaws.AttributeValueMemberS{Value: token},
+			":now":        &sharedaws.AttributeValueMemberS{Value: startedAt.Format(time.RFC3339)},
+			":zero":       &sharedaws.AttributeValueMemberN{Value: "0"},
+			":one":        &sharedaws.AttributeValueMemberN{Value: "1"},
 		},
 		ReturnValues: "ALL_NEW",
 	})
@@ -416,20 +557,28 @@ func (r *dynamoRuntimeRepository) MarkExecutionWorkSkipped(ctx context.Context, 
 		return err
 	}
 	completedAt := now.UTC()
-	_, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
-		TableName: sharedaws.String(r.tableName),
-		Key: sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap(),
-		UpdateExpression: sharedaws.String("SET #status = :skipped, CompletedAt = :completedAt, TerminalReason = :reason"),
-		ConditionExpression: sharedaws.String("#status = :inProgress AND FencingToken = :token"),
-		ExpressionAttributeNames: map[string]string{"#status": "Status"},
-		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":skipped": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkSkipped)},
-			":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
-			":completedAt": &sharedaws.AttributeValueMemberS{Value: completedAt.Format(time.RFC3339)},
-			":reason": &sharedaws.AttributeValueMemberS{Value: reason},
-			":token": &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
-		},
-	})
+	bucket, shard := executionRecoveryBucket(work)
+	recoveryMarker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerRecovery, bucket, shard)
+	_, err := r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: []sharedaws.TransactWriteItem{
+		{Update: &sharedaws.Update{
+			TableName:                sharedaws.String(r.tableName),
+			Key:                      sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap(),
+			UpdateExpression:         sharedaws.String("SET #status = :skipped, CompletedAt = :completedAt, TerminalReason = :reason"),
+			ConditionExpression:      sharedaws.String("#status = :inProgress AND FencingToken = :token"),
+			ExpressionAttributeNames: map[string]string{"#status": "Status"},
+			ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+				":skipped":     &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkSkipped)},
+				":inProgress":  &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
+				":completedAt": &sharedaws.AttributeValueMemberS{Value: completedAt.Format(time.RFC3339)},
+				":reason":      &sharedaws.AttributeValueMemberS{Value: reason},
+				":token":       &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
+			},
+		}},
+		{Delete: &sharedaws.Delete{
+			TableName: sharedaws.String(r.tableName),
+			Key:       sharedaws.NewPrimaryKey(recoveryMarker.PK, recoveryMarker.SK).AttributeMap(),
+		}},
+	}})
 	if sharedaws.IsConditionalCheckFailure(err) {
 		return checkexecution.LeaseLost("skip-work", work.RunID)
 	}
@@ -451,9 +600,6 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	if err != nil {
 		return "", "", err
 	}
-	if !statusFound {
-		currentStatus = resultstatus.NewMonitorStatus(result)
-	}
 
 	openIncident, incidentFound, err := r.getOpenIncident(ctx, result.TenantID, result.ServiceID, result.MonitorID)
 	if err != nil {
@@ -464,12 +610,14 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 		FailureThreshold:  monitor.FailureThreshold,
 		RecoveryThreshold: monitor.RecoveryThreshold,
 	}
+	if !statusFound {
+		currentStatus = resultstatus.NewMonitorStatus(result)
+	}
 	incidentRecords, transition, incidentID, updatedStatus, err := r.incidentRecordsForResult(monitor, result, currentStatus, thresholdConfig, openIncident, incidentFound)
 	if err != nil {
 		return "", "", err
 	}
-
-	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && resultstatus.IsNewerRecurringObservation(currentStatus, *result.ScheduledFor, result.RunID)
+	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && (statusFound == false || resultstatus.IsNewerRecurringObservation(currentStatus, *result.ScheduledFor, result.RunID))
 	records := []any{run.ToRecord()}
 	if applyProjection {
 		updatedStatus.RecurringScheduledFor = result.ScheduledFor
@@ -488,10 +636,14 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 			records = append(records, serviceStatus)
 		}
 		if transition != "" {
+			transitionType := transition
 			eventID := checkexecution.TransitionID(work.RunID)
 			transition = eventID
-			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, eventID, work.RunID, incidentID, transition, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
+			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, result.ServiceID, result.MonitorID, eventID, work.RunID, incidentID, transitionType, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
 			records = append(records, outbox)
+			bucket, shard := dispatchPendingBucket(work)
+			pending := dynamodbrecord.NewDispatchPendingRecord(result.TenantID, eventID, bucket, shard)
+			records = append(records, pending)
 		}
 	} else {
 		transition = ""
@@ -512,22 +664,22 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	workKey := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
 	completion := sharedaws.TransactWriteItem{Update: &sharedaws.Update{
 		TableName: sharedaws.String(r.tableName), Key: workKey,
-		UpdateExpression: sharedaws.String("SET #status = :completed, CompletedAt = :completedAt, LastError = :lastError"),
-		ConditionExpression: sharedaws.String("#status = :inProgress AND FencingToken = :token"),
+		UpdateExpression:         sharedaws.String("SET #status = :completed, CompletedAt = :completedAt, LastError = :lastError"),
+		ConditionExpression:      sharedaws.String("#status = :inProgress AND FencingToken = :token"),
 		ExpressionAttributeNames: map[string]string{"#status": "Status"},
 		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":completed": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkCompleted)},
-			":inProgress": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
+			":completed":   &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkCompleted)},
+			":inProgress":  &sharedaws.AttributeValueMemberS{Value: string(checkexecution.ExecutionWorkInProgress)},
 			":completedAt": &sharedaws.AttributeValueMemberS{Value: completedAt.Format(time.RFC3339)},
-			":lastError": &sharedaws.AttributeValueMemberS{Value: result.Error},
-			":token": &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
+			":lastError":   &sharedaws.AttributeValueMemberS{Value: result.Error},
+			":token":       &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
 		},
 	}}
 	bucket, shard := executionRecoveryBucket(work)
 	recoveryMarker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerRecovery, bucket, shard)
 	markerDelete := sharedaws.TransactWriteItem{Delete: &sharedaws.Delete{
 		TableName: sharedaws.String(r.tableName),
-		Key: sharedaws.NewPrimaryKey(recoveryMarker.PK, recoveryMarker.SK).AttributeMap(),
+		Key:       sharedaws.NewPrimaryKey(recoveryMarker.PK, recoveryMarker.SK).AttributeMap(),
 	}}
 	items = append([]sharedaws.TransactWriteItem{completion, runIdentity}, items...)
 	items = append(items, markerDelete)
@@ -576,7 +728,15 @@ func (r *dynamoRuntimeRepository) getMonitorStatus(ctx context.Context, tenantID
 	if err != nil {
 		return resultstatus.MonitorStatus{}, false, err
 	}
-	return resultstatus.MonitorStatus{ServiceID: record.ServiceID, MonitorID: record.MonitorID, TenantID: record.TenantID, CurrentStatus: record.CurrentStatus, ConsecutiveFailures: record.ConsecutiveFailures, ConsecutiveSuccesses: record.ConsecutiveSuccesses, LastCheckedAt: lastCheckedAt, LastDurationMs: record.LastDurationMs, LastError: record.LastError, LastFailureCode: record.LastFailureCode, LastOutcome: checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, "unknown")))}, true, nil
+	status := resultstatus.MonitorStatus{ServiceID: record.ServiceID, MonitorID: record.MonitorID, TenantID: record.TenantID, CurrentStatus: record.CurrentStatus, ConsecutiveFailures: record.ConsecutiveFailures, ConsecutiveSuccesses: record.ConsecutiveSuccesses, LastCheckedAt: lastCheckedAt, LastDurationMs: record.LastDurationMs, LastError: record.LastError, LastFailureCode: record.LastFailureCode, LastOutcome: checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, "unknown"))), RecurringRunID: strings.TrimSpace(record.RecurringRunID)}
+	if strings.TrimSpace(record.RecurringScheduledFor) != "" {
+		scheduledFor, err := time.Parse(time.RFC3339, record.RecurringScheduledFor)
+		if err != nil {
+			return resultstatus.MonitorStatus{}, false, err
+		}
+		status.RecurringScheduledFor = &scheduledFor
+	}
+	return status, true, nil
 }
 
 func (r *dynamoRuntimeRepository) GetMonitorStatus(ctx context.Context, tenantID, serviceID, monitorID string) (resultstatus.MonitorStatus, bool, error) {
