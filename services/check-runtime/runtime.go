@@ -29,7 +29,7 @@ type runtimeRepository interface {
 	ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error)
 	ListPublicationMarkers(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error)
 	ListDispatchPending(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error)
-	RemoveDispatchPending(context.Context, string, string) error
+	RemoveDispatchPending(context.Context, string, string, string, string) error
 	ClaimExecutionWork(context.Context, checkexecution.ExecutionWork, time.Time) (checkexecution.ExecutionWork, bool, error)
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
 	GetService(context.Context, string, string) (monitorconfig.Service, bool, error)
@@ -356,7 +356,7 @@ func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, erro
 					if _, found, err := h.repo.LoadExecutionWork(ctx, pending.TenantID, pending.RunID); err != nil {
 						return dispatched, err
 					} else if !found {
-						_ = h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.RunID)
+						_ = h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.Bucket, pending.Shard, pending.RunID)
 						continue
 					}
 					envelope, err := json.Marshal(map[string]string{
@@ -368,7 +368,7 @@ func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, erro
 					if err := h.sqsClient.SendMessage(ctx, h.escalationQueueURL, string(envelope)); err != nil {
 						return dispatched, checkexecution.Publication("dispatch-pending", pending.RunID)
 					}
-					if err := h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.RunID); err != nil {
+					if err := h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.Bucket, pending.Shard, pending.RunID); err != nil {
 						return dispatched, err
 					}
 					dispatched++

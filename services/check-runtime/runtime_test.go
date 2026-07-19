@@ -124,7 +124,7 @@ func (r *fakeRuntimeRepository) ListDispatchPending(context.Context, string, str
 	return nil, nil, nil
 }
 
-func (r *fakeRuntimeRepository) RemoveDispatchPending(context.Context, string, string) error {
+func (r *fakeRuntimeRepository) RemoveDispatchPending(context.Context, string, string, string, string) error {
 	return nil
 }
 

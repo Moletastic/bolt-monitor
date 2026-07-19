@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/escalation"
 	"bolt-monitor/shared/notifications"
 	"bolt-monitor/shared/outboundhttp"
@@ -20,6 +21,7 @@ type fakeEscalationRepository struct {
 	state           *escalation.EscalationState
 	incident        *incidentRecord
 	createdIncident *incidentRecord
+	outbox          map[string]dynamodbrecord.TransitionOutboxRecord
 }
 
 type fakeScheduler struct {
@@ -71,6 +73,30 @@ func (f *fakeEscalationRepository) GetChannel(_ context.Context, tenantID, chann
 		return nil, nil
 	}
 	return &channel, nil
+}
+
+func (f *fakeEscalationRepository) LoadTransitionOutbox(_ context.Context, tenantID, eventID string) (*dynamodbrecord.TransitionOutboxRecord, error) {
+	if f.outbox == nil {
+		return nil, nil
+	}
+	record, ok := f.outbox[tenantID+"|"+eventID]
+	if !ok {
+		return nil, nil
+	}
+	return &record, nil
+}
+
+func (f *fakeEscalationRepository) AcknowledgeDispatch(_ context.Context, tenantID, eventID string) error {
+	if f.outbox == nil {
+		return nil
+	}
+	record, ok := f.outbox[tenantID+"|"+eventID]
+	if !ok || record.DispatchStatus != "pending" {
+		return nil
+	}
+	record.DispatchStatus = "acknowledged"
+	f.outbox[tenantID+"|"+eventID] = record
+	return nil
 }
 
 func (f *fakeEscalationRepository) PutEscalationState(_ context.Context, state escalation.EscalationState) error {
