@@ -439,7 +439,16 @@ const (
 	defaultMaxOutboundExecution = 30 * time.Second
 	defaultResultCommitBuffer   = 10 * time.Second
 	defaultVisibilityMargin     = 5 * time.Second
+	defaultMaxConcurrency       = 5
 )
+
+func executionMaxConcurrency() int {
+	value, err := strconv.Atoi(strings.TrimSpace(os.Getenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY")))
+	if err != nil || value <= 0 {
+		return defaultMaxConcurrency
+	}
+	return value
+}
 
 func executionSafetyConfig() (worker, visibility, lease, maxOutbound, commitBuffer time.Duration, err error) {
 	worker = readDurationSeconds("WORKER_LAMBDA_TIMEOUT_SECONDS", 45*time.Second)

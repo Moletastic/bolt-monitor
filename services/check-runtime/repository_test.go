@@ -293,6 +293,66 @@ func TestRecordExecutionResultWritesEqualTransitionAndOutboxIdentities(t *testin
 	}
 }
 
+func TestExecutionMaxConcurrencyAcceptsPositiveSetting(t *testing.T) {
+	t.Setenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY", "8")
+	if got := executionMaxConcurrency(); got != 8 {
+		t.Fatalf("executionMaxConcurrency = %d, want 8", got)
+	}
+}
+
+func TestExecutionMaxConcurrencyFallsBackToDefault(t *testing.T) {
+	t.Setenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY", "")
+	if got := executionMaxConcurrency(); got != defaultMaxConcurrency {
+		t.Fatalf("executionMaxConcurrency = %d, want %d", got, defaultMaxConcurrency)
+	}
+}
+
+func TestCanonicalInvariantsAcrossRecurringLifecycle(t *testing.T) {
+	client := &fakeDynamoClient{}
+	repo := newDynamoRuntimeRepository(client, "table-name")
+	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, FailureThreshold: 1, RecoveryThreshold: 1}
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	scheduled := now
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_INV", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now, ScheduleDefinitionVersion: "v1", ScheduledFor: &scheduled, FencingToken: "TOKEN"}
+	failure := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_INV", Outcome: checkexecution.OutcomeFailure, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &scheduled, FinishedAt: now}
+	success := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_INV", Outcome: checkexecution.OutcomeSuccess, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &scheduled, FinishedAt: now.Add(time.Minute)}
+
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, failure); err != nil {
+		t.Fatalf("first commit: %v", err)
+	}
+	recurrenceID := checkexecution.TransitionID(work.RunID)
+	var sawOutbox, sawActivity, sawRun bool
+	for _, item := range client.transactInput.TransactItems {
+		if item.Put == nil {
+			continue
+		}
+		entity, _ := item.Put.Item["EntityType"].(*sharedaws.AttributeValueMemberS)
+		if entity == nil {
+			continue
+		}
+		switch entity.Value {
+		case dynamodbschema.EntityTransitionOutbox:
+			if v, _ := item.Put.Item["TransitionID"].(*sharedaws.AttributeValueMemberS); v != nil && v.Value != recurrenceID {
+				t.Fatalf("transition identity drift: outbox=%q recurrence=%q", v.Value, recurrenceID)
+			}
+			sawOutbox = true
+		case dynamodbschema.EntityIncidentActivity:
+			if v, _ := item.Put.Item["ActivityID"].(*sharedaws.AttributeValueMemberS); v != nil && v.Value != recurrenceID {
+				t.Fatalf("activity identity drift: activity=%q recurrence=%q", v.Value, recurrenceID)
+			}
+			sawActivity = true
+		case dynamodbschema.EntityCheckRun:
+			sawRun = true
+		}
+	}
+	if !sawOutbox || !sawActivity || !sawRun {
+		t.Fatalf("expected one outbox+activity+run, got %v/%v/%v", sawOutbox, sawActivity, sawRun)
+	}
+	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, success); err != nil {
+		t.Fatalf("recovery commit: %v", err)
+	}
+}
+
 func TestDispatchPendingBucketShardsByShardCount(t *testing.T) {
 	work := checkexecution.ExecutionWork{RunID: "RUN_BUCKET", AcceptedAt: time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)}
 	bucket, shard := dispatchPendingBucket(work)
