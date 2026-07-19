@@ -9,7 +9,7 @@
 
 - [x] 2.1 Update DynamoDB execution work records and canonical key mapping so one `runId` has one addressable work item, retaining TTL and all immutable identity, schedule, publication, lease, attempt, and terminal fields in the existing table.
 - [x] 2.2 Implement conditional create that returns created, identical-existing, or typed immutable-identity conflict and never overwrites existing work.
-- [ ] 2.3 Add directly queryable tenant-scoped, bounded/sharded publication and work-recovery marker item patterns; query configured current/overlap buckets with limits/cursors rather than tenant scans, and conditionally remove or move markers on publication acknowledgement, lease changes, skip, and completion.
+- [x] 2.3 Add directly queryable tenant-scoped, bounded/sharded publication and work-recovery marker item patterns; query configured current/overlap buckets with limits/cursors rather than tenant scans, and conditionally remove or move markers on publication acknowledgement, lease changes, skip, and completion.
 - [x] 2.4 Implement conditional claim/reclaim for pending or lease-expired work with a fresh fencing token and lease sized above the maximum supported check timeout plus persistence buffer.
 - [x] 2.5 Implement fenced conditional complete and skip transitions so terminal work cannot reopen and an obsolete claimant cannot mutate reclaimed work.
 - [ ] 2.6 Add repository tests for create races, conflicting identity, duplicate publication acknowledgement, active lease conflict, stale reclaim, fencing-token loss, terminal immutability, bounded marker queries, stale-marker cleanup, conditional terminal removal, pagination, and TTL retention.
