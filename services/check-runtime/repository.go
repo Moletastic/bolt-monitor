@@ -437,18 +437,24 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 		return "", "", err
 	}
 
-	records := []any{run.ToRecord(), updatedStatus.ToRecord()}
-	records = append(records, incidentRecords...)
-	service, found, err := r.getService(ctx, result.TenantID, result.ServiceID)
-	if err != nil {
-		return "", "", err
-	}
-	if found {
-		serviceStatus, err := r.buildServiceStatusRecord(ctx, service, updatedStatus)
+	records := []any{run.ToRecord()}
+	if result.Trigger == checkexecution.TriggerTypeRecurring {
+		records = append(records, updatedStatus.ToRecord())
+		records = append(records, incidentRecords...)
+		service, found, err := r.getService(ctx, result.TenantID, result.ServiceID)
 		if err != nil {
 			return "", "", err
 		}
-		records = append(records, serviceStatus)
+		if found {
+			serviceStatus, err := r.buildServiceStatusRecord(ctx, service, updatedStatus)
+			if err != nil {
+				return "", "", err
+			}
+			records = append(records, serviceStatus)
+		}
+	} else {
+		transition = ""
+		incidentID = ""
 	}
 	items, err := marshalItems(r.tableName, records...)
 	if err != nil {
