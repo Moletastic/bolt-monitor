@@ -103,55 +103,36 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 	}
 
 	summary := runtimeSummary{Mode: modeScheduler}
+	acceptedAt := h.now().UTC()
 	for _, monitor := range filtered {
-		due, err := h.isMonitorDue(ctx, monitor)
-		if err != nil {
-			return summary, err
-		}
-		if !due {
-			summary.Skipped++
-			continue
-		}
 		executionMonitor := monitor
 		if executionMonitor.IntervalSeconds <= 0 {
 			executionMonitor.IntervalSeconds = 60
 		}
-		requests, err := checkexecution.BuildExecutionRequests([]monitorconfig.Monitor{executionMonitor}, checkexecution.TriggerTypeRecurring)
+		scheduledFor := checkexecution.ScheduledFor(acceptedAt, executionMonitor.IntervalSeconds)
+		scheduleDefinitionVersion := checkexecution.ScheduleDefinitionVersion(executionMonitor)
+		request := checkexecution.ExecutionRequest{
+			Monitor: executionMonitor,
+			RunID: checkexecution.RecurringRunID(executionMonitor.TenantID, executionMonitor.ServiceID, executionMonitor.MonitorID, scheduleDefinitionVersion, scheduledFor),
+			Trigger: checkexecution.TriggerTypeRecurring,
+			AcceptedAt: acceptedAt,
+			ScheduleDefinitionVersion: scheduleDefinitionVersion,
+			ScheduledFor: &scheduledFor,
+		}
+		// Durable work is authority. SQS only wakes a worker for this identity.
+		if err := h.repo.EnqueueExecutionRequests(ctx, []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
+			return summary, checkexecution.Storage("persist-work", request.RunID)
+		}
+		jsonReq, err := json.Marshal(request)
 		if err != nil {
 			return summary, err
 		}
-		for _, req := range requests {
-			jsonReq, err := json.Marshal(req)
-			if err != nil {
-				return summary, err
-			}
-			if err := h.sqsClient.SendMessage(ctx, h.queueURL, string(jsonReq)); err != nil {
-				return summary, err
-			}
+		if err := h.sqsClient.SendMessage(ctx, h.queueURL, string(jsonReq)); err != nil {
+			return summary, checkexecution.Publication("publish-work", request.RunID)
 		}
-		if err := h.repo.EnqueueExecutionRequests(ctx, requests, h.now()); err != nil {
-			return runtimeSummary{}, err
-		}
-		if err := h.repo.RecordLastExecution(ctx, monitor.TenantID, monitor.ServiceID, monitor.MonitorID, h.now()); err != nil {
-			return summary, err
-		}
-		summary.Enqueued += len(requests)
+		summary.Enqueued++
 	}
 	return summary, nil
-}
-
-func (h runtimeHandler) isMonitorDue(ctx context.Context, monitor monitorconfig.Monitor) (bool, error) {
-	if monitor.IntervalSeconds <= 0 {
-		return true, nil
-	}
-	lastExecution, err := h.repo.GetLastExecution(ctx, monitor.TenantID, monitor.ServiceID, monitor.MonitorID)
-	if err != nil {
-		return false, err
-	}
-	if lastExecution == nil {
-		return true, nil
-	}
-	return h.now().Sub(*lastExecution) >= time.Duration(monitor.IntervalSeconds)*time.Second, nil
 }
 
 func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {

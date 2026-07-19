@@ -1,14 +1,14 @@
 ## 1. Execution Identity And Failure Model
 
-- [ ] 1.1 Extend shared execution request, work, and result models with required `runId`, accepted time, optional recurring `scheduleDefinitionVersion` and UTC `scheduledFor`, publication state, claim fencing token, lease expiry, attempt count, terminal reason, and causal transition identity.
-- [ ] 1.2 Implement and unit-test deterministic recurring `runId` derivation from normalized tenant, service, monitor, immutable `scheduleDefinitionVersion`, and UTC `scheduledFor`; assign that one ID before effects and keep manual work schedule-free.
-- [ ] 1.3 Add a shared internal typed runtime failure model with stable classification, retryability, operation, safe identity details, and helpers for duplicate, conflict, skip, lease-loss, stale-observation, storage, result-commit, and publication outcomes.
-- [ ] 1.4 Extend AWS facade aliases/helpers needed for conditional updates, transaction condition checks, expression values, consistent reads, pagination keys, and structured transaction-cancellation reason decoding without leaking SDK types into domain services.
+- [x] 1.1 Extend shared execution request, work, and result models with required `runId`, accepted time, optional recurring `scheduleDefinitionVersion` and UTC `scheduledFor`, publication state, claim fencing token, lease expiry, attempt count, terminal reason, and causal transition identity.
+- [x] 1.2 Implement and unit-test deterministic recurring `runId` derivation from normalized tenant, service, monitor, immutable `scheduleDefinitionVersion`, and UTC `scheduledFor`; assign that one ID before effects and keep manual work schedule-free.
+- [x] 1.3 Add a shared internal typed runtime failure model with stable classification, retryability, operation, safe identity details, and helpers for duplicate, conflict, skip, lease-loss, stale-observation, storage, result-commit, and publication outcomes.
+- [x] 1.4 Extend AWS facade aliases/helpers needed for conditional updates, transaction condition checks, expression values, consistent reads, pagination keys, and structured transaction-cancellation reason decoding without leaking SDK types into domain services.
 
 ## 2. Durable Work State Machine
 
-- [ ] 2.1 Update DynamoDB execution work records and canonical key mapping so one `runId` has one addressable work item, retaining TTL and all immutable identity, schedule, publication, lease, attempt, and terminal fields in the existing table.
-- [ ] 2.2 Implement conditional create that returns created, identical-existing, or typed immutable-identity conflict and never overwrites existing work.
+- [x] 2.1 Update DynamoDB execution work records and canonical key mapping so one `runId` has one addressable work item, retaining TTL and all immutable identity, schedule, publication, lease, attempt, and terminal fields in the existing table.
+- [x] 2.2 Implement conditional create that returns created, identical-existing, or typed immutable-identity conflict and never overwrites existing work.
 - [ ] 2.3 Add directly queryable tenant-scoped, bounded/sharded publication and work-recovery marker item patterns; query configured current/overlap buckets with limits/cursors rather than tenant scans, and conditionally remove or move markers on publication acknowledgement, lease changes, skip, and completion.
 - [ ] 2.4 Implement conditional claim/reclaim for pending or lease-expired work with a fresh fencing token and lease sized above the maximum supported check timeout plus persistence buffer.
 - [ ] 2.5 Implement fenced conditional complete and skip transitions so terminal work cannot reopen and an obsolete claimant cannot mutate reclaimed work.
@@ -16,7 +16,7 @@
 
 ## 3. Retry-Safe Scheduler
 
-- [ ] 3.1 Replace elapsed `LastExecutionAt` uniqueness with captured-invocation-time `scheduleDefinitionVersion`/UTC `scheduledFor` eligibility and stable `runId` assignment before any scheduler side effect.
+- [x] 3.1 Replace elapsed `LastExecutionAt` uniqueness with captured-invocation-time `scheduleDefinitionVersion`/UTC `scheduledFor` eligibility and stable `runId` assignment before any scheduler side effect.
 - [ ] 3.2 Make tenant service and monitor discovery consume every DynamoDB page with a Lambda safety deadline and current enabled/maintenance filtering.
 - [ ] 3.3 Change per-monitor scheduling to conditionally persist work before SQS send, publish the stable envelope, and conditionally acknowledge publication.
 - [ ] 3.4 Add a bounded scheduler recovery pass that queries publication markers directly, including successful-send/failed-ack ambiguity, without creating a new run or scanning a tenant.

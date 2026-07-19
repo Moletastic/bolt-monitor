@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 
 	sdkaws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -37,7 +38,14 @@ type AttributeValue = ddbtypes.AttributeValue
 type TransactWriteItem = ddbtypes.TransactWriteItem
 type Put = ddbtypes.Put
 type Delete = ddbtypes.Delete
+type Update = ddbtypes.Update
+type ConditionCheck = ddbtypes.ConditionCheck
 type AttributeValueMemberS = ddbtypes.AttributeValueMemberS
+type TransactionCancellationReason = ddbtypes.CancellationReason
+
+type TransactionCancellation struct {
+	Code string
+}
 
 func String(value string) *string { return sdkaws.String(value) }
 func Int32(value int32) *int32    { return sdkaws.Int32(value) }
@@ -52,6 +60,25 @@ func MarshalMap(in any) (map[string]AttributeValue, error) {
 
 func UnmarshalMap(in map[string]AttributeValue, out any) error {
 	return attributevalue.UnmarshalMap(in, out)
+}
+
+// TransactionCancellations exposes stable cancellation codes without leaking
+// SDK exception types to repository callers.
+func TransactionCancellations(err error) []TransactionCancellation {
+	var cancelled *ddbtypes.TransactionCanceledException
+	if !errors.As(err, &cancelled) {
+		return nil
+	}
+	reasons := make([]TransactionCancellation, 0, len(cancelled.CancellationReasons))
+	for _, reason := range cancelled.CancellationReasons {
+		reasons = append(reasons, TransactionCancellation{Code: sdkaws.ToString(reason.Code)})
+	}
+	return reasons
+}
+
+func IsConditionalCheckFailure(err error) bool {
+	var conditional *ddbtypes.ConditionalCheckFailedException
+	return errors.As(err, &conditional)
 }
 
 type dynamoDB struct {
