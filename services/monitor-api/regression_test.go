@@ -158,7 +158,7 @@ func TestManualRunResponseShape(t *testing.T) {
 	handler.now = func() time.Time { return time.Date(2026, 5, 17, 22, 0, 0, 0, time.UTC) }
 
 	handler.executor = &recordingMonitorExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte("ok")}}
-	response, err := handler.runMonitor(context.Background(), "auth", "public-http")
+	response, err := handler.runMonitor(context.Background(), "auth", "public-http", events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "idempotent-regression-key"}})
 	if err != nil {
 		t.Fatalf("handleRequest returned error: %v", err)
 	}

@@ -88,6 +88,12 @@ func (f fakeMonitorStore) CreateManualRun(ctx context.Context, monitor monitorco
 func (f fakeMonitorStore) RecordExecutionResult(ctx context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error {
 	return f.state.RecordExecutionResult(ctx, monitor, runID, result)
 }
+func (f fakeMonitorStore) ReserveManualIdempotency(ctx context.Context, record manualIdempotencyRecord) (manualIdempotencyRecord, error) {
+	return f.state.ReserveManualIdempotency(ctx, record)
+}
+func (f fakeMonitorStore) LoadManualIdempotency(ctx context.Context, tenantID, serviceID, monitorID, key string) (manualIdempotencyRecord, bool, error) {
+	return f.state.LoadManualIdempotency(ctx, tenantID, serviceID, monitorID, key)
+}
 func (f fakeMonitorStore) ListMonitorIncidents(ctx context.Context, tenantID, serviceID, monitorID string) ([]dynamodbrecord.IncidentRecord, error) {
 	return f.state.ListMonitorIncidents(ctx, tenantID, serviceID, monitorID)
 }

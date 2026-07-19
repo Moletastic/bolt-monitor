@@ -45,6 +45,8 @@ type MonitorStore interface {
 type executionStore interface {
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
 	RecordExecutionResult(context.Context, monitorconfig.Monitor, string, checkexecution.ExecutionResult) error
+	ReserveManualIdempotency(context.Context, manualIdempotencyRecord) (manualIdempotencyRecord, error)
+	LoadManualIdempotency(context.Context, string, string, string, string) (manualIdempotencyRecord, bool, error)
 }
 
 func (r *dynamoMonitorRepository) CreateMonitor(ctx context.Context, monitor monitorconfig.Monitor) (monitorconfig.Monitor, error) {
