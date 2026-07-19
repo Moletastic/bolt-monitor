@@ -22,6 +22,8 @@ type runtimeRepository interface {
 	GetLastExecution(context.Context, string, string, string) (*time.Time, error)
 	RecordLastExecution(context.Context, string, string, string, time.Time) error
 	EnqueueExecutionRequests(context.Context, []checkexecution.ExecutionRequest, time.Time) error
+	AcknowledgeExecutionPublication(context.Context, checkexecution.ExecutionWork) error
+	LoadExecutionWork(context.Context, string, string) (checkexecution.ExecutionWork, bool, error)
 	ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error)
 	ClaimExecutionWork(context.Context, checkexecution.ExecutionWork, time.Time) (bool, error)
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
@@ -130,6 +132,13 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 		if err := h.sqsClient.SendMessage(ctx, h.queueURL, string(jsonReq)); err != nil {
 			return summary, checkexecution.Publication("publish-work", request.RunID)
 		}
+		if err := h.repo.AcknowledgeExecutionPublication(ctx, checkexecution.ExecutionWork{
+			TenantID: request.Monitor.TenantID, ServiceID: request.Monitor.ServiceID, MonitorID: request.Monitor.MonitorID,
+			RunID: request.RunID, Trigger: request.Trigger, AcceptedAt: request.AcceptedAt, RequestedAt: request.AcceptedAt,
+			ScheduleDefinitionVersion: request.ScheduleDefinitionVersion, ScheduledFor: request.ScheduledFor,
+		}); err != nil {
+			return summary, checkexecution.Publication("acknowledge-publication", request.RunID)
+		}
 		summary.Enqueued++
 	}
 	return summary, nil
@@ -235,18 +244,28 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 	for _, msg := range event.Records {
 		var req checkexecution.ExecutionRequest
 		if err := json.Unmarshal([]byte(msg.Body), &req); err != nil {
-			return summary, err
+			return summary, checkexecution.NewRuntimeFailure(checkexecution.FailureMalformedEnvelope, true, "decode-envelope", "", nil)
 		}
-		result := checkexecution.ExecuteHTTP(ctx, h.executor, req)
-		work := checkexecution.ExecutionWork{
-			TenantID:    req.Monitor.TenantID,
-			ServiceID:   req.Monitor.ServiceID,
-			MonitorID:   req.Monitor.MonitorID,
-			RunID:       req.RunID,
-			Trigger:     req.Trigger,
-			RequestedAt: h.now(),
+		if strings.TrimSpace(req.RunID) == "" || strings.TrimSpace(req.Monitor.TenantID) == "" {
+			return summary, checkexecution.NewRuntimeFailure(checkexecution.FailureMalformedEnvelope, true, "validate-envelope", req.RunID, nil)
 		}
-		transition, incidentID, err := h.repo.RecordExecutionResult(ctx, req.Monitor, work, result)
+		work, found, err := h.repo.LoadExecutionWork(ctx, req.Monitor.TenantID, req.RunID)
+		if err != nil {
+			return summary, checkexecution.Storage("load-work", req.RunID)
+		}
+		if !found || !sameEnvelopeIdentity(req, work) {
+			return summary, checkexecution.Conflict("validate-envelope", req.RunID)
+		}
+		monitor, found, err := h.repo.GetMonitor(ctx, work.TenantID, work.ServiceID, work.MonitorID)
+		if err != nil || !found {
+			return summary, checkexecution.Skip("load-monitor", work.RunID, "monitor not found")
+		}
+		request, skipReason, err := buildExecutionRequest(monitor, work)
+		if err != nil || skipReason != "" {
+			return summary, checkexecution.Skip("validate-monitor", work.RunID, skipReason)
+		}
+		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
+		transition, incidentID, err := h.repo.RecordExecutionResult(ctx, monitor, work, result)
 		if err != nil {
 			return summary, err
 		}
@@ -262,6 +281,16 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 		summary.Processed++
 	}
 	return summary, nil
+}
+
+func sameEnvelopeIdentity(request checkexecution.ExecutionRequest, work checkexecution.ExecutionWork) bool {
+	if !strings.EqualFold(request.Monitor.TenantID, work.TenantID) || !strings.EqualFold(request.Monitor.ServiceID, work.ServiceID) || !strings.EqualFold(request.Monitor.MonitorID, work.MonitorID) || !strings.EqualFold(request.RunID, work.RunID) || request.Trigger != work.Trigger || request.ScheduleDefinitionVersion != work.ScheduleDefinitionVersion {
+		return false
+	}
+	if request.ScheduledFor == nil || work.ScheduledFor == nil {
+		return request.ScheduledFor == nil && work.ScheduledFor == nil
+	}
+	return request.ScheduledFor.Equal(*work.ScheduledFor)
 }
 
 func sortWorksByRequestedAt(works []checkexecution.ExecutionWork) {

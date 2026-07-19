@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"strings"
@@ -146,15 +147,17 @@ func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, 
 }
 
 func (r *dynamoRuntimeRepository) createExecutionWork(ctx context.Context, work checkexecution.ExecutionWork) error {
-	record := dynamodbrecord.ExecutionWorkItemRecordFromWork(work)
-	item, err := sharedaws.MarshalMap(record)
+	bucket, shard := executionRecoveryBucket(work)
+	records := []any{
+		dynamodbrecord.ExecutionWorkItemRecordFromWork(work),
+		dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerPublication, bucket, shard),
+		dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerRecovery, bucket, shard),
+	}
+	items, err := conditionalPutItems(r.tableName, records...)
 	if err != nil {
 		return err
 	}
-	_, err = r.client.PutItem(ctx, &sharedaws.DynamoDBPutItemInput{
-		TableName: sharedaws.String(r.tableName), Item: item,
-		ConditionExpression: sharedaws.String("attribute_not_exists(PK) AND attribute_not_exists(SK)"),
-	})
+	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
 	if err == nil {
 		return nil
 	}
@@ -171,6 +174,71 @@ func (r *dynamoRuntimeRepository) createExecutionWork(ctx context.Context, work 
 	return nil
 }
 
+func conditionalPutItems(tableName string, records ...any) ([]sharedaws.TransactWriteItem, error) {
+	items := make([]sharedaws.TransactWriteItem, 0, len(records))
+	for _, record := range records {
+		item, err := sharedaws.MarshalMap(record)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, sharedaws.TransactWriteItem{Put: &sharedaws.Put{
+			TableName: sharedaws.String(tableName), Item: item,
+			ConditionExpression: sharedaws.String("attribute_not_exists(PK) AND attribute_not_exists(SK)"),
+		}})
+	}
+	return items, nil
+}
+
+func executionRecoveryBucket(work checkexecution.ExecutionWork) (string, string) {
+	acceptedAt := work.AcceptedAt
+	if acceptedAt.IsZero() {
+		acceptedAt = work.RequestedAt
+	}
+	sum := sha256.Sum256([]byte(work.RunID))
+	return acceptedAt.UTC().Format("2006010215"), fmt.Sprintf("%02x", sum[0]%16)
+}
+
+func (r *dynamoRuntimeRepository) listExecutionMarkers(ctx context.Context, tenantID, kind, bucket, shard string, limit int32, cursor map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error) {
+	page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, fmt.Sprintf("RECOVERY#%s#%s#%s#%s", dynamodbschema.NormalizeToken(tenantID), dynamodbschema.NormalizeToken(kind), dynamodbschema.NormalizeToken(bucket), dynamodbschema.NormalizeToken(shard)), "MARKER#", sharedaws.PageOptions{Limit: limit, Cursor: cursor})
+	if err != nil {
+		return nil, nil, err
+	}
+	markers := make([]dynamodbrecord.ExecutionMarkerRecord, 0, len(page.Items))
+	for _, item := range page.Items {
+		var marker dynamodbrecord.ExecutionMarkerRecord
+		if err := sharedaws.UnmarshalMap(item, &marker); err != nil {
+			return nil, nil, err
+		}
+		if marker.EntityType == dynamodbschema.EntityExecutionMarker {
+			markers = append(markers, marker)
+		}
+	}
+	return markers, page.NextKey, nil
+}
+
+func (r *dynamoRuntimeRepository) AcknowledgeExecutionPublication(ctx context.Context, work checkexecution.ExecutionWork) error {
+	bucket, shard := executionRecoveryBucket(work)
+	marker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerPublication, bucket, shard)
+	markerKey := sharedaws.NewPrimaryKey(marker.PK, marker.SK).AttributeMap()
+	workKey := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
+	_, err := r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: []sharedaws.TransactWriteItem{
+		{Update: &sharedaws.Update{
+			TableName: sharedaws.String(r.tableName), Key: workKey,
+			UpdateExpression: sharedaws.String("SET PublicationState = :acknowledged"),
+			ConditionExpression: sharedaws.String("PublicationState = :pending"),
+			ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+				":acknowledged": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.PublicationAcknowledged)},
+				":pending": &sharedaws.AttributeValueMemberS{Value: string(checkexecution.PublicationPending)},
+			},
+		}},
+		{Delete: &sharedaws.Delete{TableName: sharedaws.String(r.tableName), Key: markerKey}},
+	}})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *dynamoRuntimeRepository) loadExecutionWork(ctx context.Context, tenantID, runID string) (checkexecution.ExecutionWork, bool, error) {
 	item, found, err := sharedaws.GetByPrimaryKey(ctx, r.client, r.tableName, sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(runID)))
 	if err != nil || !found {
@@ -182,6 +250,10 @@ func (r *dynamoRuntimeRepository) loadExecutionWork(ctx context.Context, tenantI
 	}
 	work, err := record.ToWork()
 	return work, err == nil, err
+}
+
+func (r *dynamoRuntimeRepository) LoadExecutionWork(ctx context.Context, tenantID, runID string) (checkexecution.ExecutionWork, bool, error) {
+	return r.loadExecutionWork(ctx, tenantID, runID)
 }
 
 func sameWorkIdentity(left, right checkexecution.ExecutionWork) bool {

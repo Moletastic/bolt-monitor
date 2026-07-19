@@ -18,14 +18,14 @@
 
 - [x] 3.1 Replace elapsed `LastExecutionAt` uniqueness with captured-invocation-time `scheduleDefinitionVersion`/UTC `scheduledFor` eligibility and stable `runId` assignment before any scheduler side effect.
 - [ ] 3.2 Make tenant service and monitor discovery consume every DynamoDB page with a Lambda safety deadline and current enabled/maintenance filtering.
-- [ ] 3.3 Change per-monitor scheduling to conditionally persist work before SQS send, publish the stable envelope, and conditionally acknowledge publication.
+- [x] 3.3 Change per-monitor scheduling to conditionally persist work before SQS send, publish the stable envelope, and conditionally acknowledge publication.
 - [ ] 3.4 Add a bounded scheduler recovery pass that queries publication markers directly, including successful-send/failed-ack ambiguity, without creating a new run or scanning a tenant.
 - [ ] 3.5 Preserve earlier per-monitor progress on later persistence/publication failure and return typed retryable context that lets EventBridge retry the same captured event time.
 - [ ] 3.6 Add scheduler tests for duplicate/overlapping invocation under one schedule definition/time, schedule-version changes, default interval, no missed later pages, deadline stop, middle-page failure, bounded marker recovery, persisted/send-failed recovery, and send-succeeded/ack-failed duplicate publication.
 
 ## 4. Leased SQS Worker
 
-- [ ] 4.1 Parse and validate immutable SQS execution envelopes, load canonical work by identity, and reject malformed or conflicting envelopes with typed outcomes.
+- [x] 4.1 Parse and validate immutable SQS execution envelopes, load canonical work by identity, and reject malformed or conflicting envelopes with typed outcomes.
 - [ ] 4.2 Claim work before external side effects and handle active claims, terminal duplicates, expired-lease reclaim, and stale fencing tokens according to acknowledgement policy.
 - [ ] 4.3 Strongly reload current monitor and status after claim; fenced-skip missing, disabled, maintenance, invalid, or recurring work no longer eligible under current interval configuration.
 - [ ] 4.4 Execute only the current persisted monitor configuration while preserving canonical work identity and trigger in the normalized result.

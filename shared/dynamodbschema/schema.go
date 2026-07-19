@@ -22,6 +22,7 @@ const (
 	EntityAuditChange         = "AuditChange"
 	EntityIncidentActivity    = "IncidentActivity"
 	EntityExecutionWork       = "ExecutionWork"
+	EntityExecutionMarker     = "ExecutionMarker"
 	EntityEscalationPolicy    = "EscalationPolicy"
 	EntityEscalationState     = "EscalationState"
 	EntityNotificationChannel = "NotificationChannel"
@@ -150,6 +151,17 @@ func ExecutionWorkItem(tenantID, _ string, runID string, ttl int64) Item {
 		PK:         TenantPK(tenantID),
 		SK:         "RUN_REQUEST#" + normalizeToken(runID),
 		EntityType: EntityExecutionWork,
+		TenantID:   normalizeField(tenantID),
+		RunID:      normalizeField(runID),
+		TTL:        ttl,
+	}
+}
+
+func ExecutionMarkerItem(tenantID, kind, bucket, shard, runID string, ttl int64) Item {
+	return Item{
+		PK:         fmt.Sprintf("RECOVERY#%s#%s#%s#%s", normalizeToken(tenantID), normalizeToken(kind), normalizeToken(bucket), normalizeToken(shard)),
+		SK:         "MARKER#" + normalizeToken(runID),
+		EntityType: EntityExecutionMarker,
 		TenantID:   normalizeField(tenantID),
 		RunID:      normalizeField(runID),
 		TTL:        ttl,

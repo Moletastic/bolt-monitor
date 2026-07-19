@@ -47,6 +47,7 @@ type fakeRuntimeRepository struct {
 	skipped       []checkexecution.ExecutionWork
 	results       []checkexecution.ExecutionResult
 	recordedWorks []checkexecution.ExecutionWork
+	published     []string
 	lastExec      map[string]time.Time
 	statuses      map[string]resultstatus.MonitorStatus
 }
@@ -86,9 +87,27 @@ func (r *fakeRuntimeRepository) EnqueueExecutionRequests(_ context.Context, requ
 		if runID == "" {
 			runID = newRunID(now)
 		}
-		r.works = append(r.works, checkexecution.ExecutionWork{TenantID: request.Monitor.TenantID, ServiceID: request.Monitor.ServiceID, MonitorID: request.Monitor.MonitorID, RunID: runID, Trigger: request.Trigger, RequestedAt: now.UTC(), Status: checkexecution.ExecutionWorkPending})
+		acceptedAt := request.AcceptedAt
+		if acceptedAt.IsZero() {
+			acceptedAt = now.UTC()
+		}
+		r.works = append(r.works, checkexecution.ExecutionWork{TenantID: request.Monitor.TenantID, ServiceID: request.Monitor.ServiceID, MonitorID: request.Monitor.MonitorID, RunID: runID, Trigger: request.Trigger, AcceptedAt: acceptedAt, RequestedAt: acceptedAt, ScheduleDefinitionVersion: request.ScheduleDefinitionVersion, ScheduledFor: request.ScheduledFor, Status: checkexecution.ExecutionWorkPending})
 	}
 	return nil
+}
+
+func (r *fakeRuntimeRepository) AcknowledgeExecutionPublication(_ context.Context, work checkexecution.ExecutionWork) error {
+	r.published = append(r.published, work.RunID)
+	return nil
+}
+
+func (r *fakeRuntimeRepository) LoadExecutionWork(_ context.Context, tenantID, runID string) (checkexecution.ExecutionWork, bool, error) {
+	for _, work := range r.works {
+		if strings.EqualFold(work.TenantID, tenantID) && strings.EqualFold(work.RunID, runID) {
+			return work, true, nil
+		}
+	}
+	return checkexecution.ExecutionWork{}, false, nil
 }
 
 func (r *fakeRuntimeRepository) ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error) {
@@ -326,16 +345,18 @@ func TestHandleSQSEventRecordsUnsafeQueuedTargetWithoutDialing(t *testing.T) {
 	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
 	handler.executor = &outboundhttp.Executor{Dialer: dialer}
 	request := checkexecution.ExecutionRequest{Monitor: testMonitor("http://127.0.0.1", true), RunID: "RUN_QUEUE_UNSAFE", Trigger: checkexecution.TriggerTypeManual}
+	repo.monitors["auth/public-http"] = request.Monitor
+	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: request.RunID, Trigger: request.Trigger, RequestedAt: time.Now().UTC(), Status: checkexecution.ExecutionWorkPending}}
 	body, err := json.Marshal(request)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 
 	summary, err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: string(body)}}})
-	if err != nil {
-		t.Fatalf("handleSQSEvent returned error: %v", err)
+	if err == nil {
+		t.Fatal("handleSQSEvent returned nil error for invalid current monitor")
 	}
-	if summary.Processed != 1 || len(repo.results) != 1 || repo.results[0].FailureCode != string(outboundhttp.KindAddressBlocked) {
+	if summary.Processed != 0 || len(repo.results) != 0 {
 		t.Fatalf("summary = %+v, results = %#v", summary, repo.results)
 	}
 	if dialer.calls != 0 {

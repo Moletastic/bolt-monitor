@@ -16,7 +16,6 @@ type fakeDynamoClient struct {
 	transactInput *sharedaws.DynamoDBTransactWriteItemsInput
 	queryOutput   *sharedaws.DynamoDBQueryOutput
 	getItemOutput *sharedaws.DynamoDBGetItemOutput
-	putInput      *sharedaws.DynamoDBPutItemInput
 }
 
 func (f *fakeDynamoClient) GetItem(context.Context, *sharedaws.DynamoDBGetItemInput) (*sharedaws.DynamoDBGetItemOutput, error) {
@@ -38,8 +37,7 @@ func (f *fakeDynamoClient) TransactWriteItems(_ context.Context, input *sharedaw
 	return &sharedaws.DynamoDBTransactWriteItemsOutput{}, nil
 }
 
-func (f *fakeDynamoClient) PutItem(_ context.Context, input *sharedaws.DynamoDBPutItemInput) (*sharedaws.DynamoDBPutItemOutput, error) {
-	f.putInput = input
+func (f *fakeDynamoClient) PutItem(context.Context, *sharedaws.DynamoDBPutItemInput) (*sharedaws.DynamoDBPutItemOutput, error) {
 	return &sharedaws.DynamoDBPutItemOutput{}, nil
 }
 
@@ -51,8 +49,13 @@ func TestEnqueueExecutionRequestsConditionallyCreatesWork(t *testing.T) {
 	if err := repo.EnqueueExecutionRequests(context.Background(), []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
 		t.Fatalf("EnqueueExecutionRequests returned error: %v", err)
 	}
-	if client.putInput == nil || sharedaws.ToString(client.putInput.ConditionExpression) != "attribute_not_exists(PK) AND attribute_not_exists(SK)" {
-		t.Fatalf("put input = %#v", client.putInput)
+	if client.transactInput == nil || len(client.transactInput.TransactItems) != 3 {
+		t.Fatalf("transaction = %#v", client.transactInput)
+	}
+	for _, item := range client.transactInput.TransactItems {
+		if sharedaws.ToString(item.Put.ConditionExpression) != "attribute_not_exists(PK) AND attribute_not_exists(SK)" {
+			t.Fatalf("condition = %v", item.Put.ConditionExpression)
+		}
 	}
 }
 
