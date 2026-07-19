@@ -51,36 +51,54 @@ func (r *dynamoRuntimeRepository) ListMonitors(ctx context.Context, tenantID str
 	if err := r.requireTableName(); err != nil {
 		return nil, err
 	}
-	// Scheduler fan-out: bounded by a single page per service partition. The
-	// caller (scheduler tick) treats any continuation key as a hard failure
-	// for that tick and retries next minute.
-	serviceRefs, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "SERVICE#", sharedaws.PageOptions{Limit: 100})
-	if err != nil {
-		return nil, err
-	}
 	monitors := make([]monitorconfig.Monitor, 0)
-	for _, item := range serviceRefs.Items {
-		var service dynamodbrecord.ServiceItemRecord
-		if err := sharedaws.UnmarshalMap(item, &service); err != nil {
-			return nil, err
-		}
-		if service.EntityType != dynamodbschema.EntityServiceRef {
-			continue
-		}
-		serviceMonitors, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.ServicePK(tenantID, service.ServiceID), "MONITOR#", sharedaws.PageOptions{Limit: 100})
+	seen := map[string]struct{}{}
+	var serviceCursor map[string]sharedaws.AttributeValue
+	for {
+		page, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.TenantPK(tenantID), "SERVICE#", sharedaws.PageOptions{Limit: 100, Cursor: serviceCursor})
 		if err != nil {
 			return nil, err
 		}
-		for _, serviceMonitorItem := range serviceMonitors.Items {
-			var record dynamodbrecord.MonitorItemRecord
-			if err := sharedaws.UnmarshalMap(serviceMonitorItem, &record); err != nil {
+		for _, item := range page.Items {
+			var service dynamodbrecord.ServiceItemRecord
+			if err := sharedaws.UnmarshalMap(item, &service); err != nil {
 				return nil, err
 			}
-			if record.EntityType != dynamodbschema.EntityServiceMonitorRef {
+			if service.EntityType != dynamodbschema.EntityServiceRef {
 				continue
 			}
-			monitors = append(monitors, record.ToMonitor())
+			var monitorCursor map[string]sharedaws.AttributeValue
+			for {
+				serviceMonitors, err := sharedaws.QueryPrimaryPrefixPage(ctx, r.client, r.tableName, dynamodbschema.ServicePK(tenantID, service.ServiceID), "MONITOR#", sharedaws.PageOptions{Limit: 100, Cursor: monitorCursor})
+				if err != nil {
+					return nil, err
+				}
+				for _, serviceMonitorItem := range serviceMonitors.Items {
+					var record dynamodbrecord.MonitorItemRecord
+					if err := sharedaws.UnmarshalMap(serviceMonitorItem, &record); err != nil {
+						return nil, err
+					}
+					if record.EntityType != dynamodbschema.EntityServiceMonitorRef {
+						continue
+					}
+					monitor := record.ToMonitor()
+					key := monitor.TenantID + "/" + monitor.ServiceID + "/" + monitor.MonitorID
+					if _, dup := seen[key]; dup {
+						continue
+					}
+					seen[key] = struct{}{}
+					monitors = append(monitors, monitor)
+				}
+				if !serviceMonitors.HasMore() {
+					break
+				}
+				monitorCursor = serviceMonitors.NextKey
+			}
 		}
+		if !page.HasMore() {
+			break
+		}
+		serviceCursor = page.NextKey
 	}
 	return monitors, nil
 }
