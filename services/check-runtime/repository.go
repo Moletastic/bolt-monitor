@@ -468,7 +468,14 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 			":token": &sharedaws.AttributeValueMemberS{Value: work.FencingToken},
 		},
 	}}
+	bucket, shard := executionRecoveryBucket(work)
+	recoveryMarker := dynamodbrecord.NewExecutionMarkerRecord(work, dynamodbrecord.ExecutionMarkerRecovery, bucket, shard)
+	markerDelete := sharedaws.TransactWriteItem{Delete: &sharedaws.Delete{
+		TableName: sharedaws.String(r.tableName),
+		Key: sharedaws.NewPrimaryKey(recoveryMarker.PK, recoveryMarker.SK).AttributeMap(),
+	}}
 	items = append([]sharedaws.TransactWriteItem{completion}, items...)
+	items = append(items, markerDelete)
 	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
 	if err != nil {
 		if len(sharedaws.TransactionCancellations(err)) > 0 {
