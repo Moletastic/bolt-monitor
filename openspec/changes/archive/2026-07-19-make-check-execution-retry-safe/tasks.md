@@ -70,4 +70,4 @@
 - [x] 9.1 Build stateful DynamoDB/execution-SQS/HTTP fakes that inject failures before and after each owned durable or external boundary and expose structured conditional cancellation reasons.
 - [x] 9.2 Add the full failure/retry matrix for work/marker create, execution send, publication acknowledgement/marker removal, claim/recovery-marker movement, HTTP response, result/outbox transaction, and terminal marker removal.
 - [x] 9.3 Add invariant assertions proving one work/run identity per eligible schedule definition/time, at most one canonical `CheckRun`, monotonic recurring cursor, fenced terminal transitions, no manual recurring effects, and one equal-valued transition/activity/event identity with one canonical outbox item.
-- [ ] 9.4 Run `make test-go-all`, `make lint-go`, `make build-go`, `make check-infra`, `make check-bruno`, and strict OpenSpec validation; resolve every regression before marking the change complete.
+- [x] 9.4 Run `make test-go-all`, `make lint-go`, `make build-go`, `make check-infra`, `make check-bruno`, and strict OpenSpec validation; resolve every regression before marking the change complete.

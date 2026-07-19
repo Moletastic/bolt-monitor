@@ -40,7 +40,7 @@ System SHALL configure SQS to trigger worker Lambda when messages are available 
 - **THEN** worker performs no additional HTTP check or result projection
 - **AND** any canonical pending notification outbox item remains owned by the notification-assurance dispatcher rather than execution redelivery
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Execution publication is recoverable
 System SHALL retain publication state on nonterminal execution work so a persisted request cannot be lost solely because queue publication failed.

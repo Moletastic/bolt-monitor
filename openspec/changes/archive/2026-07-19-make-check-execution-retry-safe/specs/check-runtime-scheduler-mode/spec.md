@@ -68,7 +68,7 @@ System SHALL NOT use mutable `LastExecutionAt` as the uniqueness or retry-safety
 - **WHEN** accepted work cannot be published
 - **THEN** the durable work remains eligible for publication recovery regardless of `LastExecutionAt`
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Scheduler assigns stable recurring identity before side effects
 System SHALL capture one invocation time and derive immutable `scheduleDefinitionVersion`, UTC `scheduledFor`, and deterministic `runId` before the first write or queue send for each recurring execution.
