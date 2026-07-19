@@ -23,7 +23,7 @@ type runtimeRepository interface {
 	ListMonitors(context.Context, string) ([]monitorconfig.Monitor, error)
 	GetLastExecution(context.Context, string, string, string) (*time.Time, error)
 	RecordLastExecution(context.Context, string, string, string, time.Time) error
-	EnqueueExecutionRequests(context.Context, []checkexecution.ExecutionRequest, time.Time) error
+	EnqueueExecutionRequests(context.Context, []checkexecution.ExecutionRequest, time.Time) (int, error)
 	AcknowledgeExecutionPublication(context.Context, checkexecution.ExecutionWork) error
 	LoadExecutionWork(context.Context, string, string) (checkexecution.ExecutionWork, bool, error)
 	ListPendingExecutionWork(context.Context, string, int32) ([]checkexecution.ExecutionWork, error)
@@ -167,8 +167,12 @@ func (h runtimeHandler) runScheduler(ctx context.Context) (runtimeSummary, error
 			ScheduledFor:              &scheduledFor,
 		}
 		// Durable work is authority. SQS only wakes a worker for this identity.
-		if err := h.repo.EnqueueExecutionRequests(ctx, []checkexecution.ExecutionRequest{request}, acceptedAt); err != nil {
+		created, err := h.repo.EnqueueExecutionRequests(ctx, []checkexecution.ExecutionRequest{request}, acceptedAt)
+		if err != nil {
 			return summary, checkexecution.Storage("persist-work", request.RunID)
+		}
+		if created == 0 {
+			continue
 		}
 		jsonReq, err := json.Marshal(request)
 		if err != nil {

@@ -21,7 +21,7 @@
 - [x] 3.3 Change per-monitor scheduling to conditionally persist work before SQS send, publish the stable envelope, and conditionally acknowledge publication.
 - [x] 3.4 Add a bounded scheduler recovery pass that queries publication markers directly, including successful-send/failed-ack ambiguity, without creating a new run or scanning a tenant.
 - [x] 3.5 Preserve earlier per-monitor progress on later persistence/publication failure and return typed retryable context that lets EventBridge retry the same captured event time.
-- [ ] 3.6 Add scheduler tests for duplicate/overlapping invocation under one schedule definition/time, schedule-version changes, default interval, no missed later pages, deadline stop, middle-page failure, bounded marker recovery, persisted/send-failed recovery, and send-succeeded/ack-failed duplicate publication.
+- [x] 3.6 Add scheduler tests for duplicate/overlapping invocation under one schedule definition/time, schedule-version changes, default interval, no missed later pages, deadline stop, middle-page failure, bounded marker recovery, persisted/send-failed recovery, and send-succeeded/ack-failed duplicate publication.
 
 ## 4. Leased SQS Worker
 
@@ -30,7 +30,7 @@
 - [x] 4.3 Strongly reload current monitor and status after claim; fenced-skip missing, disabled, maintenance, invalid, or recurring work no longer eligible under current interval configuration.
 - [x] 4.4 Execute only the current persisted monitor configuration while preserving canonical work identity and trigger in the normalized result.
 - [x] 4.5 Return SQS partial batch item failures for only retryable/malformed records and success for completed skips or duplicates; do not couple successful records to another record's failure.
-- [ ] 4.6 Add worker tests for duplicate concurrent delivery, no HTTP under active claim, disabled/maintenance/deleted races, current target/config use, superseded schedule definition/time, crash recovery, and stale worker completion rejection.
+- [x] 4.6 Add worker tests for duplicate concurrent delivery, no HTTP under active claim, disabled/maintenance/deleted races, current target/config use, superseded schedule definition/time, crash recovery, and stale worker completion rejection.
 
 ## 5. Canonical Results And Ordered Projections
 

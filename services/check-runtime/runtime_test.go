@@ -93,7 +93,8 @@ func (r *fakeRuntimeRepository) RecordLastExecution(_ context.Context, _ string,
 	return nil
 }
 
-func (r *fakeRuntimeRepository) EnqueueExecutionRequests(_ context.Context, requests []checkexecution.ExecutionRequest, now time.Time) error {
+func (r *fakeRuntimeRepository) EnqueueExecutionRequests(_ context.Context, requests []checkexecution.ExecutionRequest, now time.Time) (int, error) {
+	created := 0
 	for _, request := range requests {
 		runID := request.RunID
 		if runID == "" {
@@ -103,9 +104,15 @@ func (r *fakeRuntimeRepository) EnqueueExecutionRequests(_ context.Context, requ
 		if acceptedAt.IsZero() {
 			acceptedAt = now.UTC()
 		}
+		for _, existing := range r.works {
+			if existing.RunID == runID {
+				return created, nil
+			}
+		}
 		r.works = append(r.works, checkexecution.ExecutionWork{TenantID: request.Monitor.TenantID, ServiceID: request.Monitor.ServiceID, MonitorID: request.Monitor.MonitorID, RunID: runID, Trigger: request.Trigger, AcceptedAt: acceptedAt, RequestedAt: acceptedAt, ScheduleDefinitionVersion: request.ScheduleDefinitionVersion, ScheduledFor: request.ScheduledFor, Status: checkexecution.ExecutionWorkPending})
+		created++
 	}
-	return nil
+	return created, nil
 }
 
 func (r *fakeRuntimeRepository) AcknowledgeExecutionPublication(_ context.Context, work checkexecution.ExecutionWork) error {
@@ -534,6 +541,52 @@ func TestReconcileDispatchPendingQueriesCurrentHourlyBucket(t *testing.T) {
 		if !strings.HasPrefix(bucket, "2026071912|") {
 			t.Fatalf("bucket = %q, want current hourly bucket", bucket)
 		}
+	}
+}
+
+func TestRunSchedulerDuplicateInvocationDerivesSameIdentity(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Minute)
+	repo := newFakeRuntimeRepository()
+	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
+	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
+	sqs := &fakeSQSClient{}
+	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
+	handler.now = func() time.Time { return now }
+	handler.schedulerDeadline = 5 * time.Second
+
+	first, err := handler.runScheduler(context.Background())
+	if err != nil {
+		t.Fatalf("first runScheduler returned error: %v", err)
+	}
+	second, err := handler.runScheduler(context.Background())
+	if err != nil {
+		t.Fatalf("second runScheduler returned error: %v", err)
+	}
+	if first.Enqueued != 1 || second.Enqueued != 0 {
+		t.Fatalf("expected one enqueue across invocations, got %+v / %+v", first, second)
+	}
+}
+
+func TestHandleSQSEventRejectsDuplicateConcurrentDelivery(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	monitor := testMonitor("https://example.com", true)
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_DUP", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now, Status: checkexecution.ExecutionWorkPending}
+	repo := newFakeRuntimeRepository()
+	repo.monitors["auth/public-http"] = monitor
+	repo.works = []checkexecution.ExecutionWork{work}
+	repo.claims["RUN_DUP"] = true
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
+	handler.now = func() time.Time { return now }
+	body, _ := json.Marshal(checkexecution.ExecutionRequest{Monitor: monitor, RunID: "RUN_DUP", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now})
+	response, err := handler.handleSQSEventBatch(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{MessageId: "dup", Body: string(body)}}})
+	if err != nil {
+		t.Fatalf("handleSQSEventBatch returned error: %v", err)
+	}
+	if len(response.BatchItemFailures) != 0 {
+		t.Fatalf("expected successful ack, got failures = %#v", response.BatchItemFailures)
+	}
+	if len(repo.results) != 0 {
+		t.Fatalf("expected no execution, got results = %#v", repo.results)
 	}
 }
 

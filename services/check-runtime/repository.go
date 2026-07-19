@@ -149,10 +149,11 @@ func (r *dynamoRuntimeRepository) RecordLastExecution(ctx context.Context, tenan
 	return err
 }
 
-func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, requests []checkexecution.ExecutionRequest, now time.Time) error {
+func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, requests []checkexecution.ExecutionRequest, now time.Time) (int, error) {
 	if err := r.requireTableName(); err != nil {
-		return err
+		return 0, err
 	}
+	created := 0
 	for _, request := range requests {
 		runID := request.RunID
 		if strings.TrimSpace(runID) == "" {
@@ -168,14 +169,18 @@ func (r *dynamoRuntimeRepository) EnqueueExecutionRequests(ctx context.Context, 
 			ScheduleDefinitionVersion: request.ScheduleDefinitionVersion, ScheduledFor: request.ScheduledFor,
 			Status: checkexecution.ExecutionWorkPending, PublicationState: checkexecution.PublicationPending,
 		}
-		if err := r.createExecutionWork(ctx, work); err != nil {
-			return err
+		wasNew, err := r.createExecutionWorkDistinct(ctx, work)
+		if err != nil {
+			return created, err
+		}
+		if wasNew {
+			created++
 		}
 	}
-	return nil
+	return created, nil
 }
 
-func (r *dynamoRuntimeRepository) createExecutionWork(ctx context.Context, work checkexecution.ExecutionWork) error {
+func (r *dynamoRuntimeRepository) createExecutionWorkDistinct(ctx context.Context, work checkexecution.ExecutionWork) (bool, error) {
 	bucket, shard := executionRecoveryBucket(work)
 	records := []any{
 		dynamodbrecord.ExecutionWorkItemRecordFromWork(work),
@@ -184,23 +189,23 @@ func (r *dynamoRuntimeRepository) createExecutionWork(ctx context.Context, work 
 	}
 	items, err := conditionalPutItems(r.tableName, records...)
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
 	if err == nil {
-		return nil
+		return true, nil
 	}
 	if !sharedaws.IsConditionalCheckFailure(err) {
-		return err
+		return false, err
 	}
 	existing, found, loadErr := r.loadExecutionWork(ctx, work.TenantID, work.RunID)
 	if loadErr != nil {
-		return loadErr
+		return false, loadErr
 	}
 	if !found || !sameWorkIdentity(existing, work) {
-		return checkexecution.Conflict("create-work", work.RunID)
+		return false, checkexecution.Conflict("create-work", work.RunID)
 	}
-	return nil
+	return false, nil
 }
 
 func conditionalPutItems(tableName string, records ...any) ([]sharedaws.TransactWriteItem, error) {
