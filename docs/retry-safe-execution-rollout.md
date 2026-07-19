@@ -10,7 +10,7 @@
 6. Smoke-test one manual idempotency replay, one recurring run, one duplicate execution delivery, one publication-marker recovery, and one transition dispatch.
 7. Re-enable manual runs and recurring scheduling.
 
-The dispatcher is a bounded scheduler poll over tenant/hour/shard pending markers. It intentionally does not use DynamoDB Streams, avoiding stream shard-hour cost for low-volume deployments.
+The dispatcher is a bounded scheduler poll over four current tenant/hour shards. It intentionally does not use DynamoDB Streams, avoiding stream shard-hour cost for low-volume deployments. Older pending buckets are retained and require explicit recovery after a dispatcher outage; do not widen polling blindly because idle queries are a direct DynamoDB cost.
 
 ## Rollback
 

@@ -41,21 +41,24 @@ func (f *fakeSQSClient) SendMessage(_ context.Context, _ string, body string) er
 }
 
 type fakeRuntimeRepository struct {
-	config        checkexecution.SchedulerConfig
-	monitors      map[string]monitorconfig.Monitor
-	services      map[string]monitorconfig.Service
-	works         []checkexecution.ExecutionWork
-	claims        map[string]bool
-	skipped       []checkexecution.ExecutionWork
-	results       []checkexecution.ExecutionResult
-	recordedWorks []checkexecution.ExecutionWork
-	published     []string
-	lastExec      map[string]time.Time
-	statuses      map[string]resultstatus.MonitorStatus
+	config             checkexecution.SchedulerConfig
+	monitors           map[string]monitorconfig.Monitor
+	services           map[string]monitorconfig.Service
+	works              []checkexecution.ExecutionWork
+	claims             map[string]bool
+	skipped            []checkexecution.ExecutionWork
+	results            []checkexecution.ExecutionResult
+	recordedWorks      []checkexecution.ExecutionWork
+	published          []string
+	lastExec           map[string]time.Time
+	statuses           map[string]resultstatus.MonitorStatus
+	dispatchBuckets    []string
+	publicationBuckets []string
+	recordErr          map[string]error
 }
 
 func newFakeRuntimeRepository() *fakeRuntimeRepository {
-	return &fakeRuntimeRepository{monitors: map[string]monitorconfig.Monitor{}, claims: map[string]bool{}, lastExec: map[string]time.Time{}, statuses: map[string]resultstatus.MonitorStatus{}}
+	return &fakeRuntimeRepository{monitors: map[string]monitorconfig.Monitor{}, claims: map[string]bool{}, lastExec: map[string]time.Time{}, statuses: map[string]resultstatus.MonitorStatus{}, recordErr: map[string]error{}}
 }
 
 func (r *fakeRuntimeRepository) GetSchedulerConfig(context.Context, string) (checkexecution.SchedulerConfig, error) {
@@ -116,11 +119,13 @@ func (r *fakeRuntimeRepository) ListPendingExecutionWork(context.Context, string
 	return append([]checkexecution.ExecutionWork(nil), r.works...), nil
 }
 
-func (r *fakeRuntimeRepository) ListPublicationMarkers(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error) {
+func (r *fakeRuntimeRepository) ListPublicationMarkers(_ context.Context, _ string, bucketShard string, _ int32, _ map[string]sharedaws.AttributeValue) ([]dynamodbrecord.ExecutionMarkerRecord, map[string]sharedaws.AttributeValue, error) {
+	r.publicationBuckets = append(r.publicationBuckets, bucketShard)
 	return nil, nil, nil
 }
 
-func (r *fakeRuntimeRepository) ListDispatchPending(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error) {
+func (r *fakeRuntimeRepository) ListDispatchPending(_ context.Context, _ string, bucketShard string, _ int32, _ map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error) {
+	r.dispatchBuckets = append(r.dispatchBuckets, bucketShard)
 	return nil, nil, nil
 }
 
@@ -162,6 +167,9 @@ func (r *fakeRuntimeRepository) MarkExecutionWorkSkipped(_ context.Context, work
 }
 
 func (r *fakeRuntimeRepository) RecordExecutionResult(_ context.Context, _ monitorconfig.Monitor, work checkexecution.ExecutionWork, result checkexecution.ExecutionResult) (string, string, error) {
+	if err := r.recordErr[work.RunID]; err != nil {
+		return "", "", err
+	}
 	r.recordedWorks = append(r.recordedWorks, work)
 	r.results = append(r.results, result)
 	return "", "", nil
@@ -314,6 +322,26 @@ func TestRunWorkerSkipsDisabledMonitor(t *testing.T) {
 	}
 }
 
+func TestHandleSQSEventSkipsDeletedMonitorDurably(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "service", MonitorID: "monitor", RunID: "run", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now, Status: checkexecution.ExecutionWorkPending}
+	repo := newFakeRuntimeRepository()
+	repo.works = []checkexecution.ExecutionWork{work}
+	handler := runtimeHandler{repo: repo, tenantID: defaultTenantID, now: func() time.Time { return now }}
+	body, err := json.Marshal(checkexecution.ExecutionRequest{Monitor: monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "service", MonitorID: "monitor"}, RunID: "run", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	summary, err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: string(body)}}})
+	if err != nil {
+		t.Fatalf("handleSQSEvent returned error: %v", err)
+	}
+	if summary.Skipped != 1 || len(repo.skipped) != 1 || repo.skipped[0].LastError != "monitor not found" {
+		t.Fatalf("summary = %+v, skipped = %#v", summary, repo.skipped)
+	}
+}
+
 func TestRunWorkerProcessesManualRunIntoRecordedResult(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.monitors["auth/public-http"] = testMonitor("https://status.example.com", true)
@@ -375,10 +403,10 @@ func TestHandleSQSEventRecordsUnsafeQueuedTargetWithoutDialing(t *testing.T) {
 	}
 
 	summary, err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: string(body)}}})
-	if err == nil {
-		t.Fatal("handleSQSEvent returned nil error for invalid current monitor")
+	if err != nil {
+		t.Fatalf("handleSQSEvent returned error: %v", err)
 	}
-	if summary.Processed != 0 || len(repo.results) != 0 {
+	if summary.Skipped != 1 || len(repo.results) != 0 {
 		t.Fatalf("summary = %+v, results = %#v", summary, repo.results)
 	}
 	if dialer.calls != 0 {
@@ -398,6 +426,80 @@ func TestHandleSQSEventBatchFailsOnlyMalformedRecord(t *testing.T) {
 	}
 	if len(response.BatchItemFailures) != 1 || response.BatchItemFailures[0].ItemIdentifier != "bad" {
 		t.Fatalf("batch failures = %#v", response.BatchItemFailures)
+	}
+}
+
+func TestHandleSQSEventBatchKeepsSuccessfulRecordsAcknowledged(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	repo := newFakeRuntimeRepository()
+	monitor := testMonitor("https://example.com", true)
+	repo.monitors["auth/public-http"] = monitor
+	repo.works = []checkexecution.ExecutionWork{
+		{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OK", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now, Status: checkexecution.ExecutionWorkPending},
+		{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_RETRY", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now, Status: checkexecution.ExecutionWorkPending},
+	}
+	repo.recordErr["RUN_RETRY"] = checkexecution.Storage("commit-result", "RUN_RETRY")
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
+	handler.now = func() time.Time { return now }
+	request := func(runID string) string {
+		body, err := json.Marshal(checkexecution.ExecutionRequest{Monitor: monitor, RunID: runID, Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now})
+		if err != nil {
+			t.Fatalf("Marshal returned error: %v", err)
+		}
+		return string(body)
+	}
+
+	response, err := handler.handleSQSEventBatch(context.Background(), events.SQSEvent{Records: []events.SQSMessage{
+		{MessageId: "ok", Body: request("RUN_OK")},
+		{MessageId: "retry", Body: request("RUN_RETRY")},
+	}})
+	if err != nil {
+		t.Fatalf("handleSQSEventBatch returned error: %v", err)
+	}
+	if len(response.BatchItemFailures) != 1 || response.BatchItemFailures[0].ItemIdentifier != "retry" {
+		t.Fatalf("failures = %#v", response.BatchItemFailures)
+	}
+	if len(repo.results) != 1 || repo.results[0].RunID != "RUN_OK" {
+		t.Fatalf("results = %#v", repo.results)
+	}
+}
+
+func TestReconcileDispatchPendingQueriesCurrentHourlyBucket(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 34, 0, 0, time.UTC)
+	repo := newFakeRuntimeRepository()
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "escalation-queue", defaultTenantID, modeScheduler)
+	handler.now = func() time.Time { return now }
+
+	if _, err := handler.reconcileDispatchPending(context.Background()); err != nil {
+		t.Fatalf("reconcileDispatchPending returned error: %v", err)
+	}
+	if len(repo.dispatchBuckets) != dispatchPendingShards {
+		t.Fatalf("queried buckets = %#v", repo.dispatchBuckets)
+	}
+	for _, bucket := range repo.dispatchBuckets {
+		if !strings.HasPrefix(bucket, "2026071912|") {
+			t.Fatalf("bucket = %q, want current hourly bucket", bucket)
+		}
+	}
+}
+
+func TestRecoverPublicationMarkersQueriesBoundedHourlyBuckets(t *testing.T) {
+	now := time.Date(2026, 7, 19, 12, 34, 0, 0, time.UTC)
+	repo := newFakeRuntimeRepository()
+	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "execution-queue", "", defaultTenantID, modeScheduler)
+	handler.now = func() time.Time { return now }
+
+	if _, err := handler.recoverPublicationMarkers(context.Background()); err != nil {
+		t.Fatalf("recoverPublicationMarkers returned error: %v", err)
+	}
+	if len(repo.publicationBuckets) != recoveryBucketsPerHour*recoveryShards {
+		t.Fatalf("queried buckets = %#v", repo.publicationBuckets)
+	}
+	if !strings.HasPrefix(repo.publicationBuckets[0], "2026071912|") {
+		t.Fatalf("first bucket = %q, want current hourly bucket", repo.publicationBuckets[0])
+	}
+	if !strings.HasPrefix(repo.publicationBuckets[recoveryShards], "2026071911|") {
+		t.Fatalf("overlap bucket = %q, want prior hourly bucket", repo.publicationBuckets[recoveryShards])
 	}
 }
 
