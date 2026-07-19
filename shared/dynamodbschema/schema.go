@@ -19,6 +19,7 @@ const (
 	EntityCheckRunIdentity    = "CheckRunIdentity"
 	EntityTransitionOutbox    = "TransitionOutbox"
 	EntityManualIdempotency   = "ManualIdempotency"
+	EntityDispatchPending     = "DispatchPending"
 	EntityAlertState          = "AlertState"
 	EntityIncident            = "Incident"
 	EntityAuditEvent          = "AuditEvent"
@@ -126,6 +127,10 @@ func TransitionOutboxItem(tenantID, eventID string) Item {
 
 func ManualIdempotencyItem(tenantID, address string, ttl int64) Item {
 	return Item{PK: TenantPK(tenantID), SK: normalizeToken(address), EntityType: EntityManualIdempotency, TenantID: normalizeField(tenantID), TTL: ttl}
+}
+
+func DispatchPendingItem(tenantID, bucket, shard, eventID string) Item {
+	return Item{PK: fmt.Sprintf("DISPATCH_PENDING#%s#%s#%s", normalizeToken(tenantID), normalizeToken(bucket), normalizeToken(shard)), SK: normalizeToken(eventID), EntityType: EntityDispatchPending, TenantID: normalizeField(tenantID), RunID: normalizeField(eventID)}
 }
 
 func AlertStateItem(tenantID, serviceID, monitorID string) Item {

@@ -120,6 +120,14 @@ func (r *fakeRuntimeRepository) ListPublicationMarkers(context.Context, string, 
 	return nil, nil, nil
 }
 
+func (r *fakeRuntimeRepository) ListDispatchPending(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) ([]dynamodbrecord.DispatchPendingRecord, map[string]sharedaws.AttributeValue, error) {
+	return nil, nil, nil
+}
+
+func (r *fakeRuntimeRepository) RemoveDispatchPending(context.Context, string, string) error {
+	return nil
+}
+
 func (r *fakeRuntimeRepository) ClaimExecutionWork(_ context.Context, work checkexecution.ExecutionWork, now time.Time) (checkexecution.ExecutionWork, bool, error) {
 	if r.claims[work.RunID] {
 		return work, false, nil
