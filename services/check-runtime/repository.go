@@ -486,7 +486,11 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	items = append(items, markerDelete)
 	_, err = r.client.TransactWriteItems(ctx, &sharedaws.DynamoDBTransactWriteItemsInput{TransactItems: items})
 	if err != nil {
-		if len(sharedaws.TransactionCancellations(err)) > 0 {
+		cancellations := sharedaws.TransactionCancellations(err)
+		if len(cancellations) > 1 && cancellations[1].Code == "ConditionalCheckFailed" {
+			return "", "", checkexecution.Duplicate("commit-result", work.RunID)
+		}
+		if len(cancellations) > 0 {
 			return "", "", checkexecution.LeaseLost("complete-work", work.RunID)
 		}
 		return "", "", err
