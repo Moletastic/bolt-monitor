@@ -167,5 +167,3 @@ function DeliveryStateBadge({ state }: { state: DeliveryState }) {
     </span>
   )
 }
-
-export const __DELIVERY_STATE_LABELS = STATE_LABEL

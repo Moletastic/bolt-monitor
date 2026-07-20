@@ -30,12 +30,12 @@ type statementSummary struct {
 }
 
 type cleanupReport struct {
-	DryRun          bool                `json:"dryRun"`
-	Rules           []ruleSummary       `json:"rules"`
-	Statements      []statementSummary  `json:"statements"`
-	SkippedRule     []string            `json:"skippedRule,omitempty"`
+	DryRun           bool               `json:"dryRun"`
+	Rules            []ruleSummary      `json:"rules"`
+	Statements       []statementSummary `json:"statements"`
+	SkippedRule      []string           `json:"skippedRule,omitempty"`
 	SkippedStatement []string           `json:"skippedStatement,omitempty"`
-	Errors          []string            `json:"errors,omitempty"`
+	Errors           []string           `json:"errors,omitempty"`
 }
 
 func runLegacyCleanup(ctx context.Context, apply bool) error {
@@ -71,7 +71,7 @@ func runLegacyCleanup(ctx context.Context, apply bool) error {
 		for _, stmt := range statements {
 			if _, err := lambdaClient.RemovePermission(ctx, &lambda.RemovePermissionInput{
 				FunctionName: aws.String(currentFunctionName()),
-				StatementId:   aws.String(stmt.StatementID),
+				StatementId:  aws.String(stmt.StatementID),
 			}); err != nil {
 				var notFound *lambdatypes.ResourceNotFoundException
 				if errors.As(err, &notFound) {
