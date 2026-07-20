@@ -8,20 +8,14 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
-	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"bolt-monitor/shared/aws"
+	sharedaws "bolt-monitor/shared/aws"
+	"bolt-monitor/shared/notifications"
 )
 
 func main() {
 	ctx := context.Background()
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Fatalf("load aws config: %v", err)
-	}
 
 	tableName := os.Getenv("TABLE_NAME")
 	if tableName == "" {
@@ -32,20 +26,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("create dynamodb client: %v", err)
 	}
-	repo := newDynamoEscalationRepository(dynamoClient, tableName)
-	queue, err := aws.NewSQSAPI(ctx)
+	sqsClient, err := aws.NewSQSAPI(ctx)
 	if err != nil {
 		log.Fatalf("create sqs client: %v", err)
 	}
-	scheduler := newCloudWatchScheduler(
-		eventbridge.NewFromConfig(awsCfg),
-		awslambda.NewFromConfig(awsCfg),
-		sts.NewFromConfig(awsCfg),
-		os.Getenv("AWS_REGION"),
-		os.Getenv("AWS_LAMBDA_FUNCTION_NAME"),
-	)
+	schedulerClient, err := aws.NewSchedulerAPI(ctx)
+	if err != nil {
+		log.Fatalf("create scheduler client: %v", err)
+	}
+
+	repo := newDynamoEscalationRepository(dynamoClient, tableName)
+	scheduler := buildScheduler(schedulerClient, sqsClient)
+	adapter := newLegacyScheduleAdapter(sqsClient, os.Getenv("NOTIFICATION_QUEUE_URL"))
 	handler := newEscalationHandler(repo, scheduler)
-	dispatcher := newStreamDispatcher(repo, queue, os.Getenv("NOTIFICATION_QUEUE_URL"))
+	dispatcher := newStreamDispatcher(repo, sqsClient, os.Getenv("NOTIFICATION_QUEUE_URL"))
 
 	lambda.Start(func(ctx context.Context, payload json.RawMessage) (any, error) {
 		var sqsEvent events.SQSEvent
@@ -55,14 +49,32 @@ func main() {
 		}
 		var streamEvent events.DynamoDBEvent
 		if err := json.Unmarshal(payload, &streamEvent); err == nil && len(streamEvent.Records) > 0 {
-			response, err := dispatcher.handle(ctx, streamEvent)
-			return response, err
+			return dispatcher.handle(ctx, streamEvent)
 		}
 		var scheduled scheduledInvocationEvent
 		if err := json.Unmarshal(payload, &scheduled); err == nil && scheduled.IncidentID != "" {
+			if adapter != nil {
+				_ = adapter.Reenqueue(ctx, scheduled)
+			}
 			return nil, handler.handleScheduledInvocation(ctx, scheduled)
 		}
 		log.Printf("ignoring unsupported escalation-runtime payload")
 		return nil, nil
 	})
+}
+
+func buildScheduler(schedulerClient sharedaws.SchedulerAPI, sqsClient sharedaws.SQSAPI) scheduleClient {
+	group := os.Getenv("SCHEDULE_GROUP_NAME")
+	role := os.Getenv("SCHEDULE_EXECUTION_ROLE_ARN")
+	queue := os.Getenv("NOTIFICATION_QUEUE_ARN")
+	dlq := os.Getenv("NOTIFICATION_DLQ_ARN")
+	if group == "" || role == "" || queue == "" {
+		log.Printf("scheduler group/role/queue missing; new schedules disabled")
+		return nil
+	}
+	retry := sharedaws.SchedulerRetryPolicy{
+		MaximumEventAgeInSeconds: aws.Int32(int32(notifications.SchedulerTargetRetryAge.Seconds())),
+		MaximumRetryAttempts:     aws.Int32(3),
+	}
+	return newOneTimeScheduler(schedulerClient, group, role, queue, dlq, retry)
 }

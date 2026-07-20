@@ -32,11 +32,11 @@
 
 ## 5. Self-Cleaning One-Time Scheduling
 
-- [ ] 5.1 Replace EventBridge rule/Lambda permission scheduling clients with an AWS Scheduler facade that builds deterministic bounded names and idempotently creates `at` schedules with flexible windows off and action-after-completion deletion.
-- [ ] 5.2 Configure schedules to target the existing notification queue with canonical identity and `sourceKind=scheduler_target`, bounded retry age/attempts, the existing notification DLQ, and conflict detection tests for duplicate names with mismatched inputs.
-- [ ] 5.3 Provision a managed schedule group and dedicated execution role limited to the notification queue/DLQ, and scope runtime `scheduler:*` plus `iam:PassRole` permissions to that group and role; add infra tests that reject wildcard or Lambda invoke permissions.
-- [ ] 5.4 Retain a temporary adapter for already-created legacy direct scheduled payloads that re-enqueues canonical work, and verify the runtime no longer calls `PutRule`, `PutTargets`, `AddPermission`, or STS for new schedules.
-- [ ] 5.5 Add scheduler and handler tests proving duplicate invocation safety, completed-schedule deletion configuration, target retry/DLQ settings, annual replay elimination, and recovery suppression.
+- [x] 5.1 Replace EventBridge rule/Lambda permission scheduling clients with an AWS Scheduler facade that builds deterministic bounded names and idempotently creates `at` schedules with flexible windows off and action-after-completion deletion.
+- [x] 5.2 Configure schedules to target the existing notification queue with canonical identity and `sourceKind=scheduler_target`, bounded retry age/attempts, the existing notification DLQ, and conflict detection tests for duplicate names with mismatched inputs.
+- [x] 5.3 Provision a managed schedule group and dedicated execution role limited to the notification queue/DLQ, and scope runtime `scheduler:*` plus `iam:PassRole` permissions to that group and role; add infra tests that reject wildcard or Lambda invoke permissions.
+- [x] 5.4 Retain a temporary adapter for already-created legacy direct scheduled payloads that re-enqueues canonical work, and verify the runtime no longer calls `PutRule`, `PutTargets`, `AddPermission`, or STS for new schedules.
+- [x] 5.5 Add scheduler and handler tests proving duplicate invocation safety, completed-schedule deletion configuration, target retry/DLQ settings, annual replay elimination, and recovery suppression.
 
 ## 6. Delivery API And Dashboard
 

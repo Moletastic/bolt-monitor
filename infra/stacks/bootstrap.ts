@@ -230,6 +230,70 @@ export function createBootstrapStack(target: DeploymentTarget) {
     }
   )
 
+  const escalationScheduleGroup = new aws.scheduler.ScheduleGroup(
+    'EscalationScheduleGroup',
+    {
+      name: `${target.service}-${target.stage}-escalation`,
+      tags: policy.tags,
+    },
+    disposableOptions
+  )
+
+  const escalationScheduleRole = new aws.iam.Role(
+    'EscalationScheduleExecutionRole',
+    {
+      name: `${target.service}-${target.stage}-escalation-scheduler`,
+      assumeRolePolicy: JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Principal: { Service: 'scheduler.amazonaws.com' },
+            Action: 'sts:AssumeRole',
+          },
+        ],
+      }),
+      tags: policy.tags,
+    },
+    disposableOptions
+  )
+
+  new aws.iam.RolePolicy(
+    'EscalationScheduleExecutionPolicy',
+    {
+      role: escalationScheduleRole.name,
+      policy: JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Action: ['sqs:SendMessage'],
+            Resource: [notificationQueue.arn, notificationQueueDLQ.arn],
+          },
+        ],
+      }),
+    },
+    disposableOptions
+  )
+
+  const escalationRuntimeSchedulePermissions = [
+    {
+      actions: [
+        'scheduler:CreateSchedule',
+        'scheduler:GetSchedule',
+        'scheduler:UpdateSchedule',
+        'scheduler:DeleteSchedule',
+      ],
+      resources: [
+        `arn:aws:scheduler:${target.region}:*:schedule/${escalationScheduleGroup.name}/*`,
+      ],
+    },
+    {
+      actions: ['iam:PassRole'],
+      resources: [escalationScheduleRole.arn],
+    },
+  ]
+
   notificationQueue.subscribe(
     {
       runtime: 'go',
@@ -238,7 +302,18 @@ export function createBootstrapStack(target: DeploymentTarget) {
       environment: {
         TABLE_NAME: table.name,
         NOTIFICATION_QUEUE_URL: notificationQueue.url,
+        NOTIFICATION_QUEUE_ARN: notificationQueue.arn,
+        NOTIFICATION_DLQ_ARN: notificationQueueDLQ.arn,
+        SCHEDULE_GROUP_NAME: escalationScheduleGroup.name,
+        SCHEDULE_EXECUTION_ROLE_ARN: escalationScheduleRole.arn,
       },
+      permissions: [
+        ...escalationRuntimeSchedulePermissions,
+        {
+          actions: ['sqs:SendMessage'],
+          resources: [notificationQueue.arn, notificationQueueDLQ.arn],
+        },
+      ],
     },
     {
       batch: {
