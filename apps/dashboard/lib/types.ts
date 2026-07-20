@@ -275,6 +275,61 @@ export interface IncidentActivityListResponse {
   activities: IncidentActivity[]
 }
 
+export const DELIVERY_STATES = [
+  'pending',
+  'in_flight',
+  'retryable_failed',
+  'ambiguous',
+  'delivered',
+  'terminal_failed',
+] as const
+
+export type DeliveryState = (typeof DELIVERY_STATES)[number]
+
+export interface DeliveryProviderMetadata {
+  providerStatusClass?: string
+  providerRequestId?: string
+  retryAfterSeconds?: number
+}
+
+export interface Delivery {
+  deliveryId: string
+  transitionId: string
+  channelId: string
+  channelType: string
+  stepNumber: number
+  state: DeliveryState
+  attemptCount: number
+  lastAttemptAt?: string
+  nextAttemptAt?: string
+  lastOutcomeClass?: string
+  providerStatusClass?: string
+  providerRequestId?: string
+  retryAfterSeconds?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface IncidentDeliveryListResponse {
+  incidentId: string
+  deliveries: Delivery[]
+}
+
+export interface DeliveryReplayResponse {
+  incidentId: string
+  deliveryId: string
+  replayResult: 'queued' | 'replayed'
+  state: DeliveryState
+}
+
+export function isTerminalFailure(state: DeliveryState): boolean {
+  return state === 'terminal_failed'
+}
+
+export function isReplayable(delivery: Delivery): boolean {
+  return isTerminalFailure(delivery.state)
+}
+
 export interface SchedulerConfig {
   recurringEnabled: boolean
   stopControlMode?: string

@@ -28,10 +28,12 @@ import {
   getMonitorAudit,
   searchResources,
 } from '@/lib/api'
+import { replayIncidentDelivery } from '@/lib/api'
+import { isReplayable } from '@/lib/types'
 import { parseJson, runServerAction } from '@/lib/io/server-action'
 import { err, isErr, ok, type Result } from '@/lib/result'
 import { actionErr, actionOk, type ActionState } from '@/lib/action-state'
-import { ApiErrorCode, messageFor } from '@/lib/errors'
+import { ApiError, ApiErrorCode, messageFor } from '@/lib/errors'
 import { requireDashboardSession } from '@/lib/auth/session-guard'
 import { requireDashboardCsrf } from '@/lib/auth/csrf'
 import type {
@@ -411,6 +413,43 @@ export async function resolveIncidentStateAction(
   revalidatePath('/incidents')
   revalidatePath(`/incidents/${incidentId}`)
   return actionOk(undefined, 'Incident resolved.')
+}
+
+export async function replayDeliveryStateAction(
+  _previousState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  await requireDashboardCsrf()
+  await requireDashboardSession()
+  const incidentId = String(formData.get('incidentId') ?? '').trim()
+  const deliveryId = String(formData.get('deliveryId') ?? '').trim()
+  const state = String(formData.get('state') ?? '').trim() as import('@/lib/types').DeliveryState
+
+  if (!incidentId || !deliveryId) {
+    return actionErr(
+      new ApiError(ApiErrorCode.ValidationFailed, 400, { field: 'deliveryId', reason: 'required' })
+    )
+  }
+  if (!isReplayable({ state } as import('@/lib/types').Delivery)) {
+    return actionErr(
+      new ApiError(
+        ApiErrorCode.DeliveryNotReplayable,
+        409,
+        { deliveryId, state },
+        'Only terminal-failed deliveries can be replayed.'
+      )
+    )
+  }
+  const idempotencyKey = crypto.randomUUID()
+  const result = await runServerAction(() =>
+    replayIncidentDelivery(incidentId, deliveryId, idempotencyKey)
+  )
+  if (isErr(result)) {
+    return actionErr(result.error)
+  }
+
+  revalidatePath(`/incidents/${incidentId}`)
+  return actionOk(undefined, 'Delivery replay queued.')
 }
 
 export async function updateSchedulerConfigAction(formData: FormData) {

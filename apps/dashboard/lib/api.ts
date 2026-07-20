@@ -11,6 +11,8 @@ import {
   type UpdateMonitorPayload,
   type Incident,
   type IncidentActivityListResponse,
+  type IncidentDeliveryListResponse,
+  type DeliveryReplayResponse,
   type IncidentListResponse,
   type SchedulerConfigResponse,
   type MonitorAuditResponse,
@@ -187,6 +189,28 @@ export async function getIncidentActivities(incidentId: string) {
     `/api/v1/incidents/${incidentId}/activities`
   )
   return response.activities
+}
+
+export async function listIncidentDeliveries(incidentId: string) {
+  const response = await apiRequest<IncidentDeliveryListResponse>(
+    `/api/v1/incidents/${incidentId}/deliveries`
+  )
+  return response.deliveries
+}
+
+export async function replayIncidentDelivery(
+  incidentId: string,
+  deliveryId: string,
+  idempotencyKey: string
+) {
+  return apiRequest<DeliveryReplayResponse>(
+    `/api/v1/incidents/${incidentId}/deliveries/${deliveryId}/replay`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: '{}',
+    }
+  )
 }
 
 export async function acknowledgeIncident(incidentId: string) {
