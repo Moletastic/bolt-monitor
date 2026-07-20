@@ -11,7 +11,7 @@ export function Skeleton({ className, height, width, style, ...props }: Skeleton
   return (
     <div
       aria-hidden="true"
-      className={cn('animate-pulse rounded-md bg-surface-low', className)}
+      className={cn('animate-pulse rounded bg-surface-high/70', className)}
       style={{ height, width, ...style }}
       {...props}
     />

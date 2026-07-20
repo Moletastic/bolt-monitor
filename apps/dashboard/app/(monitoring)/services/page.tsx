@@ -3,17 +3,13 @@ import { EmptyState } from '@/components/empty-state'
 import { FocusOnMount } from '@/components/focus-on-mount'
 import { ServiceListLayout } from '@/components/service-list-layout'
 import { ServiceListStatusToast } from '@/components/service-list-status-toast'
+import { Feedback } from '@/components/ui/feedback'
 import { ApiError, listServices } from '@/lib/api'
 
 function DeletedServiceFeedback({ active = true }: { active?: boolean }) {
   return (
     <FocusOnMount active={active}>
-      <p
-        className="rounded-md border border-status-up/30 bg-status-up/10 px-3 py-2 text-sm text-status-up"
-        role="status"
-      >
-        Service permanently deleted.
-      </p>
+      <Feedback tone="success">Service permanently deleted.</Feedback>
     </FocusOnMount>
   )
 }

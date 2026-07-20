@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 
+import { Feedback } from '@/components/ui/feedback'
+
 export const samePageActionStartEvent = 'dashboard:same-page-action-start'
 
 export function QueryFeedbackBanner({
@@ -21,12 +23,5 @@ export function QueryFeedbackBanner({
 
   if (!visible) return null
 
-  return (
-    <p
-      className={`rounded-md border px-3 py-2 text-sm ${tone === 'error' ? 'border-status-down/30 bg-status-down/10 text-status-down' : 'border-status-up/30 bg-status-up/10 text-status-up'}`}
-      role={tone === 'error' ? 'alert' : 'status'}
-    >
-      {message}
-    </p>
-  )
+  return <Feedback tone={tone}>{message}</Feedback>
 }

@@ -118,10 +118,13 @@ export function AppShell({
           </div>
         </aside>
         <div className="flex-1">
-          <div className="sticky top-0 z-20 border-b border-border bg-background/90 px-5 py-3 backdrop-blur lg:px-8">
+          <div className="sticky top-0 z-20 border-b border-border bg-background/90 px-dashboard-gutter py-3 backdrop-blur md:px-dashboard-lg xl:px-dashboard-desktop-gutter">
             <GlobalSearch />
           </div>
-          <main className="data-grid min-h-screen px-5 py-6 lg:px-8" id="main-content">
+          <main
+            className="data-grid min-h-screen px-dashboard-gutter py-dashboard-lg md:px-dashboard-lg xl:px-dashboard-desktop-gutter"
+            id="main-content"
+          >
             {breadcrumbs && breadcrumbs.length > 0 ? <Breadcrumbs items={breadcrumbs} /> : null}
             {children}
           </main>

@@ -27,6 +27,7 @@
   --surface: 211 46% 13%;
   --surface-high: 212 36% 17%;
   --surface-highest: 212 30% 22%;
+  --surface-bright: 212 28% 24%;
   --status-up: 197 100% 73%;
   --status-warn: 37 88% 56%;
   --status-down: 356 100% 76%;
@@ -44,6 +45,20 @@ html {
 body {
   @apply bg-background text-foreground antialiased;
   background-image: radial-gradient(circle at top, rgba(56, 189, 248, 0.12), transparent 32%);
+}
+
+@layer utilities {
+  .dashboard-container {
+    @apply mx-auto w-full px-dashboard-gutter md:px-dashboard-lg xl:px-dashboard-desktop-gutter;
+  }
+
+  .dashboard-grid {
+    @apply grid grid-cols-1 gap-dashboard-md xl:grid-cols-12;
+  }
+
+  .dashboard-display {
+    @apply text-2xl font-bold leading-tight tracking-tight md:text-display-lg;
+  }
 }
 
 a {
