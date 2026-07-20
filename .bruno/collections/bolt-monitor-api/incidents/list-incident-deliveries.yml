@@ -1,12 +1,13 @@
-{
-  "meta": {
-    "type": "http",
-    "name": "list-incident-deliveries"
-  },
-  "tags": ["domain:incidents", "operation:read"],
-  "http": {
-    "method": "GET",
-    "url": "{{baseUrl}}/api/v1/incidents/INC_1/deliveries"
-  },
-  "docs": "Purpose: list incident delivery state.\nSetup: operator with default tenant access.\nExpected result: 200 OK with deliveries array."
-}
+info:
+  name: List Incident Deliveries
+  type: http
+  tags:
+    - domain:incidents
+    - operation:read
+http:
+  method: GET
+  url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}/deliveries"
+docs: |-
+  Purpose: list incident delivery state.
+  Setup: operator with default tenant access.
+  Expected result: 200 OK with deliveries array.
