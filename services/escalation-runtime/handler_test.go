@@ -117,6 +117,30 @@ func (f *fakeEscalationRepository) CreateIncident(_ context.Context, incident in
 	return nil
 }
 
+func (f *fakeEscalationRepository) CreateEscalationPlan(context.Context, notifications.EscalationPlan) error {
+	return nil
+}
+
+func (f *fakeEscalationRepository) GetEscalationPlan(context.Context, string, string, string) (*notifications.EscalationPlan, error) {
+	return nil, nil
+}
+
+func (f *fakeEscalationRepository) CreateDelivery(context.Context, notifications.DeliveryRecord) error {
+	return nil
+}
+
+func (f *fakeEscalationRepository) ListIncidentDeliveries(context.Context, string, string) ([]notifications.DeliveryRecord, error) {
+	return nil, nil
+}
+
+func (f *fakeEscalationRepository) AdvanceStepOnce(context.Context, string, string, int, int, string) error {
+	return nil
+}
+
+func (f *fakeEscalationRepository) SuppressEscalation(context.Context, string, string, string) error {
+	return nil
+}
+
 func TestHandleIncidentDownCreatesEscalationState(t *testing.T) {
 	tgSender := &fakeSender{}
 	emailSender := &fakeSender{}
