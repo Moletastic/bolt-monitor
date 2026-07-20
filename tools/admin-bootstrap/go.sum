@@ -14,6 +14,7 @@ github.com/aws/aws-sdk-go-v2/service/eventbridge v1.46.6 h1:rJFqZQH9sT7vNEPX+Irn
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.3 h1:x2Ibm/Af8Fi+BH+Hsn9TXGdT+hKbDd5XOTZxTMxDk7o=
 github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.11.10 h1:T0QsDQNCVealR4CrVt+spgWJgjl8oIDje/5TH8YnCmE=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.14 h1:FIouAnCE46kyYqyhs0XEBDFFSREtdnr8HQuLPQPLCrY=
+github.com/aws/aws-sdk-go-v2/service/scheduler v1.19.1 h1:nitfWWOGjjqpPBGgEfe/cOUMspOWk8+HAnjyZ3LsQPA=
 github.com/aws/aws-sdk-go-v2/service/signin v1.0.1 h1:BDgIUYGEo5TkayOWv/oBLPphWwNm/A91AebUjAu5L5g=
 github.com/aws/aws-sdk-go-v2/service/sqs v1.44.0 h1:6DQ95Zq5xPUSYm6KWcrar7zvreqAMFmyynYCcmzv6yc=
 github.com/aws/aws-sdk-go-v2/service/sso v1.30.4 h1:U//SlnkE1wOQiIImxzdY5PXat4Wq+8rlfVEw4Y7J8as=

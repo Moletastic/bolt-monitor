@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	"github.com/aws/aws-sdk-go-v2/service/scheduler"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
@@ -78,7 +79,25 @@ func NewSQSClient(ctx context.Context) (*sqs.Client, error) {
 func NewSQSAPI(ctx context.Context) (SQSAPI, error) {
 	client, err := NewSQSClient(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load aws config: %w", err)
 	}
 	return NewSQS(client), nil
+}
+
+// NewSchedulerClient returns a Scheduler client configured from the default AWS config.
+func NewSchedulerClient(ctx context.Context) (*scheduler.Client, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+	return scheduler.NewFromConfig(cfg), nil
+}
+
+// NewSchedulerAPI returns a Scheduler facade configured from the default AWS config.
+func NewSchedulerAPI(ctx context.Context) (SchedulerAPI, error) {
+	client, err := NewSchedulerClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+	return NewScheduler(client), nil
 }

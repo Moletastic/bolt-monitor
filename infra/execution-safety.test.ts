@@ -47,3 +47,21 @@ test('transition dispatch failures alarm on notification DLQ depth', () => {
   assert.match(stackSource, /QueueName: notificationQueueDLQ\.nodes\.queue\.name/)
   assert.match(stackSource, /ApproximateNumberOfMessagesVisible/)
 })
+
+test('escalation schedules use AWS Scheduler with managed group + delete action', () => {
+  assert.match(stackSource, /EscalationScheduleGroup/)
+  assert.match(stackSource, /EscalationScheduleExecutionRole/)
+  assert.match(stackSource, /SCHEDULE_GROUP_NAME: escalationScheduleGroup\.name/)
+  assert.match(stackSource, /SCHEDULE_EXECUTION_ROLE_ARN: escalationScheduleRole\.arn/)
+  assert.doesNotMatch(
+    stackSource,
+    /EventBridge|PutRule|PutTargets|AddPermission|events\.amazonaws\.com|lambda:InvokeFunction/
+  )
+})
+
+test('scheduler runtime permissions are scoped to managed group + dedicated role', () => {
+  assert.match(stackSource, /scheduler:CreateSchedule/)
+  assert.match(stackSource, /scheduler:DeleteSchedule/)
+  assert.match(stackSource, /iam:PassRole/)
+  assert.match(stackSource, /schedule\/\$\{escalationScheduleGroup\.name\}\/\*/)
+})
