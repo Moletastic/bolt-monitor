@@ -1,0 +1,15 @@
+{
+  "meta": {
+    "type": "http",
+    "name": "replay-incident-delivery"
+  },
+  "tags": ["domain:incidents", "operation:write"],
+  "http": {
+    "method": "POST",
+    "url": "{{baseUrl}}/api/v1/incidents/INC_1/deliveries/dlv_terminal/replay",
+    "headers": [
+      { "name": "Idempotency-Key", "value": "bruno-replay-1", "enabled": true }
+    ]
+  },
+  "docs": "Purpose: replay a terminal_failed delivery.\nSetup: operator with default tenant access.\nExpected result: 200 OK with delivery state pending."
+}
