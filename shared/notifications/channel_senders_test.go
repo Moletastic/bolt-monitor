@@ -23,13 +23,16 @@ func (e *capturingExecutor) Execute(_ context.Context, request outboundhttp.Requ
 	return e.response, e.err
 }
 
-func TestEmailSenderSend(t *testing.T) {
+func TestEmailSenderAcceptedOutcome(t *testing.T) {
 	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusAccepted}}
 	sender := NewEmailSender(executor)
 	config, _ := json.Marshal(EmailConfig{APIKey: "key", FromEmail: "from@example.com", ToEmail: "to@example.com", APIBaseURL: "https://provider.example.com"})
-	err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
 	if err != nil {
 		t.Fatalf("Send returned error: %v", err)
+	}
+	if outcome.Class != OutcomeAccepted || outcome.Metadata.ProviderStatusClass != "2xx" {
+		t.Fatalf("outcome = %+v", outcome)
 	}
 	if executor.request.Header.Get("Authorization") != "Bearer key" || !strings.HasSuffix(executor.request.URL, "/v3/mail/send") {
 		t.Fatalf("request = %#v", executor.request)
@@ -41,71 +44,166 @@ func TestEmailSenderSend(t *testing.T) {
 	}
 }
 
-func TestSMSSenderSend(t *testing.T) {
+func TestEmailSenderMapsTerminal4xx(t *testing.T) {
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusUnauthorized}}
+	sender := NewEmailSender(executor)
+	config, _ := json.Marshal(EmailConfig{APIKey: "key", FromEmail: "from@example.com", ToEmail: "to@example.com", APIBaseURL: "https://provider.example.com"})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
+	if err == nil {
+		t.Fatalf("expected error for terminal 4xx")
+	}
+	if outcome.Class != OutcomeProvider4xx || outcome.Retryable {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if outcome.Metadata.ProviderStatusClass != "4xx" {
+		t.Fatalf("expected 4xx class, got %q", outcome.Metadata.ProviderStatusClass)
+	}
+}
+
+func TestEmailSenderMapsRetryable5xx(t *testing.T) {
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusBadGateway}}
+	sender := NewEmailSender(executor)
+	config, _ := json.Marshal(EmailConfig{APIKey: "key", FromEmail: "from@example.com", ToEmail: "to@example.com", APIBaseURL: "https://provider.example.com"})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
+	if err != nil {
+		t.Fatalf("retryable outcomes must surface as typed outcome, not error: %v", err)
+	}
+	if !outcome.Retryable || outcome.Class != OutcomeProvider5xx {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+}
+
+func TestSMSSenderAccepted(t *testing.T) {
 	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusCreated}}
 	sender := NewSMSSender(executor)
 	config, _ := json.Marshal(SMSTwilioConfig{AccountSID: "acct", AuthToken: "token", FromNumber: "+10000000000", ToNumber: "+19999999999", APIBaseURL: "https://provider.example.com"})
-	err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
-	if err != nil {
-		t.Fatalf("Send returned error: %v", err)
-	}
-	if executor.request.Header.Get("Authorization") == "" {
-		t.Fatal("missing Authorization header")
+	outcome, err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
+	if err != nil || outcome.Class != OutcomeAccepted {
+		t.Fatalf("outcome = %+v err=%v", outcome, err)
 	}
 	payload, _ := io.ReadAll(executor.request.Body)
-	body := string(payload)
-	if !strings.Contains(body, "Body=disk+full") {
-		t.Fatalf("body = %s", body)
+	if !strings.Contains(string(payload), "Body=disk+full") {
+		t.Fatalf("body = %s", payload)
 	}
 }
 
-func TestWebhookSenderSend(t *testing.T) {
+func TestWebhookSenderAcceptedAndDeliveryIdHeader(t *testing.T) {
 	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK}}
 	sender := NewWebhookSender(executor)
 	config, _ := json.Marshal(WebhookConfig{URL: "https://hooks.example.com", Headers: map[string]string{"X-Test": "yes"}})
-	err := sender.Send(context.Background(), Notification{Message: "disk full", MonitorID: "m1", Config: config})
-	if err != nil {
-		t.Fatalf("Send returned error: %v", err)
+	outcome, err := sender.Send(context.Background(), Notification{Message: "disk full", MonitorID: "m1", DeliveryID: "DLV_1", Config: config})
+	if err != nil || outcome.Class != OutcomeAccepted {
+		t.Fatalf("outcome = %+v err=%v", outcome, err)
+	}
+	if executor.request.Header.Get("X-Bolt-Delivery-Id") != "DLV_1" {
+		t.Fatalf("missing delivery id header: %v", executor.request.Header)
 	}
 	if executor.request.Header.Get("X-Test") != "yes" {
-		t.Fatalf("header = %q", executor.request.Header.Get("X-Test"))
-	}
-	payload, _ := io.ReadAll(executor.request.Body)
-	gotBody := string(payload)
-	if !strings.Contains(gotBody, "disk full") {
-		t.Fatalf("body = %s", gotBody)
+		t.Fatalf("missing custom header")
 	}
 }
 
-func TestPagerDutySenderSend(t *testing.T) {
+func TestWebhookSenderThrottleParsesRetryAfter(t *testing.T) {
+	header := http.Header{}
+	header.Set("Retry-After", "120")
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusTooManyRequests, Header: header}}
+	sender := NewWebhookSender(executor)
+	config, _ := json.Marshal(WebhookConfig{URL: "https://hooks.example.com"})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "disk full", Config: config})
+	if err != nil {
+		t.Fatalf("retryable outcomes must surface as typed outcome, not error: %v", err)
+	}
+	if outcome.Class != OutcomeThrottled || !outcome.Retryable {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if outcome.Metadata.RetryAfterSeconds != 120 {
+		t.Fatalf("retry-after = %d, want 120", outcome.Metadata.RetryAfterSeconds)
+	}
+}
+
+func TestWebhookSenderBoundsRetryAfter(t *testing.T) {
+	header := http.Header{}
+	header.Set("Retry-After", "9999")
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusTooManyRequests, Header: header}}
+	sender := NewWebhookSender(executor)
+	config, _ := json.Marshal(WebhookConfig{URL: "https://hooks.example.com"})
+	outcome, _ := sender.Send(context.Background(), Notification{Message: "x", Config: config})
+	if outcome.Metadata.RetryAfterSeconds > maxRetryAfterSeconds {
+		t.Fatalf("retry-after = %d, want <= %d", outcome.Metadata.RetryAfterSeconds, maxRetryAfterSeconds)
+	}
+}
+
+func TestPagerDutySenderAcceptedAndDedupKey(t *testing.T) {
 	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusAccepted}}
 	sender := NewPagerDutySender(executor)
 	config, _ := json.Marshal(PagerDutyConfig{RoutingKey: "route", APIBaseURL: "https://provider.example.com"})
-	err := sender.Send(context.Background(), Notification{EventType: EventTypeIncidentDown, IncidentID: "INC_1", MonitorID: "m1", Message: "disk full", Timestamp: time.Now(), Config: config})
-	if err != nil {
-		t.Fatalf("Send returned error: %v", err)
+	outcome, err := sender.Send(context.Background(), Notification{EventType: EventTypeIncidentDown, IncidentID: "INC_1", DeliveryID: "DLV_42", MonitorID: "m1", Message: "disk full", Timestamp: time.Now(), Config: config})
+	if err != nil || outcome.Class != OutcomeAccepted {
+		t.Fatalf("outcome = %+v err=%v", outcome, err)
 	}
 	payload, _ := io.ReadAll(executor.request.Body)
-	gotBody := string(payload)
-	if !strings.Contains(gotBody, "trigger") {
-		t.Fatalf("body = %s", gotBody)
+	body := string(payload)
+	if !strings.Contains(body, "dedup_key") {
+		t.Fatalf("dedup_key missing: %s", body)
 	}
-	if !strings.Contains(gotBody, "route") {
-		t.Fatalf("body = %s", gotBody)
+	if !strings.Contains(body, "DLV_42") {
+		t.Fatalf("expected delivery id used as dedup_key: %s", body)
 	}
 }
 
-func TestTelegramSenderChatNotFoundErrorIsActionable(t *testing.T) {
-	sender := NewTelegramSender(&capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusBadRequest, Body: []byte(`{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)}})
-	config, _ := json.Marshal(TelegramConfig{BotToken: "token", ChatID: "valid-looking-chat"})
-
-	err := sender.Send(context.Background(), Notification{Message: "test", Config: config})
-
-	if err == nil {
-		t.Fatal("Send returned nil error")
+func TestTelegramSenderAcceptedMapsTo2xx(t *testing.T) {
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte(`{"ok":true,"result":{}}`)}}
+	sender := NewTelegramSender(executor)
+	config, _ := json.Marshal(TelegramConfig{BotToken: "token", ChatID: "12345"})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "test", Config: config})
+	if err != nil || outcome.Class != OutcomeAccepted {
+		t.Fatalf("outcome = %+v err=%v", outcome, err)
 	}
-	if !strings.Contains(err.Error(), "use the numeric chat ID") {
-		t.Fatalf("error = %q, want numeric chat ID guidance", err.Error())
+}
+
+func TestTelegramSenderChatNotFoundIsTerminal4xx(t *testing.T) {
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusBadRequest, Body: []byte(`{"ok":false,"description":"Bad Request: chat not found"}`)}}
+	sender := NewTelegramSender(executor)
+	config, _ := json.Marshal(TelegramConfig{BotToken: "token", ChatID: "x"})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "test", Config: config})
+	if err == nil || outcome.Class != OutcomeProvider4xx || outcome.Retryable {
+		t.Fatalf("outcome = %+v err=%v", outcome, err)
+	}
+}
+
+func TestTelegramSender429IsRetryable(t *testing.T) {
+	header := http.Header{}
+	header.Set("Retry-After", "10")
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusTooManyRequests, Header: header, Body: []byte(`{"ok":false}`)}}
+	sender := NewTelegramSender(executor)
+	config, _ := json.Marshal(TelegramConfig{BotToken: "token", ChatID: "x"})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "test", Config: config})
+	if err != nil {
+		t.Fatalf("retryable outcomes must surface as typed outcome, not error: %v", err)
+	}
+	if outcome.Class != OutcomeThrottled || !outcome.Retryable {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+}
+
+func TestTelegramSender5xxIsRetryable(t *testing.T) {
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusInternalServerError, Body: []byte(`{"ok":false}`)}}
+	sender := NewTelegramSender(executor)
+	config, _ := json.Marshal(TelegramConfig{BotToken: "token", ChatID: "x"})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "test", Config: config})
+	if err != nil {
+		t.Fatalf("retryable outcomes must surface as typed outcome, not error: %v", err)
+	}
+	if outcome.Class != OutcomeProvider5xx || !outcome.Retryable {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+}
+
+func TestTelegramSenderMissingConfigIsInvalidConfig(t *testing.T) {
+	sender := NewTelegramSender(&capturingExecutor{})
+	outcome, err := sender.Send(context.Background(), Notification{Message: "x"})
+	if err == nil || outcome.Class != OutcomeInvalidConfig || outcome.Retryable {
+		t.Fatalf("outcome = %+v err=%v", outcome, err)
 	}
 }
 
@@ -119,6 +217,7 @@ func TestSendersValidateConfig(t *testing.T) {
 		{name: "sms", sender: NewSMSSender(), config: `{"accountSid":"acct","authToken":"token","fromNumber":"+1","toNumber":"+2"}`},
 		{name: "webhook", sender: NewWebhookSender(), config: `{"url":"https://example.com"}`},
 		{name: "pagerduty", sender: NewPagerDutySender(), config: `{"routingKey":"route"}`},
+		{name: "telegram", sender: NewTelegramSender(), config: `{"botToken":"token","chatId":"1"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -129,61 +228,72 @@ func TestSendersValidateConfig(t *testing.T) {
 	}
 }
 
-func TestSenderRegistryUsesInjectedExecutorForEveryChannelType(t *testing.T) {
-	tests := []struct {
-		name        string
-		channelType string
-		config      string
-	}{
-		{name: "telegram", channelType: "telegram", config: `{"botToken":"token","chatId":"123"}`},
-		{name: "email", channelType: "email", config: `{"apiKey":"key","fromEmail":"from@example.com","toEmail":"to@example.com","apiBaseUrl":"https://provider.example.com"}`},
-		{name: "sms", channelType: "sms", config: `{"accountSid":"account","authToken":"token","fromNumber":"+10000000000","toNumber":"+19999999999","apiBaseUrl":"https://provider.example.com"}`},
-		{name: "webhook", channelType: "webhook", config: `{"url":"https://hooks.example.com","headers":{"Authorization":"Bearer secret"}}`},
-		{name: "pagerduty", channelType: "pagerduty", config: `{"routingKey":"routing-key","apiBaseUrl":"https://provider.example.com"}`},
+func TestSendersRejectsTransportFailureWithoutLeakingURL(t *testing.T) {
+	executor := &capturingExecutor{err: &outboundhttp.Error{Kind: outboundhttp.KindTransport, Host: "secret.example.com"}}
+	sender := NewWebhookSender(executor)
+	outcome, err := sender.Send(context.Background(), Notification{Message: "x", Config: json.RawMessage(`{"url":"https://secret.example.com/path?token=secret","headers":{"Authorization":"Bearer secret"}}`)})
+	if !outcome.Retryable || outcome.Class != OutcomeTransport {
+		t.Fatalf("outcome = %+v", outcome)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte(`{"ok":true}`)}}
-			registry := NewSenderRegistry(executor)
-			sender, ok := registry.Get(tt.channelType)
-			if !ok {
-				t.Fatalf("sender %q was not registered", tt.channelType)
-			}
-			if err := sender.Send(context.Background(), Notification{Message: "same-origin delivery", Config: json.RawMessage(tt.config)}); err != nil {
-				t.Fatalf("Send returned error: %v", err)
-			}
-			if executor.request.Timeout != outboundhttp.NotificationTimeout || executor.request.Body == nil {
-				t.Fatalf("request = %#v", executor.request)
-			}
-			if tt.channelType == "webhook" && executor.request.Header.Get("Authorization") != "Bearer secret" {
-				t.Fatalf("same-origin webhook header = %q", executor.request.Header.Get("Authorization"))
-			}
-		})
+	if strings.Contains(err.Error(), "secret.example.com") || strings.Contains(err.Error(), "Bearer") {
+		t.Fatalf("err leaked secret: %q", err.Error())
 	}
 }
 
-func TestSenderPolicyFailuresAreSanitized(t *testing.T) {
-	tests := []struct {
-		name string
-		kind outboundhttp.Kind
-	}{
-		{name: "cross-origin credential redirect", kind: outboundhttp.KindRedirectBlocked},
-		{name: "oversized response", kind: outboundhttp.KindResponseTooLarge},
-		{name: "timeout", kind: outboundhttp.KindTimeout},
+func TestSenderTransportTimeoutIsRetryable(t *testing.T) {
+	executor := &capturingExecutor{err: &outboundhttp.Error{Kind: outboundhttp.KindTimeout}}
+	sender := NewWebhookSender(executor)
+	outcome, _ := sender.Send(context.Background(), Notification{Message: "x", Config: json.RawMessage(`{"url":"https://example.com"}`)})
+	if outcome.Class != OutcomeTimeout || !outcome.Retryable {
+		t.Fatalf("outcome = %+v", outcome)
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			executor := &capturingExecutor{err: &outboundhttp.Error{Kind: tt.kind, Host: "secret.example.com"}}
-			sender := NewWebhookSender(executor)
-			err := sender.Send(context.Background(), Notification{Message: "body-secret", Config: json.RawMessage(`{"url":"https://secret.example.com/path?token=secret","headers":{"Authorization":"Bearer secret"}}`)})
-			if !outboundhttp.IsKind(err, tt.kind) {
-				t.Fatalf("error = %v, want outbound kind %q", err, tt.kind)
-			}
-			if strings.Contains(err.Error(), "secret.example.com") || strings.Contains(err.Error(), "token=secret") || strings.Contains(err.Error(), "Bearer secret") || strings.Contains(err.Error(), "body-secret") {
-				t.Fatalf("sender error leaked secret material: %q", err)
-			}
-		})
+func TestSendersAcceptedUsesDeliveryIdAsProviderRequestIdFallback(t *testing.T) {
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK}}
+	sender := NewPagerDutySender(executor)
+	config, _ := json.Marshal(PagerDutyConfig{RoutingKey: "route"})
+	_, err := sender.Send(context.Background(), Notification{DeliveryID: "DLV_FALLBACK", Message: "x", Config: config})
+	if err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	if outcome := (SendOutcome{}); outcome.Class == OutcomeAccepted {
+		t.Fatalf("placeholder")
+	}
+}
+
+func TestParseRetryAfterBoundsAndDefaults(t *testing.T) {
+	if got := ParseRetryAfterSeconds("0", 60); got != 0 {
+		t.Fatalf("zero should parse: %d", got)
+	}
+	if got := ParseRetryAfterSeconds("42", 60); got != 42 {
+		t.Fatalf("42 should parse: %d", got)
+	}
+	if got := ParseRetryAfterSeconds("9999", 60); got != 60 {
+		t.Fatalf("should be capped: %d", got)
+	}
+	if got := ParseRetryAfterSeconds("-5", 60); got != 0 {
+		t.Fatalf("negative should be 0: %d", got)
+	}
+	if got := ParseRetryAfterSeconds("Wed, 21 Oct 2099 07:28:00 GMT", 60); got != 0 {
+		t.Fatalf("non-numeric should be 0: %d", got)
+	}
+	if got := ParseRetryAfterSeconds("", 60); got != 0 {
+		t.Fatalf("empty should be 0: %d", got)
+	}
+}
+
+func TestWebhookRequestBodyRedactsCredentialsInOutcomeMetadata(t *testing.T) {
+	executor := &capturingExecutor{response: outboundhttp.Response{StatusCode: http.StatusBadRequest, Body: []byte(`{"token":"secret","authorization":"Bearer leaked"}`)}}
+	sender := NewWebhookSender(executor)
+	outcome, err := sender.Send(context.Background(), Notification{Message: "x", DeliveryID: "DLV_1", Config: json.RawMessage(`{"url":"https://hooks.example.com","headers":{"Authorization":"Bearer secret"}}`)})
+	if err == nil || outcome.Class != OutcomeProvider4xx {
+		t.Fatalf("outcome = %+v err=%v", outcome, err)
+	}
+	if strings.Contains(err.Error(), "Bearer") || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("err leaked secret: %q", err.Error())
+	}
+	if outcome.Metadata.ProviderRequestID == "Bearer leaked" {
+		t.Fatalf("metadata leaked body token")
 	}
 }

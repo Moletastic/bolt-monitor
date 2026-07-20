@@ -23,6 +23,8 @@ type Notification struct {
 	Timestamp   time.Time       `json:"timestamp"`
 	Message     string          `json:"message"`
 	IncidentID  string          `json:"incidentId,omitempty"`
+	DeliveryID  string          `json:"deliveryId,omitempty"`
+	ChannelType string          `json:"channelType,omitempty"`
 	Config      json.RawMessage `json:"config,omitempty"`
 }
 

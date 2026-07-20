@@ -50,9 +50,9 @@ func (e *capturingEscalationExecutor) Execute(_ context.Context, request outboun
 	return outboundhttp.Response{StatusCode: http.StatusOK}, nil
 }
 
-func (f *fakeSender) Send(_ context.Context, notification notifications.Notification) error {
+func (f *fakeSender) Send(_ context.Context, notification notifications.Notification) (notifications.SendOutcome, error) {
 	f.notifications = append(f.notifications, notification)
-	return nil
+	return notifications.SendOutcome{Class: notifications.OutcomeAccepted}, nil
 }
 
 func (f *fakeSender) ChannelType() string { return "fake" }

@@ -313,7 +313,7 @@ func (h *escalationHandler) sendToChannel(ctx context.Context, event notificatio
 		IncidentID:  event.IncidentID,
 		Config:      config,
 	}
-	if err := sender.Send(ctx, notification); err != nil {
+	if _, err := sender.Send(ctx, notification); err != nil {
 		return fmt.Errorf("send %s notification: %w", channel.Type, err)
 	}
 	return nil

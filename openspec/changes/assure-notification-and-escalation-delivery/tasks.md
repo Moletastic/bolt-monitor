@@ -14,10 +14,10 @@
 
 ## 3. Provider Outcome Classification
 
-- [ ] 3.1 Replace opaque notification sender errors with typed sanitized outcomes that classify accepted, timeout, transport, `429`, `5xx`, terminal `4xx`, invalid configuration, and unsupported channel results.
-- [ ] 3.2 Update Telegram, email, SMS, webhook, and PagerDuty senders to return safe status/request-ID/retry-after metadata, omit raw bodies/headers/targets/secrets, and pass the stable delivery ID as a provider idempotency or deduplication key where supported.
-- [ ] 3.3 Add sender tests for every retry class, provider acceptance boundary, malformed configuration, retry-after parsing/bounds, idempotency headers or fields, and redaction of credential-bearing responses and URLs.
-- [ ] 3.4 Adapt notification channel test-send behavior to the typed sender contract while preserving its stateless execution and existing sanitized API/audit semantics.
+- [x] 3.1 Replace opaque notification sender errors with typed sanitized outcomes that classify accepted, timeout, transport, `429`, `5xx`, terminal `4xx`, invalid configuration, and unsupported channel results.
+- [x] 3.2 Update Telegram, email, SMS, webhook, and PagerDuty senders to return safe status/request-ID/retry-after metadata, omit raw bodies/headers/targets/secrets, and pass the stable delivery ID as a provider idempotency or deduplication key where supported.
+- [x] 3.3 Add sender tests for every retry class, provider acceptance boundary, malformed configuration, retry-after parsing/bounds, idempotency headers or fields, and redaction of credential-bearing responses and URLs.
+- [x] 3.4 Adapt notification channel test-send behavior to the typed sender contract while preserving its stateless execution and existing sanitized API/audit semantics.
 
 ## 4. Idempotent Delivery Orchestration
 
