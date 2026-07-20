@@ -262,16 +262,20 @@ export function createBootstrapStack(target: DeploymentTarget) {
     'EscalationScheduleExecutionPolicy',
     {
       role: escalationScheduleRole.name,
-      policy: JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Effect: 'Allow',
-            Action: ['sqs:SendMessage'],
-            Resource: [notificationQueue.arn, notificationQueueDLQ.arn],
-          },
-        ],
-      }),
+      policy: notificationQueue.arn.apply((notificationQueueArn) =>
+        notificationQueueDLQ.arn.apply((notificationQueueDLQArn) =>
+          JSON.stringify({
+            Version: '2012-10-17',
+            Statement: [
+              {
+                Effect: 'Allow',
+                Action: ['sqs:SendMessage'],
+                Resource: [notificationQueueArn, notificationQueueDLQArn],
+              },
+            ],
+          })
+        )
+      ),
     },
     disposableOptions
   )

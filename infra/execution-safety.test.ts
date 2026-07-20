@@ -65,3 +65,14 @@ test('scheduler runtime permissions are scoped to managed group + dedicated role
   assert.match(stackSource, /iam:PassRole/)
   assert.match(stackSource, /schedule\/\$\{escalationScheduleGroup\.name\}\/\*/)
 })
+
+test('scheduler execution policy resolves queue outputs before IAM serialization', () => {
+  const policyStart = stackSource.indexOf("'EscalationScheduleExecutionPolicy'")
+  assert.notEqual(policyStart, -1)
+  const policy = stackSource.slice(policyStart, stackSource.indexOf('\n  )', policyStart))
+
+  assert.match(policy, /notificationQueue\.arn\.apply\(\(notificationQueueArn\) =>/)
+  assert.match(policy, /notificationQueueDLQ\.arn\.apply\(\(notificationQueueDLQArn\) =>/)
+  assert.match(policy, /Resource: \[notificationQueueArn, notificationQueueDLQArn\]/)
+  assert.doesNotMatch(policy, /Resource: \[notificationQueue\.arn, notificationQueueDLQ\.arn\]/)
+})
