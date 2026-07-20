@@ -9,7 +9,7 @@
 
 - [x] 2.1 Implement the sole transition dispatch path by consuming filtered inserts of retry-safe canonical outbox records, sending canonical versioned messages to the existing notification queue, and conditionally changing the same record from pending to acknowledged; test duplicate and ambiguous enqueue acknowledgement.
 - [x] 2.2 Implement Stream partial-batch responses using sequence-number item identifiers so only queue-send/repository failures retry and mixed-success batches do not replay successful records.
-- [ ] 2.3 Preserve exhausted Stream records as durable pending work, emit source-kind-safe DLQ identity, alarm, and implement bounded recent-bucket plus point-by-`eventId` reconciliation/manual repair without a table scan; test Stream exhaustion, dispatcher/reconciler races, and repair.
+- [x] 2.3 Preserve exhausted Stream records as durable pending work, emit source-kind-safe DLQ identity, alarm, and implement bounded recent-bucket plus point-by-`eventId` reconciliation/manual repair without a table scan; test Stream exhaustion, dispatcher/reconciler races, and repair.
 - [x] 2.4 Configure the primary table stream, insert-only canonical-record filter, escalation-runtime subscription, queue-send permission, `ReportBatchItemFailures`, bounded retries, sparse pending access path, bounded reconciler, and existing-DLQ failure destination in SST, with infrastructure assertions for filters, bounds, and resource scoping.
 
 ## 3. Provider Outcome Classification

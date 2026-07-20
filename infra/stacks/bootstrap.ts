@@ -282,6 +282,24 @@ export function createBootstrapStack(target: DeploymentTarget) {
     }
   )
 
+  new aws.cloudwatch.MetricAlarm(
+    'EscalationTransitionDispatchAlarm',
+    {
+      alarmDescription: 'Stream dispatcher exhausted retries for a canonical transition record.',
+      namespace: 'AWS/SQS',
+      metricName: 'ApproximateNumberOfMessagesVisible',
+      dimensions: { QueueName: notificationQueueDLQ.nodes.queue.name },
+      statistic: 'Sum',
+      period: 300,
+      evaluationPeriods: 1,
+      threshold: 1,
+      comparisonOperator: 'GreaterThanOrEqualToThreshold',
+      treatMissingData: 'notBreaching',
+      tags: policy.tags,
+    },
+    disposableOptions
+  )
+
   const api = new sst.aws.ApiGatewayV2(
     'Api',
     { accessLog: { retention: '2 weeks' } },
