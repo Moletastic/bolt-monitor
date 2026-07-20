@@ -105,32 +105,44 @@ func (h *escalationHandler) exhaustIfNeeded(ctx context.Context, state *escalati
 }
 
 func (h *escalationHandler) handleSQSEvent(ctx context.Context, event events.SQSEvent) error {
+	response, err := h.handleSQSEventResponse(ctx, event)
+	if err != nil {
+		return err
+	}
+	if len(response.BatchItemFailures) > 0 {
+		return fmt.Errorf("notification message %s failed", response.BatchItemFailures[0].ItemIdentifier)
+	}
+	return nil
+}
+
+func (h *escalationHandler) handleSQSEventResponse(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
+	response := events.SQSEventResponse{}
 	for _, msg := range event.Records {
 		if handled, err := h.handleTransitionEnvelope(ctx, msg.Body); handled {
 			if err != nil {
-				return err
+				response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: msg.MessageId})
 			}
 			continue
 		}
 		eventData, err := notifications.ParseNotificationEvent(msg.Body)
 		if err != nil {
-			log.Printf("failed to parse escalation event: %v", err)
+			response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: msg.MessageId})
 			continue
 		}
 		switch eventData.EventType {
 		case notifications.EventTypeIncidentDown:
 			if err := h.handleIncidentDown(ctx, eventData); err != nil {
-				return err
+				response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: msg.MessageId})
 			}
 		case notifications.EventTypeIncidentUp:
 			if err := h.handleIncidentUp(ctx, eventData); err != nil {
-				return err
+				response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: msg.MessageId})
 			}
 		default:
-			log.Printf("ignoring unsupported escalation event type %s", eventData.EventType)
+			response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: msg.MessageId})
 		}
 	}
-	return nil
+	return response, nil
 }
 
 func (h *escalationHandler) handleTransitionEnvelope(ctx context.Context, body string) (bool, error) {

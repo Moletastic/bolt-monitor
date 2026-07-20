@@ -448,11 +448,8 @@ const (
 )
 
 func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, error) {
-	if h.escalationQueueURL == "" {
-		return 0, nil
-	}
 	now := h.now().UTC()
-	dispatched := 0
+	inspected := 0
 	for bucketOffset := 0; bucketOffset < dispatchPendingBuckets; bucketOffset++ {
 		bucket := now.Add(time.Duration(-bucketOffset) * time.Hour).Format(dynamodbrecord.DispatchPendingBucketFormat)
 		for shard := 0; shard < dispatchPendingShards; shard++ {
@@ -462,32 +459,9 @@ func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, erro
 			for {
 				records, nextKey, err := h.repo.ListDispatchPending(ctx, h.tenantID, bucketShard, recoveryPageLimit, cursor)
 				if err != nil {
-					return dispatched, err
+					return inspected, err
 				}
-				for _, pending := range records {
-					outbox, found, err := h.repo.LoadTransitionOutbox(ctx, pending.TenantID, pending.RunID)
-					if err != nil {
-						return dispatched, err
-					}
-					if !found || outbox.DispatchStatus != dynamodbrecord.DispatchPending {
-						_ = h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.Bucket, pending.Shard, pending.RunID)
-						continue
-					}
-					envelope, err := json.Marshal(map[string]string{
-						"tenantId": pending.TenantID, "runId": outbox.EventID, "kind": "transition",
-					})
-					if err != nil {
-						return dispatched, err
-					}
-					if err := h.sqsClient.SendMessage(ctx, h.escalationQueueURL, string(envelope)); err != nil {
-						return dispatched, checkexecution.Publication("dispatch-pending", pending.RunID)
-					}
-					if err := h.repo.RemoveDispatchPending(ctx, pending.TenantID, pending.Bucket, pending.Shard, pending.RunID); err != nil {
-						return dispatched, err
-					}
-					dispatched++
-					runtimeOutcomeLog(outcomeDispatchPend, "dispatch-pending", pending.TenantID, pending.RunID, "", "")
-				}
+				inspected += len(records)
 				if nextKey == nil {
 					break
 				}
@@ -495,7 +469,7 @@ func (h runtimeHandler) reconcileDispatchPending(ctx context.Context) (int, erro
 			}
 		}
 	}
-	return dispatched, nil
+	return inspected, nil
 }
 
 func (h runtimeHandler) recoverPublicationMarkers(ctx context.Context) (int, error) {

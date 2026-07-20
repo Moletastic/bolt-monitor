@@ -31,6 +31,10 @@ const (
 	EntityEscalationState     = "EscalationState"
 	EntityNotificationChannel = "NotificationChannel"
 	EntitySearchIndex         = "SearchIndex"
+	EntityDelivery            = "Delivery"
+	EntityEscalationPlan      = "EscalationPlan"
+	EntityReplayIdempotency   = "ReplayIdempotency"
+	EntityReplayDispatch      = "ReplayDispatch"
 )
 
 const (
@@ -206,6 +210,47 @@ func EscalationStateItem(tenantID, incidentID string) Item {
 
 func IncidentActivityItem(tenantID, incidentID, activityID, timestamp string) Item {
 	return Item{PK: IncidentPK(incidentID), SK: fmt.Sprintf("ACTIVITY#%s#%s", timestamp, normalizeToken(activityID)), EntityType: EntityIncidentActivity, TenantID: normalizeField(tenantID), IncidentID: normalizeField(incidentID)}
+}
+
+func DeliveryItem(tenantID, incidentID, createdAt, deliveryID string) Item {
+	return Item{
+		PK:         IncidentPK(incidentID),
+		SK:         fmt.Sprintf("DELIVERY#%s#%s", createdAt, normalizeToken(deliveryID)),
+		EntityType: EntityDelivery,
+		TenantID:   normalizeField(tenantID),
+		IncidentID: normalizeField(incidentID),
+		RunID:      normalizeField(deliveryID),
+	}
+}
+
+func EscalationPlanItem(tenantID, incidentID, transitionID string) Item {
+	return Item{
+		PK:         IncidentPK(incidentID),
+		SK:         "ESCALATION_PLAN#" + normalizeToken(transitionID),
+		EntityType: EntityEscalationPlan,
+		TenantID:   normalizeField(tenantID),
+		IncidentID: normalizeField(incidentID),
+		RunID:      normalizeField(transitionID),
+	}
+}
+
+func ReplayIdempotencyItem(tenantID, address string) Item {
+	return Item{
+		PK:         TenantPK(tenantID),
+		SK:         "REPLAY_IDEMPOTENCY#" + normalizeToken(address),
+		EntityType: EntityReplayIdempotency,
+		TenantID:   normalizeField(tenantID),
+	}
+}
+
+func ReplayDispatchItem(tenantID, transitionID string) Item {
+	return Item{
+		PK:         TenantPK(tenantID),
+		SK:         "TRANSITION_OUTBOX#" + normalizeToken(transitionID),
+		EntityType: EntityTransitionOutbox,
+		TenantID:   normalizeField(tenantID),
+		RunID:      normalizeField(transitionID),
+	}
 }
 
 func TenantPK(tenantID string) string { return "TENANT#" + normalizeToken(tenantID) }

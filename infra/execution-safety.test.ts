@@ -22,3 +22,22 @@ test('execution worker uses bounded retry-safe settings', () => {
   assert.match(worker, /partialResponses: true/)
   assert.doesNotMatch(worker, /ESCALATION_QUEUE_URL|sqs:SendMessage/)
 })
+
+test('notification transition stream uses insert filtering and partial failures', () => {
+  assert.match(stackSource, /stream: 'new-image'/)
+  const streamStart = stackSource.indexOf('table.subscribe(')
+  assert.notEqual(streamStart, -1)
+  const stream = stackSource.slice(streamStart)
+  assert.match(stream, /EscalationRuntimeTransitionStream/)
+  assert.match(stream, /eventName: \['INSERT'\]/)
+  assert.match(stream, /EntityType: \{ S: \['TransitionOutbox'\] \}/)
+  assert.match(stream, /functionResponseTypes = \['ReportBatchItemFailures'\]/)
+  assert.match(stream, /maximumRetryAttempts = 3/)
+})
+
+test('notification queue preserves poison messages with partial responses', () => {
+  const queueStart = stackSource.indexOf('notificationQueue.subscribe(')
+  assert.notEqual(queueStart, -1)
+  const queue = stackSource.slice(queueStart, stackSource.indexOf('\n  )', queueStart))
+  assert.match(queue, /partialResponses: true/)
+})

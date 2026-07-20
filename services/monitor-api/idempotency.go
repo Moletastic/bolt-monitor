@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	manualIdempotencyKeyMinLen = 8
-	manualIdempotencyKeyMaxLen = 128
+	manualIdempotencyKeyMinLen     = 8
+	manualIdempotencyKeyMaxLen     = 128
 	manualIdempotencyRetentionDays = 30
 )
 
