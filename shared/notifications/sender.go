@@ -8,7 +8,7 @@ import (
 )
 
 type NotificationSender interface {
-	Send(ctx context.Context, notification Notification) error
+	Send(ctx context.Context, notification Notification) (SendOutcome, error)
 	ChannelType() string
 	ValidateConfig(config json.RawMessage) error
 }

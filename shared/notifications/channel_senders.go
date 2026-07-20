@@ -3,13 +3,13 @@ package notifications
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"bolt-monitor/shared/outboundhttp"
 )
@@ -18,6 +18,8 @@ const (
 	defaultEmailAPIBaseURL     = "https://api.sendgrid.com"
 	defaultSMSAPIBaseURL       = "https://api.twilio.com"
 	defaultPagerDutyAPIBaseURL = "https://events.pagerduty.com"
+
+	maxRetryAfterSeconds = 300
 )
 
 var errMissingEndpointURL = errors.New("endpoint URL is required")
@@ -86,12 +88,9 @@ func NewPagerDutySender(executors ...HTTPExecutor) *PagerDutySender {
 	return &PagerDutySender{executor: senderExecutor(executors)}
 }
 
-func (s *EmailSender) ChannelType() string { return "email" }
-
-func (s *SMSSender) ChannelType() string { return "sms" }
-
-func (s *WebhookSender) ChannelType() string { return "webhook" }
-
+func (s *EmailSender) ChannelType() string     { return "email" }
+func (s *SMSSender) ChannelType() string       { return "sms" }
+func (s *WebhookSender) ChannelType() string   { return "webhook" }
 func (s *PagerDutySender) ChannelType() string { return "pagerduty" }
 
 func (s *EmailSender) ValidateConfig(config json.RawMessage) error {
@@ -153,10 +152,13 @@ func (s *PagerDutySender) ValidateConfig(config json.RawMessage) error {
 	return nil
 }
 
-func (s *EmailSender) Send(ctx context.Context, notification Notification) error {
+func (s *EmailSender) Send(ctx context.Context, notification Notification) (SendOutcome, error) {
 	var cfg EmailConfig
 	if err := unmarshalConfig(notification.Config, &cfg); err != nil {
-		return fmt.Errorf("invalid email config: %w", err)
+		return SendOutcome{Class: OutcomeInvalidConfig}, err
+	}
+	if strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.FromEmail) == "" || strings.TrimSpace(cfg.ToEmail) == "" {
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, fmt.Errorf("email sender is missing required config")
 	}
 	payload := map[string]any{
 		"personalizations": []map[string]any{{"to": []map[string]string{{"email": cfg.ToEmail}}}},
@@ -164,57 +166,73 @@ func (s *EmailSender) Send(ctx context.Context, notification Notification) error
 		"subject":          buildSubject(cfg.SubjectPrefix, notification),
 		"content":          []map[string]string{{"type": "text/plain", "value": notification.Message}},
 	}
-	_, err := sendJSONRequest(ctx, s.executor, http.MethodPost, joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultEmailAPIBaseURL), "/v3/mail/send"), payload, map[string]string{"Authorization": "Bearer " + cfg.APIKey})
-	if err != nil {
-		return fmt.Errorf("send email: %w", err)
-	}
-	return nil
+	out, err := sendJSONRequest(ctx, s.executor, http.MethodPost, joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultEmailAPIBaseURL), "/v3/mail/send"), payload, map[string]string{"Authorization": "Bearer " + cfg.APIKey}, notification)
+	return out, err
 }
 
-func (s *SMSSender) Send(ctx context.Context, notification Notification) error {
+func (s *SMSSender) Send(ctx context.Context, notification Notification) (SendOutcome, error) {
 	var cfg SMSTwilioConfig
 	if err := unmarshalConfig(notification.Config, &cfg); err != nil {
-		return fmt.Errorf("invalid sms config: %w", err)
+		return SendOutcome{Class: OutcomeInvalidConfig}, err
+	}
+	if strings.TrimSpace(cfg.AccountSID) == "" || strings.TrimSpace(cfg.AuthToken) == "" || strings.TrimSpace(cfg.FromNumber) == "" || strings.TrimSpace(cfg.ToNumber) == "" {
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, fmt.Errorf("sms sender is missing required config")
 	}
 	form := url.Values{"To": {cfg.ToNumber}, "From": {cfg.FromNumber}, "Body": {notification.Message}}.Encode()
 	headers := make(http.Header)
 	headers.Set("Content-Type", "application/x-www-form-urlencoded")
 	headers.Set("Authorization", "Basic "+basicAuth(cfg.AccountSID, cfg.AuthToken))
-	response, err := s.executor.Execute(ctx, outboundhttp.Request{Method: http.MethodPost, URL: joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultSMSAPIBaseURL), "/2010-04-01/Accounts/"+url.PathEscape(cfg.AccountSID)+"/Messages.json"), Header: headers, Body: strings.NewReader(form), Timeout: outboundhttp.NotificationTimeout})
-	if err != nil {
-		return fmt.Errorf("send sms: %w", err)
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return errors.New("send sms: provider returned non-success status")
-	}
-	return nil
+	return sendRawRequest(ctx, s.executor, outboundhttp.Request{Method: http.MethodPost, URL: joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultSMSAPIBaseURL), "/2010-04-01/Accounts/"+url.PathEscape(cfg.AccountSID)+"/Messages.json"), Header: headers, Body: strings.NewReader(form), Timeout: outboundhttp.NotificationTimeout}, notification)
 }
 
-func (s *WebhookSender) Send(ctx context.Context, notification Notification) error {
+func (s *WebhookSender) Send(ctx context.Context, notification Notification) (SendOutcome, error) {
 	var cfg WebhookConfig
 	if err := unmarshalConfig(notification.Config, &cfg); err != nil {
-		return fmt.Errorf("invalid webhook config: %w", err)
+		return SendOutcome{Class: OutcomeInvalidConfig}, err
 	}
-	_, err := sendJSONRequest(ctx, s.executor, http.MethodPost, cfg.URL, notification, cfg.Headers)
+	if strings.TrimSpace(cfg.URL) == "" {
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, errMissingEndpointURL
+	}
+	body, err := json.Marshal(map[string]any{
+		"eventType":  notification.EventType,
+		"tenantId":   notification.TenantID,
+		"serviceId":  notification.ServiceID,
+		"monitorId":  notification.MonitorID,
+		"incidentId": notification.IncidentID,
+		"message":    notification.Message,
+		"timestamp":  notification.Timestamp.UTC().Format(time.RFC3339),
+	})
 	if err != nil {
-		return fmt.Errorf("send webhook: %w", err)
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, err
 	}
-	return nil
+	reqHeaders := make(http.Header)
+	reqHeaders.Set("Content-Type", "application/json")
+	for key, value := range cfg.Headers {
+		reqHeaders.Set(key, value)
+	}
+	if notification.DeliveryID != "" {
+		reqHeaders.Set("X-Bolt-Delivery-Id", notification.DeliveryID)
+	}
+	return sendRawRequest(ctx, s.executor, outboundhttp.Request{Method: http.MethodPost, URL: cfg.URL, Header: reqHeaders, Body: bytes.NewReader(body), Timeout: outboundhttp.NotificationTimeout}, notification)
 }
 
-func (s *PagerDutySender) Send(ctx context.Context, notification Notification) error {
+func (s *PagerDutySender) Send(ctx context.Context, notification Notification) (SendOutcome, error) {
 	var cfg PagerDutyConfig
 	if err := unmarshalConfig(notification.Config, &cfg); err != nil {
-		return fmt.Errorf("invalid pagerduty config: %w", err)
+		return SendOutcome{Class: OutcomeInvalidConfig}, err
+	}
+	if strings.TrimSpace(cfg.RoutingKey) == "" {
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, fmt.Errorf("pagerduty routingKey is required")
 	}
 	action := "trigger"
 	if notification.EventType == EventTypeIncidentUp {
 		action = "resolve"
 	}
+	dedupKey := firstNonEmpty(cfg.DedupKey, notification.IncidentID, notification.DeliveryID)
 	payload := map[string]any{
 		"routing_key":  cfg.RoutingKey,
 		"event_action": action,
-		"dedup_key":    firstNonEmpty(cfg.DedupKey, notification.IncidentID),
+		"dedup_key":    dedupKey,
 		"payload": map[string]any{
 			"summary":        notification.Message,
 			"source":         firstNonEmpty(cfg.Source, notification.MonitorID),
@@ -225,11 +243,8 @@ func (s *PagerDutySender) Send(ctx context.Context, notification Notification) e
 			"custom_details": notification,
 		},
 	}
-	_, err := sendJSONRequest(ctx, s.executor, http.MethodPost, joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultPagerDutyAPIBaseURL), "/v2/enqueue"), payload, nil)
-	if err != nil {
-		return fmt.Errorf("send pagerduty: %w", err)
-	}
-	return nil
+	out, err := sendJSONRequest(ctx, s.executor, http.MethodPost, joinEndpoint(firstNonEmpty(cfg.APIBaseURL, defaultPagerDutyAPIBaseURL), "/v2/enqueue"), payload, nil, notification)
+	return out, err
 }
 
 func unmarshalConfig[T any](config json.RawMessage, out *T) error {
@@ -242,24 +257,57 @@ func unmarshalConfig[T any](config json.RawMessage, out *T) error {
 	return nil
 }
 
-func sendJSONRequest(ctx context.Context, executor HTTPExecutor, method, target string, payload any, headers map[string]string) ([]byte, error) {
+func sendJSONRequest(ctx context.Context, executor HTTPExecutor, method, target string, payload any, headers map[string]string, notification Notification) (SendOutcome, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, err
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, err
 	}
 	reqHeaders := make(http.Header)
 	reqHeaders.Set("Content-Type", "application/json")
 	for key, value := range headers {
 		reqHeaders.Set(key, value)
 	}
-	response, err := executor.Execute(ctx, outboundhttp.Request{Method: method, URL: target, Header: reqHeaders, Body: bytes.NewReader(body), Timeout: outboundhttp.NotificationTimeout})
+	return sendRawRequest(ctx, executor, outboundhttp.Request{Method: method, URL: target, Header: reqHeaders, Body: bytes.NewReader(body), Timeout: outboundhttp.NotificationTimeout}, notification)
+}
+
+func sendRawRequest(ctx context.Context, executor HTTPExecutor, request outboundhttp.Request, notification Notification) (SendOutcome, error) {
+	out, err := executor.Execute(ctx, request)
 	if err != nil {
-		return nil, err
+		outcome := classifyTransportError(err)
+		return outcome, err
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, errors.New("provider returned non-success status")
+	outcome := classifyResponse(out)
+	outcome.ProviderName = notification.ChannelType
+	if notification.DeliveryID != "" {
+		if outcome.Metadata.ProviderRequestID == "" {
+			outcome.Metadata.ProviderRequestID = notification.DeliveryID
+		}
 	}
-	return response.Body, nil
+	if !outcome.Retryable && outcome.Class != OutcomeAccepted {
+		return outcome, fmt.Errorf("provider %s returned status %s", notification.ChannelType, outcome.Metadata.ProviderStatusClass)
+	}
+	return outcome, nil
+}
+
+func classifyTransportError(err error) SendOutcome {
+	var httpErr *outboundhttp.Error
+	if errors.As(err, &httpErr) {
+		switch httpErr.Kind {
+		case outboundhttp.KindTimeout:
+			return SendOutcome{Class: OutcomeTimeout, Retryable: true, Metadata: ProviderMetadata{ProviderStatusClass: "timeout"}}
+		default:
+			return SendOutcome{Class: OutcomeTransport, Retryable: true, Metadata: ProviderMetadata{ProviderStatusClass: string(httpErr.Kind)}}
+		}
+	}
+	return SendOutcome{Class: OutcomeTransport, Retryable: true, Metadata: ProviderMetadata{ProviderStatusClass: "transport"}}
+}
+
+func classifyResponse(response outboundhttp.Response) SendOutcome {
+	class := ClassifyHTTPStatus(response.StatusCode)
+	retryAfter := ParseRetryAfterSeconds(response.Header.Get("Retry-After"), maxRetryAfterSeconds)
+	requestID := firstNonEmpty(response.Header.Get("X-Request-Id"), response.Header.Get("X-Request-ID"), response.Header.Get("Request-Id"))
+	outcome := SendOutcome{Class: class, Retryable: IsRetryableClass(class), Metadata: SafeProviderMetadata(response.StatusCode, requestID, retryAfter, maxRetryAfterSeconds)}
+	return outcome
 }
 
 func senderExecutor(executors []HTTPExecutor) HTTPExecutor {
@@ -279,7 +327,7 @@ func joinEndpoint(base, endpoint string) string {
 }
 
 func basicAuth(username, password string) string {
-	return base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	return base64Encode(username + ":" + password)
 }
 
 func buildSubject(prefix string, notification Notification) string {

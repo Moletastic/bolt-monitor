@@ -1023,7 +1023,7 @@ func (h monitorHandler) testNotificationChannel(ctx context.Context, channelID s
 		IncidentID:  "notification-channel-test",
 		Config:      config,
 	}
-	if err := sender.Send(ctx, notification); err != nil {
+	if _, err := sender.Send(ctx, notification); err != nil {
 		return h.recordChannelTestFailure(ctx, *channel, err)
 	}
 	if err := h.repo.RecordNotificationChannelTestAudit(ctx, h.tenantID, channel.ChannelID, string(channel.Type), "success", "", now); err != nil {

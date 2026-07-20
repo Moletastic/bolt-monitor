@@ -102,9 +102,12 @@ func (e *recordingMonitorExecutor) Execute(_ context.Context, _ outboundhttp.Req
 	return e.response, nil
 }
 
-func (s *fakeNotificationSender) Send(_ context.Context, notification notifications.Notification) error {
+func (s *fakeNotificationSender) Send(_ context.Context, notification notifications.Notification) (notifications.SendOutcome, error) {
 	s.notifications = append(s.notifications, notification)
-	return s.err
+	if s.err != nil {
+		return notifications.SendOutcome{Class: notifications.OutcomeTransport, Retryable: true}, s.err
+	}
+	return notifications.SendOutcome{Class: notifications.OutcomeAccepted}, nil
 }
 
 func (s *fakeNotificationSender) ChannelType() string { return s.channelType }

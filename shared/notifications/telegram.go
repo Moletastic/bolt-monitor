@@ -30,19 +30,19 @@ func NewTelegramSender(executors ...HTTPExecutor) *TelegramSender {
 	return &TelegramSender{executor: senderExecutor(executors)}
 }
 
-func (s *TelegramSender) Send(ctx context.Context, notification Notification) error {
+func (s *TelegramSender) Send(ctx context.Context, notification Notification) (SendOutcome, error) {
 	var config TelegramConfig
 	if len(notification.Config) > 0 {
 		if err := json.Unmarshal(notification.Config, &config); err != nil {
-			return fmt.Errorf("invalid telegram config: %w", err)
+			return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, fmt.Errorf("invalid telegram config: %w", err)
 		}
 	}
 
 	if strings.TrimSpace(config.BotToken) == "" {
-		return errMissingBotToken
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, errMissingBotToken
 	}
 	if strings.TrimSpace(config.ChatID) == "" {
-		return errMissingChatID
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, errMissingChatID
 	}
 
 	escapedText := escapeMarkdownV2(notification.Message)
@@ -59,31 +59,36 @@ func (s *TelegramSender) Send(ctx context.Context, notification Notification) er
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+		return SendOutcome{Class: OutcomeInvalidConfig, Retryable: false}, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	response, err := s.executor.Execute(ctx, outboundhttp.Request{Method: http.MethodPost, URL: apiURL, Header: http.Header{"Content-Type": {"application/json"}}, Body: bytes.NewReader(body), Timeout: outboundhttp.NotificationTimeout})
+	headers := http.Header{"Content-Type": {"application/json"}}
+	response, err := s.executor.Execute(ctx, outboundhttp.Request{Method: http.MethodPost, URL: apiURL, Header: headers, Body: bytes.NewReader(body), Timeout: outboundhttp.NotificationTimeout})
 	if err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+		return classifyTransportError(err), err
 	}
-
-	if response.StatusCode != http.StatusOK {
+	if response.StatusCode == http.StatusOK {
 		var tgResp telegramResponse
-		if err := json.Unmarshal(response.Body, &tgResp); err == nil && strings.Contains(strings.ToLower(tgResp.Description), "chat not found") {
-			return errors.New("telegram chat not found: use the numeric chat ID and make sure the bot has access to that chat")
+		if err := json.Unmarshal(response.Body, &tgResp); err != nil {
+			return SendOutcome{Class: OutcomeTransport, Retryable: true}, fmt.Errorf("failed to parse response: %w", err)
 		}
-		return errors.New("telegram API returned non-success status")
+		if tgResp.Ok {
+			return SendOutcome{Class: OutcomeAccepted, Metadata: ProviderMetadata{ProviderStatusClass: "2xx"}}, nil
+		}
+		return SendOutcome{Class: OutcomeProvider4xx, Retryable: false, Metadata: SafeProviderMetadata(response.StatusCode, "", 0, maxRetryAfterSeconds)}, errors.New("telegram rejected the request")
 	}
-
+	if response.StatusCode == http.StatusTooManyRequests {
+		return SendOutcome{Class: OutcomeThrottled, Retryable: true, Metadata: SafeProviderMetadata(response.StatusCode, "", ParseRetryAfterSeconds(response.Header.Get("Retry-After"), maxRetryAfterSeconds), maxRetryAfterSeconds)}, nil
+	}
+	if response.StatusCode >= 500 {
+		return SendOutcome{Class: OutcomeProvider5xx, Retryable: true, Metadata: SafeProviderMetadata(response.StatusCode, "", 0, maxRetryAfterSeconds)}, nil
+	}
 	var tgResp telegramResponse
-	if err := json.Unmarshal(response.Body, &tgResp); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+	_ = json.Unmarshal(response.Body, &tgResp)
+	if strings.Contains(strings.ToLower(tgResp.Description), "chat not found") {
+		return SendOutcome{Class: OutcomeProvider4xx, Retryable: false, Metadata: SafeProviderMetadata(response.StatusCode, "", 0, maxRetryAfterSeconds)}, errors.New("telegram chat not found")
 	}
-	if !tgResp.Ok {
-		return fmt.Errorf("telegram error: %s", tgResp.Description)
-	}
-
-	return nil
+	return SendOutcome{Class: ClassifyHTTPStatus(response.StatusCode), Retryable: IsRetryableClass(ClassifyHTTPStatus(response.StatusCode)), Metadata: SafeProviderMetadata(response.StatusCode, "", 0, maxRetryAfterSeconds)}, errors.New("telegram returned non-success status")
 }
 
 func (s *TelegramSender) ChannelType() string {
