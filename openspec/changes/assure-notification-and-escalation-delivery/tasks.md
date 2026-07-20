@@ -40,10 +40,10 @@
 
 ## 6. Delivery API And Dashboard
 
-- [ ] 6.1 Add typed shared/API errors and monitor-api repository/response mapping for the exact delivery-state enum, incident delivery list, replay eligibility, required `Idempotency-Key`, and idempotency conflict without exposing raw provider or channel configuration data.
-- [ ] 6.2 Add `GET /api/v1/incidents/{incidentId}/deliveries` with tenant/incident validation, stable chronological ordering, empty-state behavior, standard envelope, and handler/repository tests.
-- [ ] 6.3 Add `POST /api/v1/incidents/{incidentId}/deliveries/{deliveryId}/replay` using a required `Idempotency-Key` and one conditional transaction for eligible `terminal_failed` delivery state, audit metadata, bounded idempotency record, and canonical `delivery_replay` dispatch record; test same-key/same-request replay, payload mismatch conflict, expiry, concurrent requests, enqueue durability, delivered/active records, cross-tenant access, and recovered incidents.
-- [ ] 6.4 Wire both routes in SST and add Bruno requests with required tags/docs and success, not-found, and replay-conflict expectations.
+- [x] 6.1 Add typed shared/API errors and monitor-api repository/response mapping for the exact delivery-state enum, incident delivery list, replay eligibility, required `Idempotency-Key`, and idempotency conflict without exposing raw provider or channel configuration data.
+- [x] 6.2 Add `GET /api/v1/incidents/{incidentId}/deliveries` with tenant/incident validation, stable chronological ordering, empty-state behavior, standard envelope, and handler/repository tests.
+- [x] 6.3 Add `POST /api/v1/incidents/{incidentId}/deliveries/{deliveryId}/replay` using a required `Idempotency-Key` and one conditional transaction for eligible `terminal_failed` delivery state, audit metadata, bounded idempotency record, and canonical `delivery_replay` dispatch record; test same-key/same-request replay, payload mismatch conflict, expiry, concurrent requests, enqueue durability, delivered/active records, cross-tenant access, and recovered incidents.
+- [x] 6.4 Wire both routes in SST and add Bruno requests with required tags/docs and success, not-found, and replay-conflict expectations.
 - [ ] 6.5 Add dashboard Result-based API adapters/types and a server action for replay that follows the response-envelope, typed-error, and router conventions.
 - [ ] 6.6 Extend the incident escalation tab with all six exact per-transition/step/channel delivery states, separate recovery-suppression eligibility, provider-acceptance wording, sanitized outcomes, attempts/timestamps, loading/empty/error states, and replay controls only for eligible terminal failures.
 - [ ] 6.7 Add dashboard tests for partial multi-channel success, all six delivery states, no-human-receipt wording, replay pending/result feedback, suppression outside the delivery enum, accessibility, and secret redaction.

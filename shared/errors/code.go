@@ -26,6 +26,9 @@ const (
 	CodePolicyReferenced       Code = "POLICY_REFERENCED"
 	CodeChannelNotFound        Code = "CHANNEL_NOT_FOUND"
 	CodeNotificationDelivery   Code = "NOTIFICATION_DELIVERY_FAILED"
+	CodeDeliveryNotFound       Code = "DELIVERY_NOT_FOUND"
+	CodeDeliveryNotReplayable  Code = "DELIVERY_NOT_REPLAYABLE"
+	CodeIdempotencyConflict    Code = "IDEMPOTENCY_CONFLICT"
 	CodeAuthenticationRequired Code = "AUTHENTICATION_REQUIRED"
 	CodeAuthorizationDenied    Code = "AUTHORIZATION_DENIED"
 	CodeInternal               Code = "INTERNAL"
@@ -57,6 +60,9 @@ var registry = map[Code]codeSpec{
 	CodePolicyReferenced:       {status: http.StatusConflict},
 	CodeChannelNotFound:        {status: http.StatusNotFound},
 	CodeNotificationDelivery:   {status: http.StatusBadGateway},
+	CodeDeliveryNotFound:       {status: http.StatusNotFound},
+	CodeDeliveryNotReplayable:  {status: http.StatusConflict},
+	CodeIdempotencyConflict:    {status: http.StatusConflict},
 	CodeAuthenticationRequired: {status: http.StatusUnauthorized},
 	CodeAuthorizationDenied:    {status: http.StatusForbidden},
 	CodeInternal:               {status: http.StatusInternalServerError},

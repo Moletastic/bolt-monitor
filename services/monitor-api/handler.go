@@ -83,6 +83,9 @@ type monitorRepository interface {
 	RecordNotificationChannelTestAudit(context.Context, string, string, string, string, string, time.Time) error
 	GetEscalationState(context.Context, string, string) (*escalation.EscalationState, error)
 	SearchResources(context.Context, string, string, int, map[string]struct{}) ([]searchResult, error)
+	ListIncidentDeliveries(context.Context, string, string) ([]notifications.DeliveryRecord, error)
+	PrepareDeliveryReplay(context.Context, notifications.ReplayCommand, string, time.Time, time.Duration) (string, error)
+	LookupReplayIdempotency(context.Context, string, string, string, string) (*notifications.ReplayIdempotencyRecord, error)
 }
 
 type monitorHandler struct {
@@ -146,6 +149,15 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	incidentID := strings.TrimSpace(request.PathParameters["incidentId"])
 	policyID := strings.TrimSpace(request.PathParameters["policyId"])
 	channelID := strings.TrimSpace(request.PathParameters["channelId"])
+	deliveryID := strings.TrimSpace(request.PathParameters["deliveryId"])
+	if deliveryID == "" && strings.HasPrefix(path, "/api/v1/incidents/") && strings.Contains(path, "/deliveries/") {
+		rest := strings.TrimPrefix(path, "/api/v1/incidents/"+incidentID+"/deliveries/")
+		if idx := strings.Index(rest, "/"); idx >= 0 {
+			deliveryID = strings.TrimSpace(rest[:idx])
+		} else {
+			deliveryID = strings.TrimSpace(rest)
+		}
+	}
 	if channelID == "" && strings.HasPrefix(path, "/api/v1/notification-channels/") {
 		channelID = strings.TrimPrefix(path, "/api/v1/notification-channels/")
 		channelID = strings.TrimSuffix(channelID, "/test")
@@ -187,6 +199,10 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 		return h.acknowledgeIncident(ctx, incidentID)
 	case method == http.MethodPost && strings.HasSuffix(path, "/resolve") && incidentID != "":
 		return h.resolveIncident(ctx, incidentID)
+	case method == http.MethodGet && strings.HasSuffix(path, "/deliveries") && incidentID != "" && deliveryID == "":
+		return h.listIncidentDeliveries(ctx, incidentID, request)
+	case method == http.MethodPost && strings.HasSuffix(path, "/replay") && incidentID != "" && deliveryID != "":
+		return h.replayIncidentDelivery(ctx, incidentID, deliveryID, request)
 	case method == http.MethodGet && path == "/api/v1/admin/scheduler-config":
 		return h.getSchedulerConfig(ctx)
 	case method == http.MethodPatch && path == "/api/v1/admin/scheduler-config":

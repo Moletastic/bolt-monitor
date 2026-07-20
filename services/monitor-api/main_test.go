@@ -27,21 +27,23 @@ import (
 )
 
 type fakeMonitorRepositoryState struct {
-	services         map[string]monitorconfig.Service
-	monitors         map[string]monitorconfig.Monitor
-	statuses         map[string]resultstatus.MonitorStatus
-	runs             map[string][]resultstatus.CheckRun
-	results          map[string][]checkexecution.ExecutionResult
-	idempotency      map[string]manualIdempotencyRecord
-	manual           map[string]manualRunRequestRecord
-	policies         map[string]escalation.EscalationPolicy
-	channels         map[string]escalation.NotificationChannel
-	escalationStates map[string]escalation.EscalationState
-	incidents        map[string]dynamodbrecord.IncidentRecord
-	activities       map[string][]dynamodbrecord.IncidentActivityRecord
-	audit            map[string][]auditEventView
-	scheduler        dynamodbrecord.SchedulerConfigRecord
-	channelTestAudit []channelTestAuditRecord
+	services          map[string]monitorconfig.Service
+	monitors          map[string]monitorconfig.Monitor
+	statuses          map[string]resultstatus.MonitorStatus
+	runs              map[string][]resultstatus.CheckRun
+	results           map[string][]checkexecution.ExecutionResult
+	idempotency       map[string]manualIdempotencyRecord
+	manual            map[string]manualRunRequestRecord
+	policies          map[string]escalation.EscalationPolicy
+	channels          map[string]escalation.NotificationChannel
+	escalationStates  map[string]escalation.EscalationState
+	incidents         map[string]dynamodbrecord.IncidentRecord
+	activities        map[string][]dynamodbrecord.IncidentActivityRecord
+	audit             map[string][]auditEventView
+	scheduler         dynamodbrecord.SchedulerConfigRecord
+	channelTestAudit  []channelTestAuditRecord
+	deliveries        map[string]notifications.DeliveryRecord
+	replayIdempotency map[string]notifications.ReplayIdempotencyRecord
 }
 
 // fakeMonitorRepository is a test-only composition root. Mutable maps live
@@ -198,17 +200,19 @@ func (f *fakeDynamoClient) Scan(_ context.Context, input *sharedaws.DynamoDBScan
 
 func newFakeMonitorRepository() *fakeMonitorRepository {
 	return &fakeMonitorRepository{fakeMonitorRepositoryState: &fakeMonitorRepositoryState{
-		services:         map[string]monitorconfig.Service{},
-		monitors:         map[string]monitorconfig.Monitor{},
-		statuses:         map[string]resultstatus.MonitorStatus{},
-		runs:             map[string][]resultstatus.CheckRun{},
-		manual:           map[string]manualRunRequestRecord{},
-		policies:         map[string]escalation.EscalationPolicy{},
-		channels:         map[string]escalation.NotificationChannel{},
-		escalationStates: map[string]escalation.EscalationState{},
-		incidents:        map[string]dynamodbrecord.IncidentRecord{},
-		activities:       map[string][]dynamodbrecord.IncidentActivityRecord{},
-		audit:            map[string][]auditEventView{},
+		services:          map[string]monitorconfig.Service{},
+		monitors:          map[string]monitorconfig.Monitor{},
+		statuses:          map[string]resultstatus.MonitorStatus{},
+		runs:              map[string][]resultstatus.CheckRun{},
+		manual:            map[string]manualRunRequestRecord{},
+		policies:          map[string]escalation.EscalationPolicy{},
+		channels:          map[string]escalation.NotificationChannel{},
+		escalationStates:  map[string]escalation.EscalationState{},
+		incidents:         map[string]dynamodbrecord.IncidentRecord{},
+		activities:        map[string][]dynamodbrecord.IncidentActivityRecord{},
+		audit:             map[string][]auditEventView{},
+		deliveries:        map[string]notifications.DeliveryRecord{},
+		replayIdempotency: map[string]notifications.ReplayIdempotencyRecord{},
 	}}
 }
 
@@ -751,6 +755,41 @@ func (r *fakeMonitorRepositoryState) GetEscalationState(_ context.Context, tenan
 		}
 	}
 	return nil, nil
+}
+
+func (r *fakeMonitorRepositoryState) ListIncidentDeliveries(_ context.Context, tenantID, incidentID string) ([]notifications.DeliveryRecord, error) {
+	out := make([]notifications.DeliveryRecord, 0)
+	for _, delivery := range r.deliveries {
+		if delivery.TenantID == tenantID && strings.EqualFold(delivery.IncidentID, incidentID) {
+			out = append(out, delivery)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt < out[j].CreatedAt })
+	return out, nil
+}
+
+func (r *fakeMonitorRepositoryState) PrepareDeliveryReplay(_ context.Context, command notifications.ReplayCommand, fingerprint string, now time.Time, _ time.Duration) (string, error) {
+	for _, delivery := range r.deliveries {
+		if delivery.DeliveryID == command.DeliveryID && delivery.TenantID == command.TenantID && strings.EqualFold(delivery.IncidentID, command.IncidentID) {
+			if delivery.State != notifications.DeliveryTerminalFailed {
+				return "", fmt.Errorf("delivery is not eligible for replay")
+			}
+			delivery.State = notifications.DeliveryPending
+			r.deliveries[command.DeliveryID] = delivery
+			r.replayIdempotency[command.IdempotencyKey] = notifications.ReplayIdempotencyRecord{TenantID: command.TenantID, IncidentID: command.IncidentID, DeliveryID: command.DeliveryID, Operation: "delivery_replay", IdempotencyKey: command.IdempotencyKey, RequestFingerprint: fingerprint, ResultDeliveryID: command.DeliveryID, CreatedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(24 * time.Hour).Unix()}
+			return command.DeliveryID, nil
+		}
+	}
+	return "", fmt.Errorf("delivery not found")
+}
+
+func (r *fakeMonitorRepositoryState) LookupReplayIdempotency(_ context.Context, _ string, _ string, _ string, key string) (*notifications.ReplayIdempotencyRecord, error) {
+	record, ok := r.replayIdempotency[key]
+	if !ok {
+		return nil, nil
+	}
+	copy := record
+	return &copy, nil
 }
 
 func addRecord(t *testing.T, items map[string]map[string]sharedaws.AttributeValue, record any) {

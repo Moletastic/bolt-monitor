@@ -452,6 +452,8 @@ export function createBootstrapStack(target: DeploymentTarget) {
     'GET /api/v1/incidents',
     'GET /api/v1/incidents/{incidentId}',
     'GET /api/v1/incidents/{incidentId}/escalation-state',
+    'GET /api/v1/incidents/{incidentId}/deliveries',
+    'POST /api/v1/incidents/{incidentId}/deliveries/{deliveryId}/replay',
     'GET /api/v1/incidents/{incidentId}/activities',
     'POST /api/v1/incidents/{incidentId}/ack',
     'POST /api/v1/incidents/{incidentId}/resolve',
