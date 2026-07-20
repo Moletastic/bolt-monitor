@@ -41,3 +41,9 @@ test('notification queue preserves poison messages with partial responses', () =
   const queue = stackSource.slice(queueStart, stackSource.indexOf('\n  )', queueStart))
   assert.match(queue, /partialResponses: true/)
 })
+
+test('transition dispatch failures alarm on notification DLQ depth', () => {
+  assert.match(stackSource, /EscalationTransitionDispatchAlarm/)
+  assert.match(stackSource, /QueueName: notificationQueueDLQ\.nodes\.queue\.name/)
+  assert.match(stackSource, /ApproximateNumberOfMessagesVisible/)
+})
