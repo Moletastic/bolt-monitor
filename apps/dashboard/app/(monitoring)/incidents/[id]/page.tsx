@@ -14,6 +14,7 @@ import { formatDateTime } from '@/lib/utils'
 import { AlertHistoryTab } from './alert-history-tab'
 import { AuditTab } from './audit-tab'
 import { EscalationStateTab } from './escalation-state-tab'
+import { IncidentDeliveriesPanel } from './deliveries-panel'
 import { TimelineTab } from './timeline-tab'
 
 export default async function IncidentDetailPage({
@@ -144,7 +145,19 @@ export default async function IncidentDetailPage({
                 </Suspense>
               ) : null}
               {activeTab === 'escalation' ? (
-                <EscalationStateTab incidentId={incident.incidentId} />
+                <div className="space-y-4">
+                  <EscalationStateTab incidentId={incident.incidentId} />
+                  <Suspense
+                    fallback={
+                      <TabLoadingFallback
+                        title="Notification deliveries"
+                        message="Loading deliveries…"
+                      />
+                    }
+                  >
+                    <IncidentDeliveriesPanel incidentId={incident.incidentId} />
+                  </Suspense>
+                </div>
               ) : null}
               {activeTab === 'alerts' && incident.serviceId ? (
                 <Suspense
