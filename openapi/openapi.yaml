@@ -72,6 +72,17 @@ paths:
   /api/v1/incidents/{incidentId}: {get: {operationId: getIncident, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/incidents/{incidentId}/escalation-state: {get: {operationId: getEscalationState, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/incidents/{incidentId}/activities: {get: {operationId: getIncidentActivities, responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/incidents/{incidentId}/deliveries: {get: {operationId: listIncidentDeliveries, responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/incidents/{incidentId}/deliveries/{deliveryId}/replay:
+    post:
+      operationId: replayIncidentDelivery
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+        - {name: deliveryId, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /api/v1/incidents/{incidentId}/ack: {post: {operationId: acknowledgeIncident, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/incidents/{incidentId}/resolve: {post: {operationId: resolveIncident, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/admin/scheduler-config:
@@ -92,6 +103,12 @@ components:
       description: API Gateway may return a non-envelope 403 before Lambda for insufficient scope. Lambda-originated membership authorization failures return the standard error envelope with reason.code `AUTHORIZATION_DENIED`.
     Success:
       description: Standard API success envelope
+      content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}
+    NotFound:
+      description: Resource not found. Code `INCIDENT_NOT_FOUND` or `DELIVERY_NOT_FOUND`.
+      content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}
+    Conflict:
+      description: Replay eligibility or idempotency conflict. Codes `DELIVERY_NOT_REPLAYABLE` or `IDEMPOTENCY_CONFLICT`.
       content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}
   schemas:
     SuccessEnvelope:
@@ -125,3 +142,29 @@ components:
           type: string
           description: Sanitized outbound policy failure category when execution cannot reach its destination.
           example: address_blocked
+    Delivery:
+      type: object
+      required: [deliveryId, transitionId, channelId, channelType, stepNumber, state, attemptCount, createdAt, updatedAt]
+      properties:
+        deliveryId: {type: string, description: Deterministic delivery identity.}
+        transitionId: {type: string, description: Canonical transition identity from the retry-safe outbox.}
+        channelId: {type: string}
+        channelType: {type: string, description: telegram|email|sms|webhook|pagerduty}
+        stepNumber: {type: integer, minimum: 1}
+        state:
+          type: string
+          enum: [pending, in_flight, retryable_failed, ambiguous, delivered, terminal_failed]
+          description: Provider acceptance is documented separately. `delivered` does not claim human receipt.
+        attemptCount: {type: integer, minimum: 0}
+        lastAttemptAt: {type: string, format: date-time}
+        nextAttemptAt: {type: string, format: date-time}
+        lastOutcomeClass:
+          type: string
+          enum: [accepted, timeout, transport, throttled, provider_5xx, provider_4xx, invalid_config, unsupported_channel, retry_exhausted, abandoned_lease]
+        providerStatusClass:
+          type: string
+          enum: ["2xx", "4xx", "5xx", "429", timeout, transport]
+        providerRequestId: {type: string, description: Allowlisted provider request identifier only.}
+        retryAfterSeconds: {type: integer, minimum: 0, maximum: 300}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}

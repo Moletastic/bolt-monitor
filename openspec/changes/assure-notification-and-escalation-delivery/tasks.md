@@ -50,11 +50,11 @@
 
 ## 7. Contracts, Observability, And Operations
 
-- [ ] 7.1 Update `openapi/openapi.yaml` with delivery list/replay paths, exact six-state enum, required `Idempotency-Key`, same-request replay response, mismatch conflict, bounded-retention semantics, safe metadata, provider-acceptance semantics, and typed errors; run the OpenAPI validation workflow.
-- [ ] 7.2 Add structured secret-free logs and bounded metrics for outbox dispatch, normalized delivery attempts/outcomes, retries/exhaustion, suppression, schedule failures/conflicts, and replay, with tests that sensitive values never appear.
-- [ ] 7.3 Add `docs/runbooks/notification-delivery.md` covering delivery/activity correlation, logs/metrics, source-kind-aware notification-DLQ inspection, point/recent-bucket outbox reconciliation, manual repair, configuration correction, ambiguous outcome handling, idempotent API replay, redrive restrictions/quarantine, and rollback.
-- [ ] 7.4 Add a dry-run-by-default scoped cleanup utility and runbook procedure that inventories then removes only legacy `esc-*-step-*` targets/rules and matching `allow-events-*` Lambda statements, with fixture tests for unrelated-resource preservation.
-- [ ] 7.5 Document the bounded cost model for Stream invocations, pending-index reconciliation, delivery/replay/idempotency writes, retries, short-lived schedules, TTL, and incident-partition reads, plus explicit exclusions for scans, new integrations, on-call behavior, and human-receipt guarantees.
+- [x] 7.1 Update `openapi/openapi.yaml` with delivery list/replay paths, exact six-state enum, required `Idempotency-Key`, same-request replay response, mismatch conflict, bounded-retention semantics, safe metadata, provider-acceptance semantics, and typed errors; run the OpenAPI validation workflow.
+- [x] 7.2 Add structured secret-free logs and bounded metrics for outbox dispatch, normalized delivery attempts/outcomes, retries/exhaustion, suppression, schedule failures/conflicts, and replay, with tests that sensitive values never appear.
+- [x] 7.3 Add `docs/runbooks/notification-delivery.md` covering delivery/activity correlation, logs/metrics, source-kind-aware notification-DLQ inspection, point/recent-bucket outbox reconciliation, manual repair, configuration correction, ambiguous outcome handling, idempotent API replay, redrive restrictions/quarantine, and rollback.
+- [x] 7.4 Add a dry-run-by-default scoped cleanup utility and runbook procedure that inventories then removes only legacy `esc-*-step-*` targets/rules and matching `allow-events-*` Lambda statements, with fixture tests for unrelated-resource preservation.
+- [x] 7.5 Document the bounded cost model for Stream invocations, pending-index reconciliation, delivery/replay/idempotency writes, retries, short-lived schedules, TTL, and incident-partition reads, plus explicit exclusions for scans, new integrations, on-call behavior, and human-receipt guarantees.
 
 ## 8. Verification
 
