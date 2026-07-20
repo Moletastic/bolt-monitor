@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -38,8 +37,4 @@ func manualRunResponseFromRecord(record manualIdempotencyRecord) map[string]any 
 		"expiresAt":   record.ExpiresAt.Format(time.RFC3339),
 		"idempotency": map[string]any{"key": record.Key, "fingerprint": record.Fingerprint, "outcome": string(record.Outcome)},
 	}
-}
-
-func errIdempotencyConflict(key string) error {
-	return fmt.Errorf("idempotency key %q reused with different payload", key)
 }

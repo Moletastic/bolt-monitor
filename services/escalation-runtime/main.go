@@ -33,6 +33,10 @@ func main() {
 		log.Fatalf("create dynamodb client: %v", err)
 	}
 	repo := newDynamoEscalationRepository(dynamoClient, tableName)
+	queue, err := aws.NewSQSAPI(ctx)
+	if err != nil {
+		log.Fatalf("create sqs client: %v", err)
+	}
 	scheduler := newCloudWatchScheduler(
 		eventbridge.NewFromConfig(awsCfg),
 		awslambda.NewFromConfig(awsCfg),
@@ -41,17 +45,24 @@ func main() {
 		os.Getenv("AWS_LAMBDA_FUNCTION_NAME"),
 	)
 	handler := newEscalationHandler(repo, scheduler)
+	dispatcher := newStreamDispatcher(repo, queue, os.Getenv("NOTIFICATION_QUEUE_URL"))
 
-	lambda.Start(func(ctx context.Context, payload json.RawMessage) error {
+	lambda.Start(func(ctx context.Context, payload json.RawMessage) (any, error) {
 		var sqsEvent events.SQSEvent
 		if err := json.Unmarshal(payload, &sqsEvent); err == nil && len(sqsEvent.Records) > 0 {
-			return handler.handleSQSEvent(ctx, sqsEvent)
+			response, err := handler.handleSQSEventResponse(ctx, sqsEvent)
+			return response, err
+		}
+		var streamEvent events.DynamoDBEvent
+		if err := json.Unmarshal(payload, &streamEvent); err == nil && len(streamEvent.Records) > 0 {
+			response, err := dispatcher.handle(ctx, streamEvent)
+			return response, err
 		}
 		var scheduled scheduledInvocationEvent
 		if err := json.Unmarshal(payload, &scheduled); err == nil && scheduled.IncidentID != "" {
-			return handler.handleScheduledInvocation(ctx, scheduled)
+			return nil, handler.handleScheduledInvocation(ctx, scheduled)
 		}
 		log.Printf("ignoring unsupported escalation-runtime payload")
-		return nil
+		return nil, nil
 	})
 }

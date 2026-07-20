@@ -8,7 +8,7 @@ import (
 type manualIdempotencyOutcome string
 
 const (
-	manualIdempotencyOutcomeReserved manualIdempotencyOutcome = "reserved"
+	manualIdempotencyOutcomeReserved  manualIdempotencyOutcome = "reserved"
 	manualIdempotencyOutcomeCompleted manualIdempotencyOutcome = "completed"
 )
 
@@ -16,16 +16,16 @@ const (
 // idempotency address derived from tenant/service/monitor/key. TTL bounds the
 // replay window; manual runs always carry a fresh runID.
 type manualIdempotencyRecord struct {
-	TenantID         string
-	ServiceID        string
-	MonitorID        string
-	Key              string
-	Fingerprint      string
-	Outcome          manualIdempotencyOutcome
-	RunID            string
-	CreatedAt        time.Time
-	ExpiresAt        time.Time
-	TTL              int64
+	TenantID    string
+	ServiceID   string
+	MonitorID   string
+	Key         string
+	Fingerprint string
+	Outcome     manualIdempotencyOutcome
+	RunID       string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	TTL         int64
 }
 
 func newManualIdempotencyRecord(tenantID, serviceID, monitorID, key, fingerprint, runID string, now time.Time, ttl int64) manualIdempotencyRecord {

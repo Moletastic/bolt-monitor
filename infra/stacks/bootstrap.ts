@@ -137,6 +137,7 @@ export function createBootstrapStack(target: DeploymentTarget) {
         },
       },
       ttl: 'TTL',
+      stream: 'new-image',
       deletionProtection: policy.retainDurableResources,
       transform: {
         table: (args) => {
@@ -236,11 +237,47 @@ export function createBootstrapStack(target: DeploymentTarget) {
       link: [table],
       environment: {
         TABLE_NAME: table.name,
+        NOTIFICATION_QUEUE_URL: notificationQueue.url,
       },
     },
     {
       batch: {
         size: 1,
+        partialResponses: true,
+      },
+    }
+  )
+
+  table.subscribe(
+    'EscalationRuntimeTransitionStream',
+    {
+      runtime: 'go',
+      handler: '../services/escalation-runtime',
+      link: [table, notificationQueue],
+      environment: {
+        TABLE_NAME: table.name,
+        NOTIFICATION_QUEUE_URL: notificationQueue.url,
+      },
+    },
+    {
+      filters: [
+        {
+          eventName: ['INSERT'],
+          dynamodb: {
+            NewImage: {
+              EntityType: { S: ['TransitionOutbox'] },
+            },
+          },
+        },
+      ],
+      transform: {
+        eventSourceMapping: (args) => {
+          args.functionResponseTypes = ['ReportBatchItemFailures']
+          args.maximumRetryAttempts = 3
+          args.destinationConfig = {
+            onFailure: { destinationArn: notificationQueueDLQ.arn },
+          }
+        },
       },
     }
   )

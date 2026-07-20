@@ -617,7 +617,7 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	if err != nil {
 		return "", "", err
 	}
-	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && (statusFound == false || resultstatus.IsNewerRecurringObservation(currentStatus, *result.ScheduledFor, result.RunID))
+	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && (!statusFound || resultstatus.IsNewerRecurringObservation(currentStatus, *result.ScheduledFor, result.RunID))
 	records := []any{run.ToRecord()}
 	if applyProjection {
 		updatedStatus.RecurringScheduledFor = result.ScheduledFor

@@ -49,23 +49,23 @@ type ExecutionRequest struct {
 }
 
 type ExecutionResult struct {
-	ServiceID   string      `json:"serviceId"`
-	MonitorID   string      `json:"monitorId"`
-	TenantID    string      `json:"tenantId"`
-	RunID       string      `json:"runId,omitempty"`
-	Type        string      `json:"type"`
-	Trigger     TriggerType `json:"trigger"`
-	AcceptedAt  time.Time   `json:"acceptedAt"`
-	ScheduleDefinitionVersion string     `json:"scheduleDefinitionVersion,omitempty"`
-	ScheduledFor              *time.Time `json:"scheduledFor,omitempty"`
-	TransitionID              string     `json:"transitionId,omitempty"`
-	StartedAt   time.Time   `json:"startedAt"`
-	FinishedAt  time.Time   `json:"finishedAt"`
-	DurationMs  int64       `json:"durationMs"`
-	Outcome     Outcome     `json:"outcome"`
-	StatusCode  *int        `json:"statusCode,omitempty"`
-	Error       string      `json:"error,omitempty"`
-	FailureCode string      `json:"failureCode,omitempty"`
+	ServiceID                 string      `json:"serviceId"`
+	MonitorID                 string      `json:"monitorId"`
+	TenantID                  string      `json:"tenantId"`
+	RunID                     string      `json:"runId,omitempty"`
+	Type                      string      `json:"type"`
+	Trigger                   TriggerType `json:"trigger"`
+	AcceptedAt                time.Time   `json:"acceptedAt"`
+	ScheduleDefinitionVersion string      `json:"scheduleDefinitionVersion,omitempty"`
+	ScheduledFor              *time.Time  `json:"scheduledFor,omitempty"`
+	TransitionID              string      `json:"transitionId,omitempty"`
+	StartedAt                 time.Time   `json:"startedAt"`
+	FinishedAt                time.Time   `json:"finishedAt"`
+	DurationMs                int64       `json:"durationMs"`
+	Outcome                   Outcome     `json:"outcome"`
+	StatusCode                *int        `json:"statusCode,omitempty"`
+	Error                     string      `json:"error,omitempty"`
+	FailureCode               string      `json:"failureCode,omitempty"`
 }
 
 // RecurringRunID derives the durable identity used by scheduler retries.
@@ -141,16 +141,16 @@ type HTTPExecutor interface {
 func ExecuteHTTP(ctx context.Context, executor HTTPExecutor, request ExecutionRequest) ExecutionResult {
 	startedAt := time.Now().UTC()
 	result := ExecutionResult{
-		ServiceID: request.Monitor.ServiceID,
-		MonitorID: request.Monitor.MonitorID,
-		TenantID:  request.Monitor.TenantID,
-		RunID:     request.RunID,
-		Type:      string(request.Monitor.Type),
-		Trigger:   request.Trigger,
-		AcceptedAt: request.AcceptedAt,
+		ServiceID:                 request.Monitor.ServiceID,
+		MonitorID:                 request.Monitor.MonitorID,
+		TenantID:                  request.Monitor.TenantID,
+		RunID:                     request.RunID,
+		Type:                      string(request.Monitor.Type),
+		Trigger:                   request.Trigger,
+		AcceptedAt:                request.AcceptedAt,
 		ScheduleDefinitionVersion: request.ScheduleDefinitionVersion,
-		ScheduledFor: request.ScheduledFor,
-		StartedAt: startedAt,
+		ScheduledFor:              request.ScheduledFor,
+		StartedAt:                 startedAt,
 	}
 
 	httpConfig := request.Monitor.HTTP

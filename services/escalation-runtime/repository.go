@@ -86,7 +86,7 @@ func (r *dynamoEscalationRepository) GetChannel(ctx context.Context, tenantID, c
 func (r *dynamoEscalationRepository) LoadTransitionOutbox(ctx context.Context, tenantID, eventID string) (*dynamodbrecord.TransitionOutboxRecord, error) {
 	item, err := r.client.GetItem(ctx, &sharedaws.DynamoDBGetItemInput{
 		TableName: sharedaws.String(r.tableName),
-		Key:      sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "TRANSITION_OUTBOX#"+dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
+		Key:       sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "TRANSITION_OUTBOX#"+dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
 	})
 	if err != nil || len(item.Item) == 0 {
 		return nil, err
@@ -100,12 +100,12 @@ func (r *dynamoEscalationRepository) LoadTransitionOutbox(ctx context.Context, t
 
 func (r *dynamoEscalationRepository) AcknowledgeDispatch(ctx context.Context, tenantID, eventID string) error {
 	_, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
-		TableName: sharedaws.String(r.tableName),
-		Key:      sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "TRANSITION_OUTBOX#"+dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
-		UpdateExpression: sharedaws.String("SET DispatchStatus = :acknowledged"),
+		TableName:           sharedaws.String(r.tableName),
+		Key:                 sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(tenantID), "TRANSITION_OUTBOX#"+dynamodbschema.NormalizeToken(eventID)).AttributeMap(),
+		UpdateExpression:    sharedaws.String("SET DispatchStatus = :acknowledged"),
 		ConditionExpression: sharedaws.String("DispatchStatus = :pending"),
 		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
-			":pending":     &sharedaws.AttributeValueMemberS{Value: dynamodbrecord.DispatchPending},
+			":pending":      &sharedaws.AttributeValueMemberS{Value: dynamodbrecord.DispatchPending},
 			":acknowledged": &sharedaws.AttributeValueMemberS{Value: "acknowledged"},
 		},
 	})
