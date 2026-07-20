@@ -1,0 +1,28 @@
+name: development.local
+variables:
+  - name: apiUrl
+    value: https://cgmdtwdg7a.execute-api.us-east-1.amazonaws.com
+  - name: serviceId
+    value: replace-with-service-id
+  - name: monitorId
+    value: replace-with-monitor-id
+  - name: runId
+    value: replace-with-run-id
+  - name: incidentId
+    value: replace-with-incident-id
+  - name: channelId
+    value: replace-with-channel-id
+  - name: policyId
+    value: replace-with-policy-id
+  - name: cognitoRegion
+    value: us-east-1
+  - name: cognitoClientId
+    value: sbpsgr1nojjgvti2jcataaqdj
+  - name: cognitoUsername
+    value: boxjack.romero@gmail.com
+  - secret: true
+    name: cognitoPassword
+  - secret: true
+    name: accessToken
+  - secret: true
+    name: cognitoChallengeSession

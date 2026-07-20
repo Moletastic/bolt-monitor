@@ -58,7 +58,7 @@
 
 ## 8. Verification
 
-- [ ] 8.1 Run `make test-go-all`, `make lint-go`, and `make build-go`; resolve all delivery, runtime, repository, and sender failures.
-- [ ] 8.2 Run `make test-dashboard`, `make lint-dashboard`, `make check-dashboard`, and `make build-dashboard`; resolve all incident delivery UI and API adapter failures.
-- [ ] 8.3 Run `make check-infra`, `make lint-infra`, and `make check-bruno`; verify route coverage, Scheduler least privilege, source-aware Stream/SQS/Scheduler redrive, timeout/retry ordering assertions, reconciliation bounds, and formatting.
-- [ ] 8.4 Run OpenSpec strict validation and review the final diff for changes limited to the approved capabilities, secret-free examples/logging, unchanged integration count, reused queues/table, and complete runbook/test evidence.
+- [x] 8.1 Run `make test-go-all`, `make lint-go`, and `make build-go`; resolve all delivery, runtime, repository, and sender failures.
+- [x] 8.2 Run `make test-dashboard`, `make lint-dashboard`, `make check-dashboard`, and `make build-dashboard`; resolve all incident delivery UI and API adapter failures.
+- [x] 8.3 Run `make check-infra`, `make lint-infra`, and `make check-bruno`; verify route coverage, Scheduler least privilege, source-aware Stream/SQS/Scheduler redrive, timeout/retry ordering assertions, reconciliation bounds, and formatting.
+- [x] 8.4 Run OpenSpec strict validation and review the final diff for changes limited to the approved capabilities, secret-free examples/logging, unchanged integration count, reused queues/table, and complete runbook/test evidence.
