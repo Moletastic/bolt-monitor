@@ -21,14 +21,14 @@
 
 ## 4. Idempotent Delivery Orchestration
 
-- [ ] 4.1 Refactor incident-down handling to persist escalation state and an immutable selected route plan before provider I/O, then create deterministic per-step/per-channel pending deliveries.
-- [ ] 4.2 Implement fenced lease claims and exact transitions among `pending`, `in_flight`, `retryable_failed`, `ambiguous`, `delivered`, and `terminal_failed`; recover expired in-flight attempts as ambiguous and reject claims for active leases or terminal states.
-- [ ] 4.3 Implement per-channel processing so confirmed transient outcomes become `retryable_failed`, uncertain acceptance becomes `ambiguous`, provider acceptance becomes `delivered`, and non-retryable outcomes become `terminal_failed`; retries send only unfinished channels and never resend delivered channels.
-- [ ] 4.4 Use named automatic-attempt and SQS receive limits to terminalize known unfinished deliveries as `terminal_failed/retry_exhausted` before still failing the source record for notification-DLQ redrive; test timeout/transport/`429`/`5xx`, ambiguity, exhaustion, and terminal config/`4xx` acknowledgement.
-- [ ] 4.5 Return SQS partial batch responses by message ID for malformed, unsupported-version, unsupported-kind, repository-failed, retryable, ambiguous, and mixed-success records so poison messages reach the existing DLQ without replaying successful records.
-- [ ] 4.6 Re-read incident and escalation state before every scheduled step and attempt claim, suppressing future work after recovery without inventing a delivery state; test resolved, acknowledged/open, duplicate, historical delivered, and unfinished delivery cases.
-- [ ] 4.7 Advance each step and create escalation-exhausted state/incident exactly once after all channel deliveries are terminal (`delivered` or `terminal_failed`), with tests for duplicate workers, transient/ambiguous active outcomes, partial failure, and recovery races.
-- [ ] 4.8 Define named provider timeout, completion buffer, Lambda timeout, termination buffer, claim-start budget, attempt lease, redelivery buffer, SQS visibility/max receives, retry backoff/attempt limit, and Scheduler retry age/attempt constants; add infra/unit assertions for every required inequality and terminalization boundary.
+- [x] 4.1 Refactor incident-down handling to persist escalation state and an immutable selected route plan before provider I/O, then create deterministic per-step/per-channel pending deliveries.
+- [x] 4.2 Implement fenced lease claims and exact transitions among `pending`, `in_flight`, `retryable_failed`, `ambiguous`, `delivered`, and `terminal_failed`; recover expired in-flight attempts as ambiguous and reject claims for active leases or terminal states.
+- [x] 4.3 Implement per-channel processing so confirmed transient outcomes become `retryable_failed`, uncertain acceptance becomes `ambiguous`, provider acceptance becomes `delivered`, and non-retryable outcomes become `terminal_failed`; retries send only unfinished channels and never resend delivered channels.
+- [x] 4.4 Use named automatic-attempt and SQS receive limits to terminalize known unfinished deliveries as `terminal_failed/retry_exhausted` before still failing the source record for notification-DLQ redrive; test timeout/transport/`429`/`5xx`, ambiguity, exhaustion, and terminal config/`4xx` acknowledgement.
+- [x] 4.5 Return SQS partial batch responses by message ID for malformed, unsupported-version, unsupported-kind, repository-failed, retryable, ambiguous, and mixed-success records so poison messages reach the existing DLQ without replaying successful records.
+- [x] 4.6 Re-read incident and escalation state before every scheduled step and attempt claim, suppressing future work after recovery without inventing a delivery state; test resolved, acknowledged/open, duplicate, historical delivered, and unfinished delivery cases.
+- [x] 4.7 Advance each step and create escalation-exhausted state/incident exactly once after all channel deliveries are terminal (`delivered` or `terminal_failed`), with tests for duplicate workers, transient/ambiguous active outcomes, partial failure, and recovery races.
+- [x] 4.8 Define named provider timeout, completion buffer, Lambda timeout, termination buffer, claim-start budget, attempt lease, redelivery buffer, SQS visibility/max receives, retry backoff/attempt limit, and Scheduler retry age/attempt constants; add infra/unit assertions for every required inequality and terminalization boundary.
 
 ## 5. Self-Cleaning One-Time Scheduling
 

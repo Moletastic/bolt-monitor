@@ -29,13 +29,20 @@ type escalationRepository interface {
 	GetChannel(context.Context, string, string) (*escalation.NotificationChannel, error)
 	LoadTransitionOutbox(context.Context, string, string) (*dynamodbrecord.TransitionOutboxRecord, error)
 	AcknowledgeDispatch(context.Context, string, string) error
+	CreateEscalationPlan(context.Context, notifications.EscalationPlan) error
+	GetEscalationPlan(context.Context, string, string, string) (*notifications.EscalationPlan, error)
+	CreateDelivery(context.Context, notifications.DeliveryRecord) error
+	ListIncidentDeliveries(context.Context, string, string) ([]notifications.DeliveryRecord, error)
+	AdvanceStepOnce(context.Context, string, string, int, int, string) error
+	SuppressEscalation(context.Context, string, string, string) error
 }
 
 type escalationHandler struct {
-	repo      escalationRepository
-	scheduler scheduleClient
-	senders   notifications.SenderRegistry
-	now       func() time.Time
+	repo             escalationRepository
+	scheduler        scheduleClient
+	senders          notifications.SenderRegistry
+	now              func() time.Time
+	transitionLookup func(notifications.NotificationEvent) string
 }
 
 func newEscalationHandler(repo escalationRepository, scheduler scheduleClient) *escalationHandler {
@@ -241,6 +248,15 @@ func (h *escalationHandler) handleIncidentDown(ctx context.Context, event notifi
 		Status:       escalation.EscalationStatusActive,
 		CreatedAt:    now,
 		UpdatedAt:    now,
+	}
+	transitionID := event.IncidentID
+	if h.transitionLookup != nil {
+		transitionID = h.transitionLookup(event)
+	}
+	if transitionID != "" {
+		if err := h.persistEscalationPlanAndDeliveries(ctx, transitionID, event, *policy, selectedPath, path, 1); err != nil {
+			log.Printf("could not persist delivery plan: %v", err)
+		}
 	}
 	if err := h.scheduleNextIfNeeded(ctx, &state, path); err != nil {
 		return err
