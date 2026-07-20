@@ -21,4 +21,5 @@ use (
 	./shared/resultstatus
 	./shared/rules
 	./tools/admin-bootstrap
+	./tools/admin-bootstrap/legacy-cleanup
 )

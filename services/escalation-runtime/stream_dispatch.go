@@ -98,7 +98,11 @@ func (d *streamDispatcher) dispatchOutbox(ctx context.Context, outbox *dynamodbr
 	if _, err := d.queue.SendMessage(ctx, &sharedaws.SQSSendMessageInput{QueueUrl: sharedaws.String(d.queueURL), MessageBody: sharedaws.String(string(body))}); err != nil {
 		return err
 	}
-	return d.repo.AcknowledgeDispatch(ctx, outbox.TenantID, outbox.EventID)
+	if err := d.repo.AcknowledgeDispatch(ctx, outbox.TenantID, outbox.EventID); err != nil {
+		return err
+	}
+	logDeliveryDispatched(outbox.TenantID, outbox.EventID, 1)
+	return nil
 }
 
 type pendingDispatchRepository interface {
