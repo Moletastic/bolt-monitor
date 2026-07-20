@@ -4,6 +4,7 @@ import { AppShell } from '@/components/app-shell'
 import { EmptyState } from '@/components/empty-state'
 import { FocusOnMount } from '@/components/focus-on-mount'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Feedback } from '@/components/ui/feedback'
 import { ApiError, listEscalationPolicies } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 
@@ -25,9 +26,9 @@ export default async function PoliciesPage({
   return (
     <AppShell currentPath="/policies">
       <div className="grid gap-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Notification routes</h1>
+            <h1 className="dashboard-display">Notification routes</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Order the channels that fire when an incident opens. Each step waits for the previous
               one.
@@ -42,12 +43,7 @@ export default async function PoliciesPage({
         </div>
         {query.deleted ? (
           <FocusOnMount active>
-            <p
-              className="rounded-md border border-status-up/30 bg-status-up/10 px-3 py-2 text-sm text-status-up"
-              role="status"
-            >
-              Notification route permanently deleted.
-            </p>
+            <Feedback tone="success">Notification route permanently deleted.</Feedback>
           </FocusOnMount>
         ) : null}
         {loadError ? (

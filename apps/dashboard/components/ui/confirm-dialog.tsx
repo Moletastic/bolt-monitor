@@ -29,7 +29,7 @@ export function ConfirmDialog({
       <AlertDialog.Trigger asChild>{trigger}</AlertDialog.Trigger>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 grid w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-surface p-6 shadow-lg focus:outline-none">
+        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 grid w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-surface-bright bg-surface p-6 shadow-panel focus:outline-none">
           <AlertDialog.Title className="text-lg font-semibold text-foreground">
             {title}
           </AlertDialog.Title>

@@ -134,7 +134,7 @@ export function ServiceOverviewCard({ service }: { service: Service }) {
               >
                 <TechIcon category={service.serviceCategory} />
               </span>
-              <p className="truncate text-lg font-semibold text-foreground">{service.name}</p>
+              <p className="truncate text-title-sm text-foreground">{service.name}</p>
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
               <StatusChip status={service.rollupStatus ?? service.lifecycleState} />
@@ -171,19 +171,19 @@ export function ServiceOverviewCard({ service }: { service: Service }) {
           <dl className="grid grid-cols-3 gap-3 border-y border-border/80 py-3 text-sm">
             <div>
               <dt className="text-muted-foreground">Avg latency</dt>
-              <dd className="mt-1 font-mono font-semibold text-foreground">
+              <dd className="mt-1 font-mono text-data-md text-foreground">
                 {formatMetricDuration(metrics?.avgLatencyMs)}
               </dd>
             </div>
             <div className="text-center">
               <dt className="text-muted-foreground">Agg. P99</dt>
-              <dd className="mt-1 font-mono font-semibold text-foreground">
+              <dd className="mt-1 font-mono text-data-md text-foreground">
                 {formatMetricDuration(metrics?.p99LatencyMs)}
               </dd>
             </div>
             <div className="text-right">
               <dt className="text-muted-foreground">Recent uptime</dt>
-              <dd className="mt-1 font-mono font-semibold text-foreground">
+              <dd className="mt-1 font-mono text-data-md text-foreground">
                 {formatRecentUptime(metrics?.recentUptimePct)}
               </dd>
             </div>

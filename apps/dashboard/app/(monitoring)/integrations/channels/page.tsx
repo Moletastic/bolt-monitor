@@ -6,6 +6,7 @@ import { ChannelUsageScope, buildChannelUsageMap } from '@/components/channel-us
 import { EmptyState } from '@/components/empty-state'
 import { FocusOnMount } from '@/components/focus-on-mount'
 import { Card, CardContent } from '@/components/ui/card'
+import { Feedback } from '@/components/ui/feedback'
 import {
   Table,
   TableBody,
@@ -32,9 +33,9 @@ export default async function ChannelsPage({
   return (
     <AppShell currentPath="/integrations/channels">
       <div className="grid gap-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Notification channels</h1>
+            <h1 className="dashboard-display">Notification channels</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Reusable destinations for alerts. Configure once, share across routes.
             </p>
@@ -49,12 +50,7 @@ export default async function ChannelsPage({
         </div>
         {query.deleted ? (
           <FocusOnMount active>
-            <p
-              className="rounded-md border border-status-up/30 bg-status-up/10 px-3 py-2 text-sm text-status-up"
-              role="status"
-            >
-              Notification channel permanently deleted.
-            </p>
+            <Feedback tone="success">Notification channel permanently deleted.</Feedback>
           </FocusOnMount>
         ) : null}
         {channels.length === 0 ? (
