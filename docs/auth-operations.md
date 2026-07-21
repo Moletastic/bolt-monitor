@@ -9,19 +9,22 @@ recovery endpoint. The authoritative application record is `AuthTable`, not
 
 - A completed deployment with an explicit validated target. Follow
   [stage-resource-lifecycle.md](./stage-resource-lifecycle.md); `staging` is
-  persistent only when explicitly approved, and a unique smoke or developer
-  stage must be explicitly ephemeral.
-- AWS credentials for the declared account and region. Deployment wrappers
-  require `SST_STAGE`, `SST_TARGET_CONFIG`, and a target-bound
-  `SST_TARGET_CONFIRMATION`; persistent protection changes or retirement also
-  require `SST_DESTRUCTIVE_CONFIRMATION`.
-- The non-secret deployment outputs: `operatorUserPoolId`, `authTableName`,
-  and, for key rotation, `authEncryptionKeyParameterName`. Do not put values
-  from Cognito responses, dashboard cookies, or key material in shell history,
-  tickets, source control, or deployment configuration.
-- For dashboard use, the canonical `DASHBOARD_ORIGIN` and the deployed
-  dashboard configuration. For direct API use, the direct-operator Cognito
-  client ID and region in an ignored Bruno local environment.
+  persistent only when explicitly approved, and a unique developer stage must
+  be explicitly ephemeral.
+- AWS credentials for the declared account and region. The orchestrator binds
+  `AWS_PROFILE` and `AWS_REGION` from the selected target file and verifies the
+  effective STS account and region before mutation. Persistent protection
+  changes or retirement additionally require `DESTROY=yes` as a separate
+  destructive intent.
+- The non-secret deployment outputs are read from `infra/.sst/outputs.json`
+  by the orchestrator. Operators do not copy pool or table identifiers into
+  command arguments. Do not put values from Cognito responses, dashboard
+  cookies, or key material in shell history, tickets, source control, or
+  deployment configuration.
+- For dashboard use, the canonical `DASHBOARD_ORIGIN` declared in the target
+  file and the deployed dashboard configuration. For direct API use, the
+  direct-operator Cognito client ID and region in an ignored Bruno local
+  environment.
 
 The user pool uses Cognito Essentials and Cognito default email delivery. It
 does not use self-registration, a managed-login domain, Amplify, custom DNS,
@@ -36,20 +39,20 @@ configuration.
 ## Initial And Later Invitations
 
 Create the first administrator only after the deployed target and outputs are
-verified. The command is idempotent: it discovers one normalized email,
-creates or reconciles exactly one Cognito identity and complete membership,
-then sends an invitation only if activation is still needed. It preserves an
+verified. The orchestrator resolves `operatorUserPoolId` and `authTableName`
+from the selected target's SST output before invoking the existing
+idempotent bootstrap tool, so operators supply only an email address:
+
+```sh
+make invite-admin EMAIL=operator@example.com
+```
+
+The command is idempotent: it discovers one normalized email, creates or
+reconciles exactly one Cognito identity and complete membership, then sends
+an invitation only if activation is still needed. It preserves an
 established password, immutable identity fields, and a non-decreasing
 `AuthValidAfter` value. It stops on ambiguous email or conflicting membership
 state rather than overwriting it.
-
-```sh
-SST_STAGE=<stage> \
-EMAIL=operator@example.com \
-USER_POOL_ID=<operatorUserPoolId> \
-AUTH_TABLE_NAME=<authTableName> \
-make bootstrap-admin
-```
 
 Run the same command with a later operator email for a subsequent
 AWS-admin-controlled invitation. There is no self-service sign-up and no
@@ -200,10 +203,10 @@ creates a new 256-bit AES key generation only in process memory and the
 non-printing AWS CLI boundary:
 
 ```sh
-SST_STAGE=<stage> SST_TARGET_CONFIG=<local-target-config> make rotate-auth-key
+make rotate-auth-key
 ```
 
-The helper writes the AWS-managed `SecureString` at
+The orchestrator writes the AWS-managed `SecureString` at
 `/<service>/<stage>/auth/aes-256-gcm` and does not print or persist the key
 value. There is exactly one active generation: no previous-key fallback and no
 online re-encryption. Therefore all dashboard sessions and authentication

@@ -1,35 +1,29 @@
 .PHONY: \
+	setup \
 	test-go test-go-all test-dashboard \
 	format-go-check vet-go ci-go \
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra test-infra \
-	check-bruno check-api-contract test-api-contract check-sst-target test-sst-target \
-	check-auth-routes check-auth-cutover-prerequisites check-pnpm-install-trust check-pre-cutover-gate smoke-staging \
+	check-bruno check-api-contract test-api-contract check-auth-routes check-auth-cutover-prerequisites check-pnpm-install-trust check-pre-cutover-gate \
 	format-dashboard format-dashboard-check format-dashboard-files format-infra format-infra-check format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
-	deploy-infra deploy-infra-print preview-infra remove-infra dev-infra \
-	bootstrap bootstrap-admin rotate-auth-key clean
+	infra-status deploy-infra dev-infra remove-infra invite-admin rotate-auth-key clean
 
 GO_SERVICES := api-health check-runtime escalation-runtime monitor-api
 GO_TOOLS := admin-bootstrap
 GO_SHARED := api/response auth aws checkexecution dynamodb dynamodbrecord dynamodbschema errors escalation monitorconfig notifications resultstatus rules
 GO_MODULE_DIRS := $(addprefix ./services/,$(GO_SERVICES)) $(addprefix ./tools/,$(GO_TOOLS)) $(addprefix ./shared/,$(GO_SHARED))
 
-bootstrap:
+OPS_NODE_FLAGS := --experimental-strip-types --no-warnings
+OPS_SCRIPT := infra/scripts/ops.mjs
+
+setup:
+	pnpm --dir infra install --frozen-lockfile
+	pnpm --dir apps/dashboard install --frozen-lockfile
 	go work sync
 
-bootstrap-admin:
-	@if [ -z "$(EMAIL)" ] || [ -z "$(USER_POOL_ID)" ] || [ -z "$(AUTH_TABLE_NAME)" ]; then \
-		printf '%s\n' 'EMAIL, USER_POOL_ID, and AUTH_TABLE_NAME are required'; \
-		exit 1; \
-	fi
-	go run ./tools/admin-bootstrap --email "$(EMAIL)" --user-pool-id "$(USER_POOL_ID)" --auth-table "$(AUTH_TABLE_NAME)"
-
-rotate-auth-key:
-	node --experimental-strip-types --no-warnings scripts/rotate-auth-key.mjs
-
-test-go: bootstrap
+test-go: setup
 	$(foreach module,$(GO_MODULE_DIRS),go test $(module);)
 
 test-go-all: test-go
@@ -41,7 +35,7 @@ format-go-check:
 		exit 1; \
 	fi
 
-vet-go: bootstrap
+vet-go: setup
 	$(foreach module,$(GO_MODULE_DIRS),go vet $(module);)
 
 ci-go: format-go-check vet-go test-go-all
@@ -49,7 +43,7 @@ ci-go: format-go-check vet-go test-go-all
 test-dashboard:
 	cd apps/dashboard && pnpm run test
 
-lint-go: bootstrap
+lint-go: setup
 	$(foreach svc,$(GO_SERVICES),golangci-lint run ./services/$(svc);)
 	$(foreach lib,$(GO_SHARED),golangci-lint run ./shared/$(lib);)
 
@@ -69,7 +63,7 @@ check-infra:
 
 test-infra:
 	cd infra && pnpm run test
-	node --test scripts/sst-lifecycle.test.mjs scripts/sst-cleanup.test.mjs scripts/check-auth-cutover-prerequisites.test.mjs scripts/prepare-staging-smoke.test.mjs scripts/staging-smoke.test.mjs scripts/cognito-access-token.test.mjs
+	node --test scripts/check-auth-cutover-prerequisites.test.mjs scripts/check-pnpm-install-trust.test.mjs
 
 check-bruno:
 	node scripts/check-bruno.mjs
@@ -85,23 +79,14 @@ check-pnpm-install-trust:
 	node scripts/check-pnpm-install-trust.mjs
 
 # Local release gates required before protected-route cutover. The dashboard build runs here once.
-check-pre-cutover-gate: build-dashboard check-bruno check-api-contract check-sst-target check-auth-cutover-prerequisites
-
-smoke-staging:
-	node --experimental-strip-types --no-warnings scripts/staging-smoke.mjs
+check-pre-cutover-gate: build-dashboard check-bruno check-api-contract check-auth-cutover-prerequisites
 
 test-api-contract:
-	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/check-openapi-auth.test.mjs scripts/rotate-auth-key.test.mjs
+	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/check-openapi-auth.test.mjs
 
 check-api-contract: test-api-contract
 	node scripts/check-api-contract.mjs
 	node scripts/check-openapi-auth.mjs
-
-test-sst-target:
-	node --test scripts/check-sst-target.test.mjs
-
-check-sst-target: test-sst-target
-	node scripts/check-sst-target.mjs
 
 format-dashboard:
 	cd apps/dashboard && pnpm run format
@@ -146,7 +131,7 @@ commitlint:
 		pnpm exec commitlint --edit "$(COMMIT_MSG_FILE)"; \
 	fi
 
-build-go: bootstrap
+build-go: setup
 	GOOS=linux GOARCH=arm64 go build -o services/api-health/handler ./services/api-health
 	GOOS=linux GOARCH=arm64 go build -o services/check-runtime/handler ./services/check-runtime
 	GOOS=linux GOARCH=arm64 go build -o services/escalation-runtime/handler ./services/escalation-runtime
@@ -161,20 +146,27 @@ build-dashboard:
 
 build-all: build-go build-dashboard
 
+infra-status:
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) status
+
 deploy-infra:
-	SST_LIFECYCLE_ACTION=deploy node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
-
-deploy-infra-print:
-	SST_LIFECYCLE_ACTION=deploy node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
-
-preview-infra:
-	SST_LIFECYCLE_ACTION=preview node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
-
-remove-infra:
-	SST_LIFECYCLE_ACTION=remove node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) deploy
 
 dev-infra:
-	SST_LIFECYCLE_ACTION=dev node --experimental-strip-types --no-warnings scripts/sst-lifecycle.mjs
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) dev
+
+remove-infra:
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) remove DESTROY=yes
+
+invite-admin:
+	@if [ -z "$(EMAIL)" ]; then \
+		printf '%s\n' 'EMAIL is required; usage: make invite-admin EMAIL=operator@example.com'; \
+		exit 1; \
+	fi
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) invite-admin EMAIL=$(EMAIL)
+
+rotate-auth-key:
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) rotate-auth-key
 
 clean:
 	rm -f services/api-health/function.zip services/api-health/handler

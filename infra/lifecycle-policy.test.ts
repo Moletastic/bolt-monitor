@@ -4,11 +4,11 @@ import { lifecyclePolicy, type DeploymentTarget } from './deployment-target.ts'
 
 const base: Omit<DeploymentTarget, 'lifecycle'> = {
   stage: 'staging',
+  profile: 'bolt-monitor',
   owner: 'platform',
   service: 'bolt-monitor',
   accountId: '123456789012',
   region: 'us-east-1',
-  credentialSource: 'AWS profile bolt-monitor',
   dashboardOrigin: 'https://staging.example.com',
 }
 

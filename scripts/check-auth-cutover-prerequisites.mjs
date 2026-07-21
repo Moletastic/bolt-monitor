@@ -13,9 +13,10 @@ function requireMatch(value, pattern, message) {
 export function checkAuthCutoverPrerequisites() {
   const target = source('infra/deployment-target.ts');
   const stack = source('infra/stacks/bootstrap.ts');
-  const cleanup = source('scripts/sst-cleanup.mjs');
+  const orchestrator = source('infra/scripts/ops.mjs');
+  const cleanup = source('infra/scripts/cleanup.mjs');
 
-  requireMatch(target, /validateDeploymentTarget\(target, approvedPersistentNames\)/, 'stage classification is not validated');
+  requireMatch(target, /validateDeploymentTarget\(target\)/, 'stage classification is not validated');
   requireMatch(
     stack,
     /new sst\.aws\.Dynamo\(\s*'AppTable',[\s\S]*?deletionProtection: policy\.retainDurableResources,[\s\S]*?durableOptions/,
@@ -25,6 +26,7 @@ export function checkAuthCutoverPrerequisites() {
   requireMatch(stack, /logicalName: 'AuthEncryptionKey', name: authEncryptionKey\.name/, 'auth key is absent from retained inventory');
   requireMatch(cleanup, /target\.lifecycle !== 'ephemeral' \|\| target\.disposable !== true/, 'ephemeral cleanup is not lifecycle guarded');
   requireMatch(cleanup, /ssm', 'delete-parameter'/, 'ephemeral auth key cleanup is absent');
+  requireMatch(orchestrator, /DESTROY=yes/, 'persistent removal destructive intent gate is absent');
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {

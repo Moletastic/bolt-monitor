@@ -137,14 +137,19 @@ Production-readiness caveats:
 
 Bolt Monitor targets Node.js 22, pnpm 10, Go 1.26+, and SST 4.14.
 
-1. Install dependencies with pnpm from each workspace root.
+1. Install AWS CLI tooling and configure one named profile for the target AWS account.
 
    ```bash
-   cd infra && pnpm install --frozen-lockfile
-   cd ../apps/dashboard && pnpm install --frozen-lockfile
+   aws configure --profile bolt-monitor
    ```
 
-2. Run the local release gates.
+2. Install repository dependencies and synchronize the Go workspace.
+
+   ```bash
+   make setup
+   ```
+
+3. Run the local release gates.
 
    ```bash
    make test-go-all
@@ -153,46 +158,31 @@ Bolt Monitor targets Node.js 22, pnpm 10, Go 1.26+, and SST 4.14.
    make check-bruno check-api-contract
    ```
 
-3. Configure an explicit deployment target outside source control. Use `infra/deployment-target.example.json` as a template. Choose a developer-owned ephemeral stage for local work and reserve approved persistent stages for deliberate shared validation.
-
-   ```json
-   {
-     "targets": [
-       {
-         "stage": "dev-jane-20260715",
-         "lifecycle": "ephemeral",
-         "owner": "Your Team",
-         "service": "bolt-monitor",
-         "accountId": "123456789012",
-         "region": "us-east-1",
-         "credentialSource": "AWS profile your-team",
-         "dashboardOrigin": "http://localhost:3000",
-         "disposable": true,
-         "expiresAt": "2026-08-01T00:00:00Z"
-       }
-     ]
-   }
-   ```
-
-4. Start SST local development through the lifecycle wrapper. The wrapper is the only supported entry point for `sst dev`, `sst deploy`, and `sst remove`.
+4. Create the staging target file from the committed template. The target file is ignored by Git and is the only place AWS identity, region, owner, lifecycle class, and dashboard origin live.
 
    ```bash
-   export SST_TARGET_CONFIG="$HOME/.config/bolt-monitor/deployment-target.json"
-   export SST_STAGE=dev-jane-20260715
-   export AWS_PROFILE=bolt-monitor
-   export SST_LIFECYCLE_ACTION=dev
-   node scripts/sst-lifecycle.mjs
+   cp infra/targets/example.target.json infra/targets/staging.target.json
    ```
 
-   The wrapper refuses production stage names, mismatched account or region, incomplete target configuration, and missing destructive confirmation for persistent removal.
+   Edit `infra/targets/staging.target.json` and replace the example AWS account, region, profile, dashboard origin, and owner with the values for the staging installation. `dashboardOrigin` must be a canonical HTTPS origin without a path. For a generated CloudFront URL, deploy once with a placeholder dashboard origin or an existing HTTPS origin, copy the deployed `dashboardUrl` from `infra/.sst/outputs.json` into the target file, and redeploy so dashboard authentication uses the correct canonical origin.
 
-5. Bootstrap the first administrator against the deployed user pool. The bootstrap tool records an `ADMIN` membership in `AuthTable` and writes an invitation email through Cognito.
+5. Deploy the staging infrastructure.
 
    ```bash
-   make bootstrap-admin EMAIL=operator@example.com USER_POOL_ID=<id> AUTH_TABLE_NAME=<name>
+   make deploy-infra
    ```
 
-6. Run the dashboard against the deployed API.
+   The orchestrator binds `AWS_PROFILE` and `AWS_REGION` from the target file, verifies the effective STS account and region, runs SST, and verifies outputs, persistent protections, and public health.
+
+6. Invite the first administrator. The orchestrator resolves deployed Cognito and `AuthTable` identifiers from SST output automatically.
+
+   ```bash
+   make invite-admin EMAIL=operator@example.com
+   ```
+
+   The operator opens the invitation email, sets a permanent password through the dashboard activation flow, and optionally enrolls a software-token MFA secret.
+
+7. Run the dashboard against the deployed API.
 
    ```bash
    export NEXT_PUBLIC_MONITOR_API_BASE_URL=<api-url>
@@ -200,7 +190,7 @@ Bolt Monitor targets Node.js 22, pnpm 10, Go 1.26+, and SST 4.14.
    pnpm run dev
    ```
 
-7. Open local API documentation.
+8. Open local API documentation.
 
    ```bash
    cd openapi
@@ -216,28 +206,29 @@ For staging validation and operational mechanics, see [`docs/auth-operations.md`
 
 | Intent | Command |
 | --- | --- |
-| Install infra dependencies | `cd infra && pnpm install --frozen-lockfile` |
-| Install dashboard dependencies | `cd apps/dashboard && pnpm install --frozen-lockfile` |
+| Install repository dependencies and Go workspace | `make setup` |
 | Test Go services and shared modules | `make test-go-all` |
 | Lint, typecheck, test, and build dashboard | `make lint-dashboard check-dashboard test-dashboard build-dashboard` |
 | Typecheck infrastructure | `make check-infra test-infra` |
 | Validate API contract drift | `make check-bruno check-api-contract` |
 | Run the pre-cutover gate | `make check-pre-cutover-gate` |
-| Start local SST development | `make dev-infra` with explicit target environment |
-| Deploy infrastructure | `make deploy-infra` with explicit target environment |
-| Remove infrastructure | `make remove-infra` with explicit target environment |
-| Bootstrap or invite an administrator | `make bootstrap-admin EMAIL=<email> USER_POOL_ID=<id> AUTH_TABLE_NAME=<name>` |
+| Inspect a configured target | `make infra-status` |
+| Start local SST development | `make dev-infra` with explicit `TARGET=<name>` |
+| Deploy infrastructure | `make deploy-infra` with optional `TARGET=<name>` |
+| Remove infrastructure | `make remove-infra` (ephemeral) or `TARGET=<name> make remove-infra DESTROY=yes` (persistent) |
+| Invite an administrator | `make invite-admin EMAIL=<email>` |
 | Rotate the dashboard auth key | `make rotate-auth-key` |
-| Run the local staging smoke | `make smoke-staging` after a deliberate deploy |
 | Run local OpenAPI documentation | `cd openapi && npm run docs` |
 
-The lifecycle wrapper handles target validation, confirmation, destructive intent, and key rotation; do not invoke `sst deploy` or `sst remove` directly.
+The Make-driven orchestrator under `infra/scripts/ops.mjs` is the only supported entrypoint for `sst dev`, `sst deploy`, and `sst remove`. Do not invoke `sst deploy` or `sst remove` directly.
 
 ## 📁 Repository layout
 
 | Path | Purpose |
 | --- | --- |
 | `infra/` | SST app, lifecycle policy, and target configuration |
+| `infra/targets/` | Per-target `*.target.json` files (one ignored file per target) |
+| `infra/scripts/` | Internal infrastructure orchestrator and ephemeral cleanup helpers |
 | `infra/stacks/bootstrap.ts` | API Gateway, dashboard, DynamoDB, queues, schedule, runtime wiring |
 | `services/api-health` | Go Lambda behind `GET /api/health` |
 | `services/monitor-api` | Go Lambda for monitor, incident, audit, admin, and authentication flows |
@@ -249,7 +240,7 @@ The lifecycle wrapper handles target validation, confirmation, destructive inten
 | `openspec/` | Spec-driven change workflow and merged capability specs |
 | `.bruno/collections/` | Bruno API collection with domain-grouped requests and direct Cognito helpers |
 | `docs/` | Lifecycle, authentication, and persistent-resource operations runbooks |
-| `scripts/` | Repository-owned validators, lifecycle wrapper, and operator helpers |
+| `scripts/` | Repository-owned validators and operator helpers |
 
 ## 📚 Documentation boundaries
 
