@@ -43,9 +43,19 @@ return builder.Build()(monitor)
 - `make build-dashboard` — Next.js production build
 
 ### Infra
+- `make setup` — install both locked JavaScript workspaces and synchronize the Go workspace
 - `make check-infra` — TypeScript type check
 - `make format-infra` — format with Prettier
-- `make deploy-infra` — SST deploy to staging (uses `AWS_PROFILE=bolt-monitor`)
+- `make deploy-infra` — SST deploy to the selected target (default `staging.target.json`)
+- `make dev-infra` — SST local development against the selected target
+- `make remove-infra` — SST removal of the selected target (persistent requires `DESTROY=yes` and is the only way to remove a persistent stage)
+- `make infra-status` — non-mutating summary of the selected target and effective AWS identity
+- `make invite-admin EMAIL=<email>` — bootstrap or re-invite an administrator using deployed SST output
+- `make rotate-auth-key` — write a new AES `SecureString` parameter for the selected target
+
+`infra/scripts/ops.mjs` is the only supported entrypoint for SST mutation. The orchestrator binds `AWS_PROFILE` and `AWS_REGION` from `infra/targets/<name>.target.json` and verifies the effective STS account and region before mutation. Persistent removals require `DESTROY=yes` as a separate destructive intent.
+
+Deployment targets live one file per target at `infra/targets/<name>.target.json` (ignored by Git). The `TARGET=<name>` Make variable or `TARGET` environment variable selects an alternate target. Do not invoke `sst dev`, `sst deploy`, or `sst remove` directly.
 
 ### JavaScript Package Manager
 - `infra/` and `apps/dashboard` use `pnpm` with `pnpm-lock.yaml` committed and `packageManager` pinned per root.
@@ -113,9 +123,9 @@ Optional fields are omitted from the JSON when not applicable; they are never em
 Adding a new endpoint? Return one of the three constructors above and the parser on the dashboard side does the rest. Handlers route every error through `errors.Respond` (from `bolt-monitor/shared/errors`); the `Code` constants and the registry there are the single source of truth for `reason.code` values and their HTTP status mapping.
 
 ## Gotchas
-- `infra/package.json` pins local SST dev to `sst dev --mode=mono`; keep that unless you intentionally change the TTY workaround.
-- `infra/sst.config.ts` hard-codes AWS profile `bolt-monitor`. AWS commands from SST will use that profile unless the config is changed.
-- Use explicit SST stage `staging` for normal local dev and deploy workflows to avoid recreating stray stage-specific resources.
+- `infra/scripts/ops.mjs` pins local SST dev to `sst dev --mode=mono`; keep that unless you intentionally change the TTY workaround.
+- AWS identity for infrastructure commands comes from the selected `infra/targets/<name>.target.json`; the orchestrator binds `AWS_PROFILE` and `AWS_REGION` from that file.
+- Use the default `staging.target.json` for normal staging workflows; pick a developer-owned `TARGET=<name>` target for isolated work.
 - `services/monitor-api` requires `TABLE_NAME`; the SST stack injects it for the Lambda.
 - The monitor API currently uses a single built-in tenant ID, `DEFAULT`.
 - Route steps reference channels by `channelId`; configure channels under Integrations -> Channels.

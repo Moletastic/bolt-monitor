@@ -332,11 +332,17 @@ export function createBootstrapStack(target: DeploymentTarget) {
     {
       runtime: 'go',
       handler: '../services/escalation-runtime',
-      link: [table, notificationQueue],
+      link: [table, notificationQueue, notificationQueueDLQ],
       environment: {
         TABLE_NAME: table.name,
         NOTIFICATION_QUEUE_URL: notificationQueue.url,
       },
+      permissions: [
+        {
+          actions: ['sqs:SendMessage'],
+          resources: [notificationQueue.arn, notificationQueueDLQ.arn],
+        },
+      ],
     },
     {
       filters: [
@@ -575,7 +581,7 @@ export function createBootstrapStack(target: DeploymentTarget) {
       owner: target.owner,
       accountId: target.accountId,
       region: target.region,
-      credentialSource: target.credentialSource,
+      profile: target.profile,
       dashboardOrigin: target.dashboardOrigin,
     },
     retainedResourceInventory: policy.retainDurableResources

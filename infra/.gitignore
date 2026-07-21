@@ -4,4 +4,9 @@ sst-env.d.ts
 
 # Local environment overrides
 *.local.yml
-deployment-target.local.json
+
+# Local deployment target files (one per target).
+# Committed examples are excluded from the ignore with the ! exception below.
+*.target.json
+!example.target.json
+!example.ephemeral.json
