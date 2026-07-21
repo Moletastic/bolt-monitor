@@ -1,8 +1,4 @@
-## Purpose
-
-Define invite-only operator identities, membership authority, and authentication lifecycle flows.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Initial administrator bootstrap is credentialed and idempotent
 The system SHALL provide an operator-run `make invite-admin EMAIL=<email>` command that uses the selected deployment target, its AWS credentials, and deployed SST output to resolve the Cognito user pool and `AuthTable` directly, not a public application endpoint. Repeated execution for the same email SHALL converge one Cognito identity and one `ACTIVE` versioned `DEFAULT` membership with role `ADMIN` without duplicating users, resetting an established password, replacing immutable membership identity, lowering `AuthValidAfter`, or weakening an existing account.

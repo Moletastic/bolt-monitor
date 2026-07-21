@@ -1,8 +1,4 @@
-## Purpose
-
-Define the SST application scaffold, baseline stack, and documented developer workflow for the project.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Developer workflow is documented for the SST bootstrap
 The repository SHALL document one root `make setup` command that installs locked infrastructure and dashboard dependencies and synchronizes the Go workspace. It SHALL document `make deploy-infra` as the ordinary deployment command, `make infra-status` as the non-mutating target inspection command, `make invite-admin EMAIL=<email>` as the administrator bootstrap command, and explicit target selection only for advanced alternate targets. Every credentialed infrastructure workflow SHALL resolve one configured target file, show the effective non-secret AWS account, region, profile, owner, stage, and lifecycle class before mutation, and fail rather than infer a class or silently use an unconfigured stage.
