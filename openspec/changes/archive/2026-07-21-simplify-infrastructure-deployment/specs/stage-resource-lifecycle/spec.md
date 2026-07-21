@@ -1,8 +1,4 @@
-## Purpose
-
-Define the stage classification, lifecycle protection, removal verification, and credentialed mutation contract for every deployable SST stage.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Every deployable stage has an explicit lifecycle class
 The infrastructure system SHALL classify every deployable SST stage as exactly one of `persistent` or `ephemeral` from one validated target file at `infra/targets/<name>.target.json` before evaluating or mutating AWS resources. The target file SHALL declare the stage, AWS profile, expected AWS account, expected AWS region, owner, service, lifecycle class, dashboard origin, and required class-specific configuration. The default ordinary target SHALL be `infra/targets/staging.target.json`; `TARGET=<name>` SHALL select another target file. The system SHALL NOT infer lifecycle class, silently fall back to an unconfigured stage, or accept missing or contradictory target configuration.
