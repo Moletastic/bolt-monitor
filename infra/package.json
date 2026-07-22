@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "node --test deployment-target.test.ts lifecycle-policy.test.ts auth-infrastructure.test.ts execution-safety.test.ts scripts/cleanup.test.mjs scripts/ops.test.mjs",
+    "test": "node --test deployment-target.test.ts lifecycle-policy.test.ts auth-infrastructure.test.ts budget-infrastructure.test.ts execution-safety.test.ts scripts/cleanup.test.mjs scripts/ops.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
