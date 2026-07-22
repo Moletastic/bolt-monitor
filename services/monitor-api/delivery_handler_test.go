@@ -183,7 +183,7 @@ func makeDeliveryForTenant(incidentID, deliveryID string, state notifications.De
 
 // newAuthorizedHandler constructs a monitor handler bypassing authorization for
 // focused delivery tests; the production wiring remains unchanged.
-func newAuthorizedHandler(repo monitorRepository) monitorHandler {
+func newAuthorizedHandler(repo *fakeMonitorRepository) monitorHandler {
 	handler := newMonitorHandler(repo)
 	handler.tenantID = defaultTenantID
 	handler.now = func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -16,10 +17,9 @@ import (
 
 func main() {
 	ctx := context.Background()
-
-	tableName := os.Getenv("TABLE_NAME")
-	if tableName == "" {
-		log.Fatalf("TABLE_NAME is required")
+	config, err := newEscalationRuntimeConfig(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	dynamoClient, err := aws.NewDynamoDBAPI(ctx)
@@ -35,11 +35,7 @@ func main() {
 		log.Fatalf("create scheduler client: %v", err)
 	}
 
-	repo := newDynamoEscalationRepository(dynamoClient, tableName)
-	scheduler := buildScheduler(schedulerClient, sqsClient)
-	adapter := newLegacyScheduleAdapter(sqsClient, os.Getenv("NOTIFICATION_QUEUE_URL"))
-	handler := newEscalationHandler(repo, scheduler)
-	dispatcher := newStreamDispatcher(repo, sqsClient, os.Getenv("NOTIFICATION_QUEUE_URL"))
+	handler, adapter, dispatcher := newProductionEscalationRuntime(dynamoClient, sqsClient, schedulerClient, config)
 
 	lambda.Start(func(ctx context.Context, payload json.RawMessage) (any, error) {
 		var sqsEvent events.SQSEvent
@@ -63,11 +59,20 @@ func main() {
 	})
 }
 
-func buildScheduler(schedulerClient sharedaws.SchedulerAPI, sqsClient sharedaws.SQSAPI) scheduleClient {
-	group := os.Getenv("SCHEDULE_GROUP_NAME")
-	role := os.Getenv("SCHEDULE_EXECUTION_ROLE_ARN")
-	queue := os.Getenv("NOTIFICATION_QUEUE_ARN")
-	dlq := os.Getenv("NOTIFICATION_DLQ_ARN")
+func newProductionEscalationRuntime(dynamoClient sharedaws.DynamoDBAPI, sqsClient sharedaws.SQSAPI, schedulerClient sharedaws.SchedulerAPI, config escalationRuntimeConfig) (*escalationHandler, *legacyScheduleAdapter, *streamDispatcher) {
+	repo := newDynamoEscalationRepository(dynamoClient, config.TableName)
+	handler := newEscalationHandlerWithDependencies(repo, buildScheduler(schedulerClient, config), escalationHandlerDependencies{
+		senders: notifications.NewSenderRegistry(),
+		now:     time.Now,
+	})
+	return handler, newLegacyScheduleAdapter(sqsClient, config.NotificationQueueURL), newStreamDispatcher(repo, sqsClient, config.NotificationQueueURL)
+}
+
+func buildScheduler(schedulerClient sharedaws.SchedulerAPI, config escalationRuntimeConfig) scheduleClient {
+	group := config.ScheduleGroupName
+	role := config.ScheduleExecutionRole
+	queue := config.NotificationQueueARN
+	dlq := config.NotificationDLQARN
 	if group == "" || role == "" || queue == "" {
 		log.Printf("scheduler group/role/queue missing; new schedules disabled")
 		return nil

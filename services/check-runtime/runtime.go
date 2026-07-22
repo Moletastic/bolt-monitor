@@ -19,6 +19,7 @@ import (
 )
 
 type runtimeRepository interface {
+	executionResultPersistence
 	GetSchedulerConfig(context.Context, string) (checkexecution.SchedulerConfig, error)
 	ListMonitors(context.Context, string) ([]monitorconfig.Monitor, error)
 	GetLastExecution(context.Context, string, string, string) (*time.Time, error)
@@ -35,7 +36,6 @@ type runtimeRepository interface {
 	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
 	GetService(context.Context, string, string) (monitorconfig.Service, bool, error)
 	MarkExecutionWorkSkipped(context.Context, checkexecution.ExecutionWork, time.Time, string) error
-	RecordExecutionResult(context.Context, monitorconfig.Monitor, checkexecution.ExecutionWork, checkexecution.ExecutionResult) (string, string, error)
 	GetMonitorStatus(context.Context, string, string, string) (resultstatus.MonitorStatus, bool, error)
 }
 
@@ -48,6 +48,7 @@ type runtimeHandler struct {
 	mode               string
 	now                func() time.Time
 	executor           checkexecution.HTTPExecutor
+	resultCommand      executionResultCommand
 	schedulerDeadline  time.Duration
 }
 
@@ -82,6 +83,24 @@ func isTerminalSQSError(err error) bool {
 const defaultSchedulerDeadline = 50 * time.Second
 
 func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, escalationQueueURL, tenantID, mode string) runtimeHandler {
+	return newRuntimeHandlerWithDependencies(repo, sqsClient, queueURL, escalationQueueURL, tenantID, mode, runtimeHandlerDependencies{
+		now:               time.Now,
+		executor:          outboundhttp.NewExecutor(),
+		resultClock:       systemExecutionResultClock{},
+		resultIDs:         generatedExecutionResultIDs{},
+		schedulerDeadline: defaultSchedulerDeadline,
+	})
+}
+
+type runtimeHandlerDependencies struct {
+	now               func() time.Time
+	executor          checkexecution.HTTPExecutor
+	resultClock       executionResultClock
+	resultIDs         executionResultIDs
+	schedulerDeadline time.Duration
+}
+
+func newRuntimeHandlerWithDependencies(repo runtimeRepository, sqsClient sqsClient, queueURL, escalationQueueURL, tenantID, mode string, dependencies runtimeHandlerDependencies) runtimeHandler {
 	return runtimeHandler{
 		repo:               repo,
 		sqsClient:          sqsClient,
@@ -89,9 +108,10 @@ func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, es
 		escalationQueueURL: escalationQueueURL,
 		tenantID:           tenantID,
 		mode:               strings.ToLower(strings.TrimSpace(mode)),
-		now:                time.Now,
-		executor:           outboundhttp.NewExecutor(),
-		schedulerDeadline:  defaultSchedulerDeadline,
+		now:                dependencies.now,
+		executor:           dependencies.executor,
+		resultCommand:      newExecutionResultCommand(repo, dependencies.resultClock, dependencies.resultIDs),
+		schedulerDeadline:  dependencies.schedulerDeadline,
 	}
 }
 
@@ -261,7 +281,7 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 					FailureCode: string(failureKind),
 					Error:       outboundhttp.SafeMessage(&outboundhttp.Error{Kind: failureKind}),
 				}
-				if _, _, err := commitExecutionResult(ctx, h.repo, monitor, work, result); err != nil {
+				if _, _, err := h.resultCommand.execute(ctx, monitor, work, result); err != nil {
 					return summary, err
 				}
 				summary.Processed++
@@ -274,7 +294,7 @@ func (h runtimeHandler) runWorker(ctx context.Context) (runtimeSummary, error) {
 			continue
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
-		_, _, err = commitExecutionResult(ctx, h.repo, monitor, work, result)
+		_, _, err = h.resultCommand.execute(ctx, monitor, work, result)
 		if err != nil {
 			return summary, err
 		}
@@ -349,20 +369,13 @@ func (h runtimeHandler) handleSQSEvent(ctx context.Context, event events.SQSEven
 			continue
 		}
 		result := checkexecution.ExecuteHTTP(ctx, h.executor, request)
-		_, _, err = h.repo.RecordExecutionResult(ctx, monitor, work, result)
+		_, _, err = h.resultCommand.execute(ctx, monitor, work, result)
 		if err != nil {
 			return summary, err
 		}
 		summary.Processed++
 	}
 	return summary, nil
-}
-
-func commitExecutionResult(ctx context.Context, repo runtimeRepository, monitor monitorconfig.Monitor, work checkexecution.ExecutionWork, result checkexecution.ExecutionResult) (string, string, error) {
-	if !resultIdentityMatchesWork(result, work) {
-		return "", "", checkexecution.Conflict("commit-result", work.RunID)
-	}
-	return repo.RecordExecutionResult(ctx, monitor, work, result)
 }
 
 func resultIdentityMatchesWork(result checkexecution.ExecutionResult, work checkexecution.ExecutionWork) bool {

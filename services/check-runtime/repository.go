@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,7 +11,6 @@ import (
 
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
-	"bolt-monitor/shared/domainvalues"
 	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/dynamodbschema"
 	"bolt-monitor/shared/monitorconfig"
@@ -22,13 +20,18 @@ import (
 type dynamoAPI = sharedaws.DynamoDBAPI
 
 type dynamoRuntimeRepository struct {
-	client    dynamoAPI
-	tableName string
-	now       func() time.Time
+	client            dynamoAPI
+	tableName         string
+	now               func() time.Time
+	workLeaseDuration time.Duration
 }
 
 func newDynamoRuntimeRepository(client dynamoAPI, tableName string) *dynamoRuntimeRepository {
-	return &dynamoRuntimeRepository{client: client, tableName: tableName, now: time.Now}
+	return newDynamoRuntimeRepositoryWithLease(client, tableName, defaultExecutionWorkLeaseDuration)
+}
+
+func newDynamoRuntimeRepositoryWithLease(client dynamoAPI, tableName string, workLeaseDuration time.Duration) *dynamoRuntimeRepository {
+	return &dynamoRuntimeRepository{client: client, tableName: tableName, now: time.Now, workLeaseDuration: workLeaseDuration}
 }
 
 func (r *dynamoRuntimeRepository) GetSchedulerConfig(ctx context.Context, tenantID string) (checkexecution.SchedulerConfig, error) {
@@ -427,14 +430,6 @@ func (r *dynamoRuntimeRepository) ListPendingExecutionWork(ctx context.Context, 
 
 const defaultExecutionWorkLeaseDuration = 60 * time.Second
 
-func executionWorkLeaseDuration() time.Duration {
-	seconds, err := strconv.Atoi(os.Getenv("WORK_LEASE_DURATION_SECONDS"))
-	if err != nil || seconds <= 0 {
-		return defaultExecutionWorkLeaseDuration
-	}
-	return time.Duration(seconds) * time.Second
-}
-
 const (
 	defaultMaxOutboundExecution = 30 * time.Second
 	defaultResultCommitBuffer   = 10 * time.Second
@@ -442,20 +437,20 @@ const (
 	defaultMaxConcurrency       = 5
 )
 
-func executionMaxConcurrency() int {
-	value, err := strconv.Atoi(strings.TrimSpace(os.Getenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY")))
+func executionMaxConcurrency(getenv func(string) string) int {
+	value, err := strconv.Atoi(strings.TrimSpace(getenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY")))
 	if err != nil || value <= 0 {
 		return defaultMaxConcurrency
 	}
 	return value
 }
 
-func executionSafetyConfig() (worker, visibility, lease, maxOutbound, commitBuffer time.Duration, err error) {
-	worker = readDurationSeconds("WORKER_LAMBDA_TIMEOUT_SECONDS", 45*time.Second)
-	visibility = readDurationSeconds("EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", worker+defaultVisibilityMargin)
-	lease = readDurationSeconds("WORK_LEASE_DURATION_SECONDS", defaultExecutionWorkLeaseDuration)
-	maxOutbound = readDurationSeconds("MAX_OUTBOUND_EXECUTION_SECONDS", defaultMaxOutboundExecution)
-	commitBuffer = readDurationSeconds("RESULT_COMMIT_BUFFER_SECONDS", defaultResultCommitBuffer)
+func executionSafetyConfig(getenv func(string) string) (worker, visibility, lease, maxOutbound, commitBuffer time.Duration, err error) {
+	worker = readDurationSeconds(getenv, "WORKER_LAMBDA_TIMEOUT_SECONDS", 45*time.Second)
+	visibility = readDurationSeconds(getenv, "EXECUTION_QUEUE_VISIBILITY_TIMEOUT_SECONDS", worker+defaultVisibilityMargin)
+	lease = readDurationSeconds(getenv, "WORK_LEASE_DURATION_SECONDS", defaultExecutionWorkLeaseDuration)
+	maxOutbound = readDurationSeconds(getenv, "MAX_OUTBOUND_EXECUTION_SECONDS", defaultMaxOutboundExecution)
+	commitBuffer = readDurationSeconds(getenv, "RESULT_COMMIT_BUFFER_SECONDS", defaultResultCommitBuffer)
 	if worker <= maxOutbound+commitBuffer {
 		return 0, 0, 0, 0, 0, fmt.Errorf("WORKER_LAMBDA_TIMEOUT_SECONDS=%s must exceed MAX_OUTBOUND_EXECUTION_SECONDS+RESULT_COMMIT_BUFFER_SECONDS=%s", worker, maxOutbound+commitBuffer)
 	}
@@ -468,8 +463,8 @@ func executionSafetyConfig() (worker, visibility, lease, maxOutbound, commitBuff
 	return worker, visibility, lease, maxOutbound, commitBuffer, nil
 }
 
-func readDurationSeconds(envKey string, fallback time.Duration) time.Duration {
-	seconds, err := strconv.Atoi(strings.TrimSpace(os.Getenv(envKey)))
+func readDurationSeconds(getenv func(string) string, envKey string, fallback time.Duration) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(getenv(envKey)))
 	if err != nil || seconds <= 0 {
 		return fallback
 	}
@@ -481,7 +476,7 @@ func (r *dynamoRuntimeRepository) ClaimExecutionWork(ctx context.Context, work c
 		return checkexecution.ExecutionWork{}, false, err
 	}
 	startedAt := now.UTC()
-	leaseUntil := startedAt.Add(executionWorkLeaseDuration())
+	leaseUntil := startedAt.Add(r.workLeaseDuration)
 	token := newFencingToken(now)
 	key := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(work.TenantID), "RUN_REQUEST#"+dynamodbschema.NormalizeToken(work.RunID)).AttributeMap()
 	out, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
@@ -586,38 +581,41 @@ func (r *dynamoRuntimeRepository) MarkExecutionWorkSkipped(ctx context.Context, 
 }
 
 func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, monitor monitorconfig.Monitor, work checkexecution.ExecutionWork, result checkexecution.ExecutionResult) (string, string, error) {
-	if err := r.requireTableName(); err != nil {
+	state, err := r.LoadExecutionResultState(ctx, result)
+	if err != nil {
 		return "", "", err
 	}
-	completedAt := result.FinishedAt.UTC()
-	updatedWork := work
-	updatedWork.Status = checkexecution.ExecutionWorkCompleted
-	updatedWork.CompletedAt = &completedAt
-	updatedWork.LastError = result.Error
-	run := resultstatus.NewCheckRun(result, completedAt)
+	if !state.statusFound {
+		state.status = resultstatus.NewMonitorStatus(result)
+	}
+	thresholds := resultstatus.ThresholdConfig{FailureThreshold: monitor.FailureThreshold, RecoveryThreshold: monitor.RecoveryThreshold}
+	records, transition, incidentID, status, err := decideExecutionResult(monitor, result, state.status, thresholds, state.openIncident, state.incidentFound, newIncidentID, newAuditID)
+	if err != nil {
+		return "", "", err
+	}
+	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && (!state.statusFound || resultstatus.IsNewerRecurringObservation(state.status, *result.ScheduledFor, result.RunID))
+	err = r.CommitExecutionResult(ctx, monitor, work, result, records, status, applyProjection, executionResultPublication{transition: transition, incidentID: incidentID})
+	return transition, incidentID, err
+}
 
+func (r *dynamoRuntimeRepository) LoadExecutionResultState(ctx context.Context, result checkexecution.ExecutionResult) (executionResultState, error) {
 	currentStatus, statusFound, err := r.getMonitorStatus(ctx, result.TenantID, result.ServiceID, result.MonitorID)
 	if err != nil {
-		return "", "", err
+		return executionResultState{}, err
 	}
-
 	openIncident, incidentFound, err := r.getOpenIncident(ctx, result.TenantID, result.ServiceID, result.MonitorID)
 	if err != nil {
-		return "", "", err
+		return executionResultState{}, err
 	}
+	return executionResultState{status: currentStatus, statusFound: statusFound, openIncident: openIncident, incidentFound: incidentFound}, nil
+}
 
-	thresholdConfig := resultstatus.ThresholdConfig{
-		FailureThreshold:  monitor.FailureThreshold,
-		RecoveryThreshold: monitor.RecoveryThreshold,
+func (r *dynamoRuntimeRepository) CommitExecutionResult(ctx context.Context, monitor monitorconfig.Monitor, work checkexecution.ExecutionWork, result checkexecution.ExecutionResult, incidentRecords []any, updatedStatus resultstatus.MonitorStatus, applyProjection bool, publication executionResultPublication) error {
+	if err := r.requireTableName(); err != nil {
+		return err
 	}
-	if !statusFound {
-		currentStatus = resultstatus.NewMonitorStatus(result)
-	}
-	incidentRecords, transition, incidentID, updatedStatus, err := r.incidentRecordsForResult(monitor, result, currentStatus, thresholdConfig, openIncident, incidentFound)
-	if err != nil {
-		return "", "", err
-	}
-	applyProjection := result.Trigger == checkexecution.TriggerTypeRecurring && result.ScheduledFor != nil && (!statusFound || resultstatus.IsNewerRecurringObservation(currentStatus, *result.ScheduledFor, result.RunID))
+	completedAt := result.FinishedAt.UTC()
+	run := resultstatus.NewCheckRun(result, completedAt)
 	records := []any{run.ToRecord()}
 	if applyProjection {
 		updatedStatus.RecurringScheduledFor = result.ScheduledFor
@@ -626,36 +624,32 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 		records = append(records, incidentRecords...)
 		service, found, err := r.getService(ctx, result.TenantID, result.ServiceID)
 		if err != nil {
-			return "", "", err
+			return err
 		}
 		if found {
 			serviceStatus, err := r.buildServiceStatusRecord(ctx, service, updatedStatus)
 			if err != nil {
-				return "", "", err
+				return err
 			}
 			records = append(records, serviceStatus)
 		}
-		if transition != "" {
-			transitionType := transition
+		if publication.transition != "" {
+			transitionType := publication.transition
 			eventID := checkexecution.TransitionID(work.RunID)
-			transition = eventID
-			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, result.ServiceID, result.MonitorID, eventID, work.RunID, incidentID, transitionType, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
+			outbox := dynamodbrecord.NewTransitionOutboxRecord(result.TenantID, result.ServiceID, result.MonitorID, eventID, work.RunID, publication.incidentID, transitionType, work.ScheduleDefinitionVersion, formatScheduledFor(result.ScheduledFor), completedAt.Format(time.RFC3339))
 			records = append(records, outbox)
 			bucket, shard := dispatchPendingBucket(work)
 			pending := dynamodbrecord.NewDispatchPendingRecord(result.TenantID, eventID, bucket, shard)
 			records = append(records, pending)
 		}
-	} else {
-		transition = ""
-		incidentID = ""
 	}
 	items, err := marshalItems(r.tableName, records...)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 	identityItem, err := sharedaws.MarshalMap(run.IdentityRecord())
 	if err != nil {
-		return "", "", err
+		return err
 	}
 	runIdentity := sharedaws.TransactWriteItem{Put: &sharedaws.Put{
 		TableName: sharedaws.String(r.tableName), Item: identityItem,
@@ -687,14 +681,14 @@ func (r *dynamoRuntimeRepository) RecordExecutionResult(ctx context.Context, mon
 	if err != nil {
 		cancellations := sharedaws.TransactionCancellations(err)
 		if len(cancellations) > 1 && cancellations[1].Code == "ConditionalCheckFailed" {
-			return "", "", checkexecution.Duplicate("commit-result", work.RunID)
+			return checkexecution.Duplicate("commit-result", work.RunID)
 		}
 		if len(cancellations) > 0 {
-			return "", "", checkexecution.LeaseLost("complete-work", work.RunID)
+			return checkexecution.LeaseLost("complete-work", work.RunID)
 		}
-		return "", "", err
+		return err
 	}
-	return transition, incidentID, nil
+	return nil
 }
 
 func (r *dynamoRuntimeRepository) getService(ctx context.Context, tenantID, serviceID string) (monitorconfig.Service, bool, error) {
@@ -773,139 +767,6 @@ func (r *dynamoRuntimeRepository) buildServiceStatusRecord(ctx context.Context, 
 	return dynamodbrecord.ServiceStatusRecord{PK: item.PK, SK: item.SK, EntityType: item.EntityType, TenantID: strings.ToUpper(service.TenantID), ServiceID: strings.ToLower(service.ServiceID), LifecycleState: string(service.LifecycleState), RollupStatus: rollup, MonitorCount: len(serviceMonitors), EnabledMonitorCount: countEnabledMonitors(serviceMonitors), UpdatedAt: updatedAt, GSI2PK: item.GSI2PK, GSI2SK: item.GSI2SK}, nil
 }
 
-func (r *dynamoRuntimeRepository) incidentRecordsForResult(monitor monitorconfig.Monitor, result checkexecution.ExecutionResult, currentStatus resultstatus.MonitorStatus, thresholdConfig resultstatus.ThresholdConfig, current dynamodbrecord.IncidentRecord, found bool) ([]any, string, string, resultstatus.MonitorStatus, error) {
-	isManual := result.Trigger == checkexecution.TriggerTypeManual
-
-	currentState := domainvalues.MonitorStateFromStored(currentStatus.CurrentStatus)
-	if currentState == "" {
-		currentState = domainvalues.MonitorStateUp
-	}
-
-	failureThreshold := thresholdConfig.FailureThreshold
-	if failureThreshold < 1 {
-		failureThreshold = 1
-	}
-	recoveryThreshold := thresholdConfig.RecoveryThreshold
-	if recoveryThreshold < 1 {
-		recoveryThreshold = 1
-	}
-
-	newStatus := currentStatus
-	newStatus.LastCheckedAt = result.FinishedAt.UTC()
-	newStatus.LastDurationMs = result.DurationMs
-	newStatus.LastError = result.Error
-	newStatus.LastFailureCode = result.FailureCode
-	newStatus.LastOutcome = result.Outcome
-
-	var incidentRecords []any
-	var transition string
-	var incidentID string
-
-	if isManual {
-		newStatus.CurrentStatus = currentState.Stored()
-		return incidentRecords, "", "", newStatus, nil
-	}
-
-	if result.Outcome == checkexecution.OutcomeSuccess {
-		newStatus.ConsecutiveFailures = 0
-		newStatus.ConsecutiveSuccesses++
-
-		switch currentState {
-		case domainvalues.MonitorStateUp:
-			newStatus.CurrentStatus = domainvalues.MonitorStateUp.Stored()
-
-		case domainvalues.MonitorStateDegraded:
-			newStatus.ConsecutiveFailures = 0
-			newStatus.CurrentStatus = domainvalues.MonitorStateUp.Stored()
-
-		case domainvalues.MonitorStateDown:
-			newStatus.CurrentStatus = domainvalues.MonitorStateRecovering.Stored()
-
-		case domainvalues.MonitorStateRecovering:
-			if newStatus.ConsecutiveSuccesses >= recoveryThreshold {
-				newStatus.CurrentStatus = domainvalues.MonitorStateUp.Stored()
-				newStatus.ConsecutiveSuccesses = 0
-				if found {
-					current.Status = incidentStatusResolved
-					current.ResolvedAt = result.FinishedAt.UTC().Format(time.RFC3339)
-					current.UpdatedAt = current.ResolvedAt
-					incidentRecords = buildIncidentRecords(current, "INCIDENT_RESOLVED", current.ResolvedAt, result.RunID, result.FinishedAt)
-					transition = "incident.up"
-					incidentID = current.IncidentID
-				}
-			} else {
-				newStatus.CurrentStatus = domainvalues.MonitorStateRecovering.Stored()
-			}
-
-		case domainvalues.MonitorStateMaintenance:
-			newStatus.CurrentStatus = domainvalues.MonitorStateMaintenance.Stored()
-
-		default:
-			newStatus.CurrentStatus = domainvalues.MonitorStateUp.Stored()
-		}
-	} else {
-		newStatus.ConsecutiveSuccesses = 0
-		newStatus.ConsecutiveFailures++
-
-		switch currentState {
-		case domainvalues.MonitorStateUp:
-			if failureThreshold == 1 {
-				newStatus.CurrentStatus = domainvalues.MonitorStateDown.Stored()
-			} else {
-				newStatus.CurrentStatus = domainvalues.MonitorStateDegraded.Stored()
-			}
-
-		case domainvalues.MonitorStateDegraded:
-			if newStatus.ConsecutiveFailures >= failureThreshold {
-				newStatus.CurrentStatus = domainvalues.MonitorStateDown.Stored()
-			} else {
-				newStatus.CurrentStatus = domainvalues.MonitorStateDegraded.Stored()
-			}
-
-		case domainvalues.MonitorStateDown:
-			newStatus.CurrentStatus = domainvalues.MonitorStateDown.Stored()
-			if found {
-				current.Summary = incidentSummary(monitor, result)
-				current.UpdatedAt = result.FinishedAt.UTC().Format(time.RFC3339)
-				incidentRecords = buildIncidentRecords(current, "INCIDENT_UPDATED", current.UpdatedAt, result.RunID, result.FinishedAt)
-			}
-
-		case domainvalues.MonitorStateRecovering:
-			newStatus.CurrentStatus = domainvalues.MonitorStateDown.Stored()
-			newStatus.ConsecutiveSuccesses = 0
-
-		case domainvalues.MonitorStateMaintenance:
-			newStatus.CurrentStatus = domainvalues.MonitorStateMaintenance.Stored()
-
-		default:
-			newStatus.CurrentStatus = domainvalues.MonitorStateDegraded.Stored()
-		}
-	}
-
-	if newStatus.CurrentStatus == domainvalues.MonitorStateDown.Stored() && currentState != domainvalues.MonitorStateDown {
-		if !found {
-			summary := incidentSummary(monitor, result)
-			incident := dynamodbrecord.IncidentRecord{
-				IncidentID: newIncidentID(result.FinishedAt),
-				ServiceID:  strings.ToLower(result.ServiceID),
-				MonitorID:  strings.ToLower(result.MonitorID),
-				TenantID:   strings.ToUpper(result.TenantID),
-				Type:       "monitoring",
-				Summary:    summary,
-				Status:     incidentStatusOpen,
-				OpenedAt:   result.FinishedAt.UTC().Format(time.RFC3339),
-				UpdatedAt:  result.FinishedAt.UTC().Format(time.RFC3339),
-				Origin:     "system",
-			}
-			incidentRecords = buildIncidentRecords(incident, "INCIDENT_OPENED", incident.IncidentID, result.RunID, result.FinishedAt)
-			transition = "incident.down"
-			incidentID = incident.IncidentID
-		}
-	}
-
-	return incidentRecords, transition, incidentID, newStatus, nil
-}
-
 func (r *dynamoRuntimeRepository) getOpenIncident(ctx context.Context, tenantID, serviceID, monitorID string) (dynamodbrecord.IncidentRecord, bool, error) {
 	// Bounded by a single page: the worker only needs the most recent open
 	// incident for the monitor. If more than one page exists, the older
@@ -943,35 +804,6 @@ func (r *dynamoRuntimeRepository) requireTableName() error {
 		return fmt.Errorf("TABLE_NAME is required")
 	}
 	return nil
-}
-
-const (
-	incidentStatusOpen         = "open"
-	incidentStatusAcknowledged = "acknowledged"
-	incidentStatusResolved     = "resolved"
-)
-
-func buildIncidentRecords(incident dynamodbrecord.IncidentRecord, action, changeValue string, runID string, now time.Time) []any {
-	auditID := newAuditID(now)
-	activityID := checkexecution.TransitionID(runID)
-	auditEvent := dynamodbrecord.NewAuditEventRecord(now, auditID, incident.TenantID, action, incident.ServiceID, incident.MonitorID)
-	change := dynamodbrecord.NewAuditChangeRecord(auditEvent.AuditID, "incident", "", changeValue)
-	activity := dynamodbrecord.NewIncidentActivityRecord(incident.TenantID, incident.IncidentID, activityID, action, now)
-	return []any{dynamodbrecord.NewIncidentMonitorItemRecord(incident), dynamodbrecord.NewIncidentRefItemRecord(incident), dynamodbrecord.NewIncidentMetaItemRecord(incident), activity, auditEvent, change}
-}
-
-func incidentSummary(monitor monitorconfig.Monitor, result checkexecution.ExecutionResult) string {
-	summary := fmt.Sprintf("%s failed", monitor.Name)
-	if result.Outcome == checkexecution.OutcomeSuccess {
-		return summary
-	}
-	if result.Error != "" {
-		return fmt.Sprintf("%s: %s", summary, result.Error)
-	}
-	if result.StatusCode != nil {
-		return fmt.Sprintf("%s: status %d", summary, *result.StatusCode)
-	}
-	return summary
 }
 
 func marshalItems(tableName string, records ...any) ([]sharedaws.TransactWriteItem, error) {

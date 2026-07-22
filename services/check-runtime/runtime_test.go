@@ -158,7 +158,7 @@ func (r *fakeRuntimeRepository) ClaimExecutionWork(_ context.Context, work check
 	}
 	r.claims[work.RunID] = true
 	work.FencingToken = "LEASE_TEST"
-	leaseUntil := now.UTC().Add(executionWorkLeaseDuration())
+	leaseUntil := now.UTC().Add(defaultExecutionWorkLeaseDuration)
 	work.LeaseUntil = &leaseUntil
 	work.Status = checkexecution.ExecutionWorkInProgress
 	return work, true, nil
@@ -190,6 +190,20 @@ func (r *fakeRuntimeRepository) RecordExecutionResult(_ context.Context, _ monit
 	return "", "", nil
 }
 
+func (r *fakeRuntimeRepository) LoadExecutionResultState(_ context.Context, result checkexecution.ExecutionResult) (executionResultState, error) {
+	status, found := r.statuses[result.ServiceID+"/"+result.MonitorID]
+	return executionResultState{status: status, statusFound: found}, nil
+}
+
+func (r *fakeRuntimeRepository) CommitExecutionResult(_ context.Context, _ monitorconfig.Monitor, work checkexecution.ExecutionWork, result checkexecution.ExecutionResult, _ []any, _ resultstatus.MonitorStatus, _ bool, _ executionResultPublication) error {
+	if err := r.recordErr[work.RunID]; err != nil {
+		return err
+	}
+	r.recordedWorks = append(r.recordedWorks, work)
+	r.results = append(r.results, result)
+	return nil
+}
+
 func (r *fakeRuntimeRepository) GetMonitorStatus(_ context.Context, _, serviceID, monitorID string) (resultstatus.MonitorStatus, bool, error) {
 	status, ok := r.statuses[serviceID+"/"+monitorID]
 	return status, ok, nil
@@ -218,13 +232,13 @@ func TestRunSchedulerStopsAtDiscoveryDeadline(t *testing.T) {
 	}
 }
 
-func TestCommitExecutionResultRejectsIdentityMismatch(t *testing.T) {
+func TestExecutionResultCommandRejectsIdentityMismatch(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	monitor := testMonitor("https://example.com", true)
 	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: time.Now()}
 	mismatched := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OTHER", Outcome: checkexecution.OutcomeSuccess, FinishedAt: time.Now()}
 
-	if _, _, err := commitExecutionResult(context.Background(), repo, monitor, work, mismatched); err == nil || !strings.Contains(err.Error(), "immutable_identity_conflict") {
+	if _, _, err := newExecutionResultCommand(repo, systemExecutionResultClock{}, generatedExecutionResultIDs{}).execute(context.Background(), monitor, work, mismatched); err == nil || !strings.Contains(err.Error(), "immutable_identity_conflict") {
 		t.Fatalf("expected identity conflict, got %v", err)
 	}
 }

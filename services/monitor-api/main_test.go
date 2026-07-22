@@ -15,6 +15,7 @@ import (
 	"bolt-monitor/shared/auth"
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
+	"bolt-monitor/shared/domainvalues"
 	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/dynamodbschema"
 	sharederrors "bolt-monitor/shared/errors"
@@ -53,6 +54,10 @@ type fakeMonitorRepository struct {
 	*fakeMonitorRepositoryState
 }
 
+func (f *fakeMonitorRepository) GetMonitorByRef(ctx context.Context, ref domainvalues.MonitorRef) (monitorconfig.Monitor, bool, error) {
+	return f.GetMonitor(ctx, string(ref.Tenant), string(ref.Service), string(ref.Monitor))
+}
+
 type fixedPrincipalResolver struct{}
 
 func (fixedPrincipalResolver) Resolve(_ context.Context, _ events.APIGatewayV2HTTPRequest) (auth.AuthenticatedIdentity, error) {
@@ -65,10 +70,26 @@ func (fixedMembershipResolver) Resolve(_ context.Context, _ auth.AuthenticatedId
 	return auth.Principal{Subject: "test-operator", TenantID: auth.DefaultTenantID, Role: auth.RoleAdmin}, nil
 }
 
-// newMonitorHandler preserves legacy domain tests while production uses the real resolvers.
-func newMonitorHandler(repo monitorRepository, _ ...any) monitorHandler {
-	handler := newAuthorizedMonitorHandler(repo, fixedPrincipalResolver{}, fixedMembershipResolver{})
-	handler.validateDestination = func(context.Context, string) error { return nil }
+// newMonitorHandler is the test composition root. It supplies deterministic,
+// side-effect-free collaborators while every store remains a focused port.
+func newMonitorHandler(repo *fakeMonitorRepository, _ ...any) monitorHandler {
+	return newAuthorizedMonitorHandlerWithDependencies(
+		newMonitorAPIOperations(repo, repo, repo, repo, repo, repo, repo, repo, repo),
+		fixedPrincipalResolver{}, fixedMembershipResolver{}, monitorHandlerDependencies{
+			securityEvents:      emitMonitorSecurityEvent,
+			newSecurityEvent:    newMonitorSecurityEventFactory(unknownSecurityEventStage, func() time.Time { return time.Unix(0, 0) }),
+			now:                 func() time.Time { return time.Unix(0, 0) },
+			senders:             notifications.NewSenderRegistry(),
+			executor:            &recordingMonitorExecutor{},
+			validateDestination: func(context.Context, string) error { return nil },
+		},
+	)
+}
+
+func newAuthorizedMonitorHandler(repo *fakeMonitorRepository, principalResolver PrincipalResolver, membershipResolver MembershipResolver) monitorHandler {
+	handler := newMonitorHandler(repo)
+	handler.principalResolver = principalResolver
+	handler.membershipResolver = membershipResolver
 	return handler
 }
 
@@ -1756,7 +1777,7 @@ func TestGetServiceEscalationPolicy(t *testing.T) {
 	}
 }
 
-func TestGetEscalationPolicyMigratesLegacyInlineChannelsOnce(t *testing.T) {
+func TestEscalationPolicyReadsDoNotMigrateLegacyInlineChannels(t *testing.T) {
 	client := &fakeDynamoClient{items: map[string]map[string]sharedaws.AttributeValue{}}
 	repo := newDynamoMonitorRepository(client, "table-name")
 	repo.now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
@@ -1775,12 +1796,37 @@ func TestGetEscalationPolicyMigratesLegacyInlineChannelsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first GetEscalationPolicy returned error: %v", err)
 	}
-	second, err := repo.GetEscalationPolicy(context.Background(), defaultTenantID, "POL_1")
+	policies, err := repo.ListEscalationPolicies(context.Background(), defaultTenantID)
 	if err != nil {
-		t.Fatalf("second GetEscalationPolicy returned error: %v", err)
+		t.Fatalf("ListEscalationPolicies returned error: %v", err)
 	}
-	if first.BusinessHoursPath.Steps[0].ChannelID == "" || second.BusinessHoursPath.Steps[0].ChannelID != first.BusinessHoursPath.Steps[0].ChannelID {
-		t.Fatalf("migrated channel IDs = %q / %q", first.BusinessHoursPath.Steps[0].ChannelID, second.BusinessHoursPath.Steps[0].ChannelID)
+	if first.BusinessHoursPath.Steps[0].ChannelID != "" || len(first.BusinessHoursPath.Steps[0].Channels) != 1 {
+		t.Fatalf("get policy altered legacy route: %+v", first.BusinessHoursPath.Steps[0])
+	}
+	if len(policies) != 1 || policies[0].BusinessHoursPath.Steps[0].ChannelID != "" {
+		t.Fatalf("list policy altered legacy route: %+v", policies)
+	}
+	if len(client.items) != 1 {
+		t.Fatalf("query writes = %d, want 0", len(client.items)-1)
+	}
+}
+
+func TestMigrateRouteInlineChannelsIsRepeatSafe(t *testing.T) {
+	client := &fakeDynamoClient{items: map[string]map[string]sharedaws.AttributeValue{}}
+	repo := newDynamoMonitorRepository(client, "table-name")
+	repo.now = func() time.Time { return time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC) }
+	policy := escalation.EscalationPolicy{
+		TenantID: defaultTenantID, PolicyID: "POL_1", Name: "Legacy", CreatedAt: "2026-05-24T00:00:00Z", UpdatedAt: "2026-05-24T00:00:00Z",
+		BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-1"}}}}},
+	}
+	if err := repo.MigrateRouteInlineChannels(context.Background(), &policy); err != nil {
+		t.Fatalf("first migration: %v", err)
+	}
+	if err := repo.MigrateRouteInlineChannels(context.Background(), &policy); err != nil {
+		t.Fatalf("second migration: %v", err)
+	}
+	if policy.BusinessHoursPath.Steps[0].ChannelID == "" || len(policy.BusinessHoursPath.Steps[0].Channels) != 0 {
+		t.Fatalf("migration did not replace inline channel: %+v", policy.BusinessHoursPath.Steps[0])
 	}
 	channelCount := 0
 	for _, item := range client.items {
@@ -2118,7 +2164,7 @@ func TestNonTypedErrorReachesWireAsInternalWithNilDetails(t *testing.T) {
 }
 
 type typedRepoStub struct {
-	monitorRepository
+	ServiceStore
 	forced error
 }
 
@@ -2127,7 +2173,9 @@ func (s typedRepoStub) ListServices(context.Context, string) ([]monitorconfig.Se
 }
 
 func TestHandlerReachesInternalForUntypedRepositoryError(t *testing.T) {
-	handler := newMonitorHandler(typedRepoStub{forced: stderrors.New("storage exploded")}, defaultProbeLocationCatalog(), defaultTenantID)
+	stub := typedRepoStub{forced: stderrors.New("storage exploded")}
+	handler := newMonitorHandler(newFakeMonitorRepository(), defaultProbeLocationCatalog(), defaultTenantID)
+	handler.operations.ServiceStore = stub
 	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services", RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}}}
 	response, err := handler.handleRequest(context.Background(), request)
 	if err != nil {

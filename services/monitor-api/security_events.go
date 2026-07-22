@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"os"
 	"regexp"
 	"time"
 
@@ -55,21 +54,22 @@ func emitMonitorSecurityEvent(event securityEvent) {
 	log.Print(string(encoded))
 }
 
-func newMonitorSecurityEvent(event auth.SecurityEvent, outcome string, subject auth.Subject, correlationID string) securityEvent {
-	stage := os.Getenv("SST_STAGE")
+func newMonitorSecurityEventFactory(stage string, now func() time.Time) func(auth.SecurityEvent, string, auth.Subject, string) securityEvent {
 	if stage == "" {
 		stage = unknownSecurityEventStage
 	}
-	result := securityEvent{
-		Timestamp: time.Now().UTC().Format(time.RFC3339), Event: event, Outcome: outcome,
-		Stage: stage, Component: "monitor-api", Subject: string(subject), CorrelationID: correlationID,
+	return func(event auth.SecurityEvent, outcome string, subject auth.Subject, correlationID string) securityEvent {
+		result := securityEvent{
+			Timestamp: now().UTC().Format(time.RFC3339), Event: event, Outcome: outcome,
+			Stage: stage, Component: "monitor-api", Subject: string(subject), CorrelationID: correlationID,
+		}
+		if event == auth.EventAuthorizationDenied {
+			result.Operation = "authorization"
+			result.Events = 1
+			result.EMF = authenticationEMF()
+		}
+		return result
 	}
-	if event == auth.EventAuthorizationDenied {
-		result.Operation = "authorization"
-		result.Events = 1
-		result.EMF = authenticationEMF()
-	}
-	return result
 }
 
 func authenticationEMF() *embeddedMetric {

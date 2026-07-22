@@ -4,11 +4,13 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"bolt-monitor/shared/aws"
+	"bolt-monitor/shared/outboundhttp"
 )
 
 const (
@@ -17,8 +19,31 @@ const (
 	modeScheduler   = "scheduler"
 )
 
+func newProductionRuntimeHandler(dynamoClient aws.DynamoDBAPI, sqsClient aws.SQSAPI, config runtimeConfig) runtimeHandler {
+	repo := newDynamoRuntimeRepositoryWithLease(dynamoClient, config.TableName, config.WorkLeaseDuration)
+	return newRuntimeHandlerWithDependencies(
+		repo,
+		newAWSSQSClient(sqsClient),
+		config.ExecutionQueueURL,
+		config.EscalationQueueURL,
+		defaultTenantID,
+		config.Mode,
+		runtimeHandlerDependencies{
+			now:               time.Now,
+			executor:          outboundhttp.NewExecutor(),
+			resultClock:       systemExecutionResultClock{},
+			resultIDs:         generatedExecutionResultIDs{},
+			schedulerDeadline: defaultSchedulerDeadline,
+		},
+	)
+}
+
 func main() {
 	ctx := context.Background()
+	config, err := newRuntimeConfig(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
+	}
 	dynamoClient, err := aws.NewDynamoDBAPI(ctx)
 	if err != nil {
 		log.Fatalf("create dynamodb client: %v", err)
@@ -28,18 +53,9 @@ func main() {
 		log.Fatalf("create sqs client: %v", err)
 	}
 
-	awsSQSClient := newAWSSQSClient(sqsClient)
-	escalationQueueURL := os.Getenv("ESCALATION_QUEUE_URL")
-	handler := newRuntimeHandler(
-		newDynamoRuntimeRepository(dynamoClient, os.Getenv("TABLE_NAME")),
-		awsSQSClient,
-		os.Getenv("EXECUTION_QUEUE_URL"),
-		escalationQueueURL,
-		defaultTenantID,
-		os.Getenv("RUNTIME_MODE"),
-	)
+	handler := newProductionRuntimeHandler(dynamoClient, sqsClient, config)
 
-	switch os.Getenv("RUNTIME_MODE") {
+	switch config.Mode {
 	case modeScheduler:
 		lambda.Start(func(ctx context.Context, event events.CloudWatchEvent) (runtimeSummary, error) {
 			return handler.handle(ctx, event)
@@ -49,6 +65,6 @@ func main() {
 			return handler.handleSQSEventBatch(ctx, event)
 		})
 	default:
-		log.Fatalf("unsupported runtime mode %q", os.Getenv("RUNTIME_MODE"))
+		log.Fatalf("unsupported runtime mode %q", config.Mode)
 	}
 }

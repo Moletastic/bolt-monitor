@@ -46,11 +46,20 @@ type escalationHandler struct {
 }
 
 func newEscalationHandler(repo escalationRepository, scheduler scheduleClient) *escalationHandler {
+	return newEscalationHandlerWithDependencies(repo, scheduler, escalationHandlerDependencies{senders: notifications.NewSenderRegistry(), now: time.Now})
+}
+
+type escalationHandlerDependencies struct {
+	senders notifications.SenderRegistry
+	now     func() time.Time
+}
+
+func newEscalationHandlerWithDependencies(repo escalationRepository, scheduler scheduleClient, dependencies escalationHandlerDependencies) *escalationHandler {
 	return &escalationHandler{
 		repo:      repo,
 		scheduler: scheduler,
-		senders:   notifications.NewSenderRegistry(),
-		now:       time.Now,
+		senders:   dependencies.senders,
+		now:       dependencies.now,
 	}
 }
 

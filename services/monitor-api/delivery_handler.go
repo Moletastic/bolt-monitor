@@ -62,7 +62,7 @@ func (h monitorHandler) listIncidentDeliveries(ctx context.Context, incidentID s
 	if _, _, err := h.requireIncidentOwnership(ctx, incidentID); err != nil {
 		return respondAPIGateway(err)
 	}
-	records, err := h.repo.ListIncidentDeliveries(ctx, h.tenantID, incidentID)
+	records, err := h.operations.deliveries.ListIncidentDeliveries(ctx, h.tenantID, incidentID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -94,7 +94,7 @@ func (h monitorHandler) replayIncidentDelivery(ctx context.Context, incidentID, 
 	if len(idempotencyKey) > 200 {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "idempotencyKey", "reason": "must be at most 200 characters"}))
 	}
-	deliveries, err := h.repo.ListIncidentDeliveries(ctx, h.tenantID, incidentID)
+	deliveries, err := h.operations.deliveries.ListIncidentDeliveries(ctx, h.tenantID, incidentID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -109,7 +109,7 @@ func (h monitorHandler) replayIncidentDelivery(ctx context.Context, incidentID, 
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeDeliveryNotFound, map[string]any{"incidentId": incidentID, "deliveryId": deliveryID}))
 	}
 	fingerprint := notifications.ReplayKeyFingerprint(h.tenantID, incidentID, deliveryID, idempotencyKey) + ":" + fingerprintOfRequest(request)
-	if existing, err := h.repo.LookupReplayIdempotency(ctx, h.tenantID, incidentID, deliveryID, idempotencyKey); err != nil {
+	if existing, err := h.operations.deliveries.LookupReplayIdempotency(ctx, h.tenantID, incidentID, deliveryID, idempotencyKey); err != nil {
 		return respondAPIGateway(err)
 	} else if existing != nil {
 		if !strings.EqualFold(existing.RequestFingerprint, fingerprint) {
@@ -122,14 +122,14 @@ func (h monitorHandler) replayIncidentDelivery(ctx context.Context, incidentID, 
 	}
 	now := h.now().UTC()
 	command := notifications.ReplayCommand{TenantID: h.tenantID, IncidentID: incidentID, TransitionID: delivery.TransitionID, DeliveryID: deliveryID, IdempotencyKey: idempotencyKey, RequestedAt: now.Format(time.RFC3339)}
-	if _, err := h.repo.PrepareDeliveryReplay(ctx, command, fingerprint, now, deliveryReplayRetention); err != nil {
+	if _, err := h.operations.deliveries.PrepareDeliveryReplay(ctx, command, fingerprint, now, deliveryReplayRetention); err != nil {
 		return respondAPIGateway(err)
 	}
 	return envelopeResponse(http.StatusOK, response.Ok(deliveryReplayResponse{IncidentID: incidentID, DeliveryID: deliveryID, ReplayResult: "queued", State: notifications.DeliveryPending}, "delivery replay queued"))
 }
 
 func (h monitorHandler) requireIncidentOwnership(ctx context.Context, incidentID string) (*notifications.DeliveryRecord, bool, error) {
-	_, found, err := h.repo.GetIncident(ctx, h.tenantID, incidentID)
+	_, found, err := h.operations.GetIncident(ctx, h.tenantID, incidentID)
 	if err != nil {
 		return nil, false, err
 	}
