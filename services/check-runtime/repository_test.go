@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -179,7 +180,7 @@ func TestExecutionSafetyConfigAcceptsValidSettings(t *testing.T) {
 	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
 	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
 	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
-	if _, _, _, _, _, err := executionSafetyConfig(); err != nil {
+	if _, _, _, _, _, err := executionSafetyConfig(os.Getenv); err != nil {
 		t.Fatalf("executionSafetyConfig returned error: %v", err)
 	}
 }
@@ -190,7 +191,7 @@ func TestExecutionSafetyConfigRejectsShortWorkerTimeout(t *testing.T) {
 	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
 	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
 	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
-	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+	if _, _, _, _, _, err := executionSafetyConfig(os.Getenv); err == nil {
 		t.Fatal("expected worker timeout violation")
 	}
 }
@@ -201,7 +202,7 @@ func TestExecutionSafetyConfigRejectsShortLease(t *testing.T) {
 	t.Setenv("WORK_LEASE_DURATION_SECONDS", "30")
 	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
 	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
-	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+	if _, _, _, _, _, err := executionSafetyConfig(os.Getenv); err == nil {
 		t.Fatal("expected lease violation")
 	}
 }
@@ -212,7 +213,7 @@ func TestExecutionSafetyConfigRejectsShortVisibility(t *testing.T) {
 	t.Setenv("WORK_LEASE_DURATION_SECONDS", "60")
 	t.Setenv("MAX_OUTBOUND_EXECUTION_SECONDS", "30")
 	t.Setenv("RESULT_COMMIT_BUFFER_SECONDS", "10")
-	if _, _, _, _, _, err := executionSafetyConfig(); err == nil {
+	if _, _, _, _, _, err := executionSafetyConfig(os.Getenv); err == nil {
 		t.Fatal("expected visibility violation")
 	}
 }
@@ -295,14 +296,14 @@ func TestRecordExecutionResultWritesEqualTransitionAndOutboxIdentities(t *testin
 
 func TestExecutionMaxConcurrencyAcceptsPositiveSetting(t *testing.T) {
 	t.Setenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY", "8")
-	if got := executionMaxConcurrency(); got != 8 {
+	if got := executionMaxConcurrency(os.Getenv); got != 8 {
 		t.Fatalf("executionMaxConcurrency = %d, want 8", got)
 	}
 }
 
 func TestExecutionMaxConcurrencyFallsBackToDefault(t *testing.T) {
 	t.Setenv("EXECUTION_EVENT_SOURCE_MAX_CONCURRENCY", "")
-	if got := executionMaxConcurrency(); got != defaultMaxConcurrency {
+	if got := executionMaxConcurrency(os.Getenv); got != defaultMaxConcurrency {
 		t.Fatalf("executionMaxConcurrency = %d, want %d", got, defaultMaxConcurrency)
 	}
 }
@@ -419,13 +420,12 @@ func TestMarkExecutionWorkSkippedFencesAndRemovesRecoveryMarker(t *testing.T) {
 }
 
 func TestIncidentRecordsForResultOpensIncidentOnFirstFailure(t *testing.T) {
-	repo := newDynamoRuntimeRepository(&fakeDynamoClient{}, "table-name")
 	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", FailureThreshold: 1, RecoveryThreshold: 1}
 	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Outcome: checkexecution.OutcomeFailure, Error: "boom", FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
 	currentStatus := resultstatus.MonitorStatus{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, CurrentStatus: "UP", ConsecutiveFailures: 0, ConsecutiveSuccesses: 0}
 	thresholdConfig := resultstatus.ThresholdConfig{FailureThreshold: 1, RecoveryThreshold: 1}
 
-	records, transition, _, _, err := repo.incidentRecordsForResult(monitor, result, currentStatus, thresholdConfig, dynamodbrecord.IncidentRecord{}, false)
+	records, transition, _, _, err := decideExecutionResult(monitor, result, currentStatus, thresholdConfig, dynamodbrecord.IncidentRecord{}, false, newIncidentID, newAuditID)
 	if err != nil {
 		t.Fatalf("dynamodbrecord.IncidentRecordsForResult returned error: %v", err)
 	}
@@ -441,15 +441,28 @@ func TestIncidentRecordsForResultOpensIncidentOnFirstFailure(t *testing.T) {
 	}
 }
 
+func TestDecideExecutionResultUsesInjectedIdentifiers(t *testing.T) {
+	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", FailureThreshold: 1, RecoveryThreshold: 1}
+	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, RunID: "RUN_1", Outcome: checkexecution.OutcomeFailure, FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
+	status := resultstatus.MonitorStatus{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, CurrentStatus: "UP"}
+
+	records, transition, incidentID, _, err := decideExecutionResult(monitor, result, status, resultstatus.ThresholdConfig{FailureThreshold: 1, RecoveryThreshold: 1}, dynamodbrecord.IncidentRecord{}, false, func(time.Time) string { return "INC_FIXED" }, func(time.Time) string { return "AUD_FIXED" })
+	if err != nil {
+		t.Fatalf("decideExecutionResult: %v", err)
+	}
+	if transition != "incident.down" || incidentID != "INC_FIXED" || findIncidentRecord(t, records).IncidentID != "INC_FIXED" {
+		t.Fatalf("transition=%q incidentID=%q records=%+v", transition, incidentID, records)
+	}
+}
+
 func TestIncidentRecordsForResultUpdatesExistingOpenIncident(t *testing.T) {
-	repo := newDynamoRuntimeRepository(&fakeDynamoClient{}, "table-name")
 	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", FailureThreshold: 1, RecoveryThreshold: 1}
 	current := dynamodbrecord.IncidentRecord{IncidentID: "INC_1", ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Summary: "old", Status: incidentStatusOpen, OpenedAt: "2026-05-22T11:59:00Z", UpdatedAt: "2026-05-22T11:59:00Z", Origin: "system"}
 	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Outcome: checkexecution.OutcomeFailure, Error: "still bad", FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
 	currentStatus := resultstatus.MonitorStatus{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, CurrentStatus: "DOWN", ConsecutiveFailures: 1, ConsecutiveSuccesses: 0}
 	thresholdConfig := resultstatus.ThresholdConfig{FailureThreshold: 1, RecoveryThreshold: 1}
 
-	records, transition, _, _, err := repo.incidentRecordsForResult(monitor, result, currentStatus, thresholdConfig, current, true)
+	records, transition, _, _, err := decideExecutionResult(monitor, result, currentStatus, thresholdConfig, current, true, newIncidentID, newAuditID)
 	if err != nil {
 		t.Fatalf("dynamodbrecord.IncidentRecordsForResult returned error: %v", err)
 	}
@@ -469,14 +482,13 @@ func TestIncidentRecordsForResultUpdatesExistingOpenIncident(t *testing.T) {
 }
 
 func TestIncidentRecordsForResultResolvesOpenIncidentOnSuccess(t *testing.T) {
-	repo := newDynamoRuntimeRepository(&fakeDynamoClient{}, "table-name")
 	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Name: "Homepage", FailureThreshold: 1, RecoveryThreshold: 1}
 	current := dynamodbrecord.IncidentRecord{IncidentID: "INC_1", ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Summary: "old", Status: incidentStatusOpen, OpenedAt: "2026-05-22T11:59:00Z", UpdatedAt: "2026-05-22T11:59:00Z", Origin: "system"}
 	result := checkexecution.ExecutionResult{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, Outcome: checkexecution.OutcomeSuccess, FinishedAt: time.Date(2026, 5, 22, 12, 0, 2, 0, time.UTC)}
 	currentStatus := resultstatus.MonitorStatus{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, CurrentStatus: "RECOVERING", ConsecutiveFailures: 0, ConsecutiveSuccesses: 1}
 	thresholdConfig := resultstatus.ThresholdConfig{FailureThreshold: 1, RecoveryThreshold: 1}
 
-	records, transition, _, _, err := repo.incidentRecordsForResult(monitor, result, currentStatus, thresholdConfig, current, true)
+	records, transition, _, _, err := decideExecutionResult(monitor, result, currentStatus, thresholdConfig, current, true, newIncidentID, newAuditID)
 	if err != nil {
 		t.Fatalf("dynamodbrecord.IncidentRecordsForResult returned error: %v", err)
 	}

@@ -218,9 +218,6 @@ func (r *dynamoMonitorRepository) ListEscalationPolicies(ctx context.Context, te
 			continue
 		}
 		policy := record.ToEscalationPolicy()
-		if err := r.MigrateRouteInlineChannels(ctx, &policy); err != nil {
-			return nil, err
-		}
 		policies = append(policies, policy)
 	}
 	sort.Slice(policies, func(i, j int) bool { return policies[i].PolicyID < policies[j].PolicyID })
@@ -243,12 +240,11 @@ func (r *dynamoMonitorRepository) GetEscalationPolicy(ctx context.Context, tenan
 		return nil, err
 	}
 	policy := record.ToEscalationPolicy()
-	if err := r.MigrateRouteInlineChannels(ctx, &policy); err != nil {
-		return nil, err
-	}
 	return &policy, nil
 }
 
+// MigrateRouteInlineChannels is an explicit operator migration command. Query
+// methods must return legacy inline-channel records without modifying them.
 func (r *dynamoMonitorRepository) MigrateRouteInlineChannels(ctx context.Context, policy *escalation.EscalationPolicy) error {
 	if policy == nil {
 		return nil
