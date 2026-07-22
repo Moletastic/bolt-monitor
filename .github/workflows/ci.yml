@@ -83,5 +83,8 @@ jobs:
       - name: Install dependencies
         run: pnpm --dir infra install --frozen-lockfile --reporter=silent
 
+      - name: Generate SST platform types
+        run: pnpm --dir infra exec sst install
+
       - name: Run infrastructure release gates
         run: make format-infra-check check-infra test-infra check-pnpm-install-trust

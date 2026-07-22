@@ -20,12 +20,13 @@ calls a script removed from `infra/package.json`.
 
 - Add a Go-only bootstrap target for `go work sync`, used by Go test, vet, lint,
   and build targets. This removes Node/pnpm from Go CI requirements.
-- Remove `install:providers` step rather than add an empty script. No current
-  release gate consumes generated provider artifacts.
+- Invoke `pnpm --dir infra exec sst install` directly. SST owns generation of
+  `.sst/platform/config.d.ts`, which TypeScript needs for the infrastructure
+  globals; a package-script wrapper is unnecessary.
 
 ## Risks / Trade-offs
 
 - [A future Go target needs JS-generated input] → Declare that dependency on the
   specific target rather than restoring global setup coupling.
-- [SST later requires provider generation] → Add a real package script and a
-  consuming release-gate test in a dedicated change.
+- [SST install behavior changes] → Keep the direct CLI command versioned with
+  the pinned SST dependency and verify it before infrastructure type checking.

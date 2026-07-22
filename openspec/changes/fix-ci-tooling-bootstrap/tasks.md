@@ -5,5 +5,5 @@
 
 ## 2. CI Repair
 
-- [x] 2.1 Remove the undeclared infrastructure provider-generation script invocation.
-- [x] 2.2 Verify Go targets run without pnpm and infrastructure workflow invokes declared scripts only.
+- [x] 2.1 Replace the undeclared infrastructure provider-generation script invocation with the SST CLI command.
+- [x] 2.2 Verify Go targets run without pnpm and SST platform types exist before infrastructure type checking.
