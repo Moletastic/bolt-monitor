@@ -1,0 +1,13 @@
+{
+  "stage": "staging",
+  "profile": "bolt-monitor",
+  "accountId": "123456789012",
+  "region": "us-east-1",
+  "lifecycle": "persistent",
+  "owner": "Your Team",
+  "service": "bolt-monitor",
+  "dashboardOrigin": "https://staging.example.com",
+  "approved": true,
+  "budgetAmountUsd": 10,
+  "alertEmails": ["ops@example.com"]
+}

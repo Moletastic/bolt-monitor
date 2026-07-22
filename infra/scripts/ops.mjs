@@ -142,11 +142,19 @@ export async function deploy({
       throw new Error(`persistent AppTable lacks deletion protection: ${tableName}`)
     }
     const backupJson = JSON.parse(
-      run('aws', ['dynamodb', 'describe-continuous-backups', '--table-name', tableName, '--output', 'json'], env)
+      run(
+        'aws',
+        ['dynamodb', 'describe-continuous-backups', '--table-name', tableName, '--output', 'json'],
+        env
+      )
     )
-    const status = backupJson?.ContinuousBackupsDescription?.PointInTimeRecoveryDescription?.PointInTimeRecoveryStatus
+    const status =
+      backupJson?.ContinuousBackupsDescription?.PointInTimeRecoveryDescription
+        ?.PointInTimeRecoveryStatus
     if (status !== 'ENABLED') {
-      throw new Error(`persistent AppTable lacks point-in-time recovery: ${tableName} (status=${status ?? 'unknown'})`)
+      throw new Error(
+        `persistent AppTable lacks point-in-time recovery: ${tableName} (status=${status ?? 'unknown'})`
+      )
     }
   }
 }

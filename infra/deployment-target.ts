@@ -14,6 +14,8 @@ export interface DeploymentTarget {
   approved?: boolean
   disposable?: boolean
   expiresAt?: string
+  budgetAmountUsd?: number
+  alertEmails?: string[]
 }
 
 export interface LifecyclePolicy {
@@ -57,7 +59,28 @@ export function parseTarget(value: unknown): DeploymentTarget {
     ...(typeof target.approved === 'boolean' ? { approved: target.approved } : {}),
     ...(typeof target.disposable === 'boolean' ? { disposable: target.disposable } : {}),
     ...(typeof target.expiresAt === 'string' ? { expiresAt: target.expiresAt } : {}),
+    ...(typeof target.budgetAmountUsd === 'number' &&
+    Number.isFinite(target.budgetAmountUsd) &&
+    target.budgetAmountUsd > 0
+      ? { budgetAmountUsd: target.budgetAmountUsd }
+      : {}),
+    ...(Array.isArray(target.alertEmails) &&
+    target.alertEmails.length > 0 &&
+    target.alertEmails.every((entry) => typeof entry === 'string' && entry.trim() !== '')
+      ? { alertEmails: target.alertEmails.map((entry) => (entry as string).trim()) }
+      : {}),
   }
+}
+
+export function hasBudgetConfig(
+  target: DeploymentTarget
+): target is DeploymentTarget & { budgetAmountUsd: number; alertEmails: string[] } {
+  return (
+    typeof target.budgetAmountUsd === 'number' &&
+    target.budgetAmountUsd > 0 &&
+    Array.isArray(target.alertEmails) &&
+    target.alertEmails.length > 0
+  )
 }
 
 export function validateDeploymentTarget(target: DeploymentTarget) {

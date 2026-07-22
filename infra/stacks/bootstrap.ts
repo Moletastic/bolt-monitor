@@ -1,4 +1,4 @@
-import { lifecyclePolicy, type DeploymentTarget } from '../deployment-target'
+import { hasBudgetConfig, lifecyclePolicy, type DeploymentTarget } from '../deployment-target'
 
 const authLogRetention = '2 weeks' as const
 const authMetricNamespace = 'BoltMonitor/Auth'
@@ -562,6 +562,43 @@ export function createBootstrapStack(target: DeploymentTarget) {
         outcome: 'failure',
       },
     })
+  }
+
+  if (hasBudgetConfig(target)) {
+    new aws.budgets.Budget(
+      `MonthlyBudget`,
+      {
+        name: `${target.service}-${target.stage}-monthly`,
+        budgetType: 'COST',
+        limitAmount: target.budgetAmountUsd.toFixed(2),
+        limitUnit: 'USD',
+        timeUnit: 'MONTHLY',
+        costFilters: [
+          {
+            name: 'TagKeyValue',
+            values: [`user:service$${target.service}`, `user:stage$${target.stage}`],
+          },
+        ],
+        notifications: [
+          {
+            notificationType: 'FORECASTED',
+            comparisonOperator: 'GREATER_THAN',
+            threshold: 80,
+            thresholdType: 'PERCENTAGE',
+            subscriberEmailAddresses: target.alertEmails,
+          },
+          {
+            notificationType: 'ACTUAL',
+            comparisonOperator: 'GREATER_THAN',
+            threshold: 100,
+            thresholdType: 'PERCENTAGE',
+            subscriberEmailAddresses: target.alertEmails,
+          },
+        ],
+        tags: policy.tags,
+      },
+      disposableOptions
+    )
   }
 
   return {
