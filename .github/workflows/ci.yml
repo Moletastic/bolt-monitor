@@ -85,6 +85,8 @@ jobs:
 
       - name: Generate SST platform types
         run: pnpm --dir infra exec sst install
+        env:
+          TARGET: example
 
       - name: Run infrastructure release gates
         run: make format-infra-check check-infra test-infra check-pnpm-install-trust

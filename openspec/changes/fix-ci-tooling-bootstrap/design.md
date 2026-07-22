@@ -22,7 +22,9 @@ calls a script removed from `infra/package.json`.
   and build targets. This removes Node/pnpm from Go CI requirements.
 - Invoke `pnpm --dir infra exec sst install` directly. SST owns generation of
   `.sst/platform/config.d.ts`, which TypeScript needs for the infrastructure
-  globals; a package-script wrapper is unnecessary.
+  globals; a package-script wrapper is unnecessary. CI selects the committed
+  `example.target.json` through `TARGET=example` because deployment targets are
+  otherwise ignored from Git.
 
 ## Risks / Trade-offs
 
