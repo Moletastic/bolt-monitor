@@ -9,9 +9,11 @@ workspace installation.
 - **WHEN** the backend CI job runs Go format, vet, test, lint, and build gates
 - **THEN** those gates complete without a pnpm executable
 
-### Requirement: Infrastructure CI invokes declared scripts only
-Infrastructure CI SHALL invoke only scripts declared in `infra/package.json`.
+### Requirement: Infrastructure CI generates SST platform types
+Infrastructure CI SHALL invoke the pinned SST CLI to generate platform types
+before infrastructure type checking. It SHALL NOT invoke an undeclared package
+script for this work.
 
 #### Scenario: Infrastructure CI runs release gates
-- **WHEN** infrastructure CI installs dependencies and runs its release gates
-- **THEN** it does not invoke an undeclared package script
+- **WHEN** infrastructure CI installs dependencies before type checking
+- **THEN** it runs `sst install` through pnpm and generated platform types are available

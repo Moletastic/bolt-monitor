@@ -8,7 +8,8 @@ removed `install:providers` script. Both failures block otherwise valid CI.
 
 - Decouple Go test, vet, lint, and build targets from JavaScript dependency
   installation while retaining Go workspace synchronization.
-- Remove the obsolete infrastructure provider-generation CI step.
+- Replace the obsolete infrastructure provider-generation package script with
+  the supported SST CLI command.
 - Keep dashboard and infrastructure dependency installation in their own jobs.
 
 ## Capabilities
