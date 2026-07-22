@@ -406,9 +406,7 @@ func boolString(v bool) string {
 // satisfies every domain-local interface declared in this package. Failures
 // here point directly at the missing method.
 var (
-	_ ServiceStore    = (*dynamoMonitorRepository)(nil)
 	_ MonitorStore    = (*dynamoMonitorRepository)(nil)
-	_ IncidentStore   = (*dynamoMonitorRepository)(nil)
 	_ SchedulerStore  = (*dynamoMonitorRepository)(nil)
 	_ AuditStore      = (*dynamoMonitorRepository)(nil)
 	_ EscalationStore = (*dynamoMonitorRepository)(nil)
@@ -417,9 +415,7 @@ var (
 )
 
 // Domain-local interfaces are declared in their respective files:
-//   - ServiceStore        : repository_service.go
 //   - MonitorStore        : repository_monitor.go
-//   - IncidentStore       : repository_incident.go
 //   - SchedulerStore      : repository_scheduler.go
 //   - AuditStore          : repository_audit.go
 //   - EscalationStore     : repository_escalation.go

@@ -72,25 +72,96 @@ func (fixedMembershipResolver) Resolve(_ context.Context, _ auth.AuthenticatedId
 
 // newMonitorHandler is the test composition root. It supplies deterministic,
 // side-effect-free collaborators while every store remains a focused port.
-func newMonitorHandler(repo *fakeMonitorRepository, _ ...any) monitorHandler {
+type monitorHandlerTestDependencies struct {
+	principalResolver   PrincipalResolver
+	membershipResolver  MembershipResolver
+	securityEvents      securityEventEmitter
+	tenantID            string
+	now                 commandClock
+	senders             notifications.SenderRegistry
+	executor            checkexecution.HTTPExecutor
+	validateDestination func(context.Context, string) error
+}
+
+func newMonitorHandler(repo *fakeMonitorRepository, options ...any) monitorHandler {
+	servicesStore := fakeServiceStore{state: repo.fakeMonitorRepositoryState}
+	monitorStore := fakeMonitorStore{state: repo.fakeMonitorRepositoryState}
+	incidentStore := fakeIncidentStore{state: repo.fakeMonitorRepositoryState}
+	schedulerStore := fakeSchedulerStore{state: repo.fakeMonitorRepositoryState}
+	escalationStore := fakeEscalationStore{state: repo.fakeMonitorRepositoryState}
+	now := commandClock(func() time.Time { return time.Unix(0, 0) })
+	senders := notifications.NewSenderRegistry()
+	executor := checkexecution.HTTPExecutor(&recordingMonitorExecutor{})
+	principalResolver := PrincipalResolver(fixedPrincipalResolver{})
+	membershipResolver := MembershipResolver(fixedMembershipResolver{})
+	securityEvents := securityEventEmitter(emitMonitorSecurityEvent)
+	tenantID := defaultTenantID
+	validateDestination := func(context.Context, string) error { return nil }
+	for _, option := range options {
+		dependencies, ok := option.(monitorHandlerTestDependencies)
+		if !ok {
+			continue
+		}
+		if dependencies.now != nil {
+			now = dependencies.now
+		}
+		if dependencies.senders != nil {
+			senders = dependencies.senders
+		}
+		if dependencies.executor != nil {
+			executor = dependencies.executor
+		}
+		if dependencies.principalResolver != nil {
+			principalResolver = dependencies.principalResolver
+		}
+		if dependencies.membershipResolver != nil {
+			membershipResolver = dependencies.membershipResolver
+		}
+		if dependencies.securityEvents != nil {
+			securityEvents = dependencies.securityEvents
+		}
+		if dependencies.tenantID != "" {
+			tenantID = dependencies.tenantID
+		}
+		if dependencies.validateDestination != nil {
+			validateDestination = dependencies.validateDestination
+		}
+	}
+	runSequence := 0
+	ids := identifierGenerator{
+		newServiceID: func(time.Time) string { return "SVC_TEST" },
+		newMonitorID: func(string, string, string) string { return "MON_TEST" },
+		newRunID: func(time.Time) string {
+			runSequence++
+			return fmt.Sprintf("RUN_TEST_%d", runSequence)
+		},
+		newEscalationPolicyID:    func(time.Time) string { return "POL_TEST" },
+		newNotificationChannelID: func(time.Time) string { return "CH_TEST" },
+	}
+	services := newServiceOperations(servicesStore, servicesStore, servicesStore, servicesStore, servicesStore, servicesStore, servicesStore, servicesStore, now, ids)
+	monitors := newMonitorOperations(servicesStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, now, ids, executor, func(context.Context, monitorconfig.Monitor) error { return nil })
+	incidents := newIncidentOperations(incidentStore, incidentStore, incidentStore, incidentStore, monitorStore, servicesStore, incidentStore, incidentStore, incidentStore, incidentStore, now)
+	channels := newNotificationChannelOperations(escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, senders, now, ids)
+	policies := newEscalationPolicyOperations(escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, servicesStore, servicesStore, now, ids)
 	return newAuthorizedMonitorHandlerWithDependencies(
-		newMonitorAPIOperations(repo, repo, repo, repo, repo, repo, repo, repo, repo),
-		fixedPrincipalResolver{}, fixedMembershipResolver{}, monitorHandlerDependencies{
-			securityEvents:      emitMonitorSecurityEvent,
+		newMonitorAPIOperations(services, monitors, incidents, newSchedulerOperations(schedulerStore, schedulerStore, now), policies, channels, searchResourcesQuery{store: fakeSearchStore{state: repo.fakeMonitorRepositoryState}}),
+		principalResolver, membershipResolver, monitorHandlerDependencies{
+			securityEvents:      securityEvents,
 			newSecurityEvent:    newMonitorSecurityEventFactory(unknownSecurityEventStage, func() time.Time { return time.Unix(0, 0) }),
-			now:                 func() time.Time { return time.Unix(0, 0) },
-			senders:             notifications.NewSenderRegistry(),
-			executor:            &recordingMonitorExecutor{},
-			validateDestination: func(context.Context, string) error { return nil },
+			tenantID:            tenantID,
+			now:                 now,
+			senders:             senders,
+			executor:            executor,
+			validateDestination: validateDestination,
 		},
 	)
 }
 
 func newAuthorizedMonitorHandler(repo *fakeMonitorRepository, principalResolver PrincipalResolver, membershipResolver MembershipResolver) monitorHandler {
-	handler := newMonitorHandler(repo)
-	handler.principalResolver = principalResolver
-	handler.membershipResolver = membershipResolver
-	return handler
+	return newMonitorHandler(repo, monitorHandlerTestDependencies{
+		principalResolver:  principalResolver,
+		membershipResolver: membershipResolver,
+	})
 }
 
 type channelTestAuditRecord struct {
@@ -1374,9 +1445,10 @@ func TestNotificationChannelTestSendSucceedsForReferencedChannel(t *testing.T) {
 	repo.channels["CH_1"] = escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Name: "Primary", Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"secret"}`)}
 	repo.policies["POL_1"] = escalation.EscalationPolicy{TenantID: defaultTenantID, PolicyID: "POL_1", Name: "Route", BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1"}}}, OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1"}}}}
 	sender := &fakeNotificationSender{channelType: "telegram"}
-	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
-	handler.now = func() time.Time { return time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC) }
-	handler.senders = notifications.SenderRegistry{"telegram": sender}
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{
+		now:     commandClock(func() time.Time { return time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC) }),
+		senders: notifications.SenderRegistry{"telegram": sender},
+	})
 
 	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1/test", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
 	response, err := handler.handleRequest(context.Background(), request)
@@ -1446,8 +1518,7 @@ func TestNotificationChannelTestSendFailuresAreTypedAndAudited(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := newFakeMonitorRepository()
 			repo.channels["CH_1"] = tt.channel
-			handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
-			handler.senders = tt.senders
+			handler := newMonitorHandler(repo, monitorHandlerTestDependencies{senders: tt.senders})
 			request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1/test", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
 
 			response, err := handler.handleRequest(context.Background(), request)
@@ -1474,10 +1545,9 @@ func TestNotificationChannelTestSendFailuresAreTypedAndAudited(t *testing.T) {
 }
 
 func TestChannelDestinationValidationUsesTypedFieldErrors(t *testing.T) {
-	handler := newMonitorHandler(newFakeMonitorRepository(), defaultProbeLocationCatalog(), defaultTenantID)
-	handler.validateDestination = func(context.Context, string) error {
+	handler := newMonitorHandler(newFakeMonitorRepository(), monitorHandlerTestDependencies{validateDestination: func(context.Context, string) error {
 		return &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked}
-	}
+	}})
 	tests := []struct {
 		name    string
 		channel escalation.NotificationChannel
@@ -1521,9 +1591,10 @@ func TestUpdateMonitorDestinationPreflightIsRedactedAndDoesNotPersist(t *testing
 				HTTP: &monitorconfig.HTTPConfiguration{Target: "https://status.example.com", Method: "GET", TimeoutMs: 5000},
 			}
 			repo.monitors[monitorKey("auth", "public-http")] = current
-			handler := newMonitorHandler(repo)
-			handler.tenantID = defaultTenantID
-			handler.validateDestination = func(context.Context, string) error { return test.validateErr }
+			handler := newMonitorHandler(repo, monitorHandlerTestDependencies{
+				tenantID:            defaultTenantID,
+				validateDestination: func(context.Context, string) error { return test.validateErr },
+			})
 			request := events.APIGatewayV2HTTPRequest{Body: fmt.Sprintf(`{"http":{"target":%q,"method":"GET","timeoutMs":5000}}`, test.target)}
 
 			response, err := handler.updateMonitor(context.Background(), "auth", "public-http", request)
@@ -1558,10 +1629,10 @@ func TestManualRunRecordsUnsafeStoredTargetWithoutDialing(t *testing.T) {
 	}
 	repo.monitors[monitorKey("auth", "public-http")] = monitor
 	dialer := &noDialer{}
-	handler := newMonitorHandler(repo)
-	handler.tenantID = defaultTenantID
-	handler.executor = &outboundhttp.Executor{Dialer: dialer}
-	handler.now = func() time.Time { return time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC) }
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{
+		now:      commandClock(func() time.Time { return time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC) }),
+		executor: &outboundhttp.Executor{Dialer: dialer},
+	})
 
 	response, err := handler.runMonitor(context.Background(), "auth", "public-http", events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "idempotent-key-12345"}})
 	if err != nil {
@@ -1588,9 +1659,7 @@ func TestManualRunExecutesSafePublicTargetWithFakeExecutor(t *testing.T) {
 	}
 	repo.monitors[monitorKey("auth", "public-http")] = monitor
 	executor := &recordingMonitorExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte("ok")}}
-	handler := newMonitorHandler(repo)
-	handler.tenantID = defaultTenantID
-	handler.executor = executor
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{executor: executor})
 
 	response, err := handler.runMonitor(context.Background(), "auth", "public-http", events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "idempotent-key-67890"}})
 	if err != nil {
@@ -1620,8 +1689,7 @@ func TestNotificationChannelDestinationValidationIsDeterministicAndNonPersistent
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := newFakeMonitorRepository()
-			handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
-			handler.validateDestination = func(context.Context, string) error { return tt.preflight }
+			handler := newMonitorHandler(repo, monitorHandlerTestDependencies{validateDestination: func(context.Context, string) error { return tt.preflight }})
 			request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels", Body: fmt.Sprintf(`{"name":"Channel","type":%q,"target":%q,"config":%s}`, tt.channelType, tt.target, tt.config), RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
 
 			response, err := handler.handleRequest(context.Background(), request)
@@ -1661,8 +1729,7 @@ func TestNotificationChannelDestinationValidationIsDeterministicAndNonPersistent
 func TestNotificationChannelUpdateRejectsUnsafeDestinationWithoutPersistence(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.channels["CH_1"] = escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Name: "Webhook", Type: escalation.ChannelTypeWebhook, Target: "https://hooks.example.com", Config: json.RawMessage(`{}`)}
-	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
-	handler.validateDestination = func(context.Context, string) error { return &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked} }
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{validateDestination: func(context.Context, string) error { return &outboundhttp.Error{Kind: outboundhttp.KindAddressBlocked} }})
 	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1", PathParameters: map[string]string{"channelId": "CH_1"}, Body: `{"target":"https://rebound.example.com?token=secret"}`, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPut}}}
 
 	response, err := handler.handleRequest(context.Background(), request)
@@ -2163,19 +2230,20 @@ func TestNonTypedErrorReachesWireAsInternalWithNilDetails(t *testing.T) {
 	}
 }
 
-type typedRepoStub struct {
-	ServiceStore
-	forced error
-}
+type listServicesFailureStore struct{ forced error }
 
-func (s typedRepoStub) ListServices(context.Context, string) ([]monitorconfig.Service, error) {
+func (s listServicesFailureStore) ListServices(context.Context, string) ([]monitorconfig.Service, error) {
 	return nil, s.forced
 }
 
+func (listServicesFailureStore) GetServiceCardMetrics(context.Context, string, string) (serviceCardMetricsResponse, error) {
+	return serviceCardMetricsResponse{}, nil
+}
+
 func TestHandlerReachesInternalForUntypedRepositoryError(t *testing.T) {
-	stub := typedRepoStub{forced: stderrors.New("storage exploded")}
+	stub := listServicesFailureStore{forced: stderrors.New("storage exploded")}
 	handler := newMonitorHandler(newFakeMonitorRepository(), defaultProbeLocationCatalog(), defaultTenantID)
-	handler.operations.ServiceStore = stub
+	handler.operations.services.list = listServicesQuery{store: stub}
 	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/services", RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}}}
 	response, err := handler.handleRequest(context.Background(), request)
 	if err != nil {

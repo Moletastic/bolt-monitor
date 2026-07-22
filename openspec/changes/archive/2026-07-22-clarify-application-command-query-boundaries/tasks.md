@@ -23,18 +23,18 @@
 
 ## 4. Split Monitor API Commands And Queries
 
-- [ ] 4.1 Extract service command and query operations with consumer-owned narrow interfaces.
-- [ ] 4.2 Extract monitor command, status, history, and manual-run operations with consumer-owned narrow interfaces.
-- [ ] 4.3 Extract incident command and query operations with consumer-owned narrow interfaces.
-- [ ] 4.4 Extract scheduler, escalation-policy, notification-channel, and search operations with consumer-owned narrow interfaces.
-- [ ] 4.5 Reduce HTTP handlers to authorization, transport decode, application-operation invocation, and envelope mapping while preserving all routes and payloads.
-- [ ] 4.6 Replace monolithic handler fakes with operation-focused test fakes.
+- [x] 4.1 Extract service command and query operations with consumer-owned narrow interfaces.
+- [x] 4.2 Extract monitor command, status, history, and manual-run operations with consumer-owned narrow interfaces.
+- [x] 4.3 Extract incident command and query operations with consumer-owned narrow interfaces.
+- [x] 4.4 Extract scheduler, escalation-policy, notification-channel, and search operations with consumer-owned narrow interfaces.
+- [x] 4.5 Reduce HTTP handlers to authorization, transport decode, application-operation invocation, and envelope mapping while preserving all routes and payloads.
+- [x] 4.6 Replace monolithic handler fakes with operation-focused test fakes.
 
 ## 5. Inject Observable Collaborators
 
-- [ ] 5.1 Define explicit clock and identifier-generator dependencies for commands that create timestamps or IDs.
+- [x] 5.1 Define explicit clock and identifier-generator dependencies for commands that create timestamps or IDs.
 - [x] 5.2 Inject notification sender registries and security/audit emitters through composition roots rather than silently constructing them in application constructors.
-- [ ] 5.3 Update tests to supply deterministic clocks, IDs, senders, and emitters through constructors instead of mutating constructed handlers.
+- [x] 5.3 Update tests to supply deterministic clocks, IDs, senders, and emitters through constructors instead of mutating constructed handlers.
 - [x] 5.4 Confirm pure helpers and stable mappers remain concrete functions rather than unnecessary interfaces.
 
 ## 6. Verify Contracts And Architecture

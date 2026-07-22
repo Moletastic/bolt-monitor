@@ -82,16 +82,6 @@ func isTerminalSQSError(err error) bool {
 
 const defaultSchedulerDeadline = 50 * time.Second
 
-func newRuntimeHandler(repo runtimeRepository, sqsClient sqsClient, queueURL, escalationQueueURL, tenantID, mode string) runtimeHandler {
-	return newRuntimeHandlerWithDependencies(repo, sqsClient, queueURL, escalationQueueURL, tenantID, mode, runtimeHandlerDependencies{
-		now:               time.Now,
-		executor:          outboundhttp.NewExecutor(),
-		resultClock:       systemExecutionResultClock{},
-		resultIDs:         generatedExecutionResultIDs{},
-		schedulerDeadline: defaultSchedulerDeadline,
-	})
-}
-
 type runtimeHandlerDependencies struct {
 	now               func() time.Time
 	executor          checkexecution.HTTPExecutor

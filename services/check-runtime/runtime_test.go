@@ -29,6 +29,37 @@ func (e fakeExecutor) Execute(_ context.Context, _ outboundhttp.Request) (outbou
 	return e.response, nil
 }
 
+var testRuntimeNow = time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+
+type testRuntimeHandlerOptions struct {
+	now               time.Time
+	executor          checkexecution.HTTPExecutor
+	schedulerDeadline time.Duration
+}
+
+func newTestRuntimeHandler(repo runtimeRepository, sqs sqsClient, queueURL, escalationQueueURL, tenantID, mode string) runtimeHandler {
+	return newTestRuntimeHandlerWithOptions(repo, sqs, queueURL, escalationQueueURL, tenantID, mode, testRuntimeHandlerOptions{})
+}
+
+func newTestRuntimeHandlerWithOptions(repo runtimeRepository, sqs sqsClient, queueURL, escalationQueueURL, tenantID, mode string, options testRuntimeHandlerOptions) runtimeHandler {
+	if options.now.IsZero() {
+		options.now = testRuntimeNow
+	}
+	if options.executor == nil {
+		options.executor = fakeExecutor{response: outboundhttp.Response{StatusCode: 200}}
+	}
+	if options.schedulerDeadline == 0 {
+		options.schedulerDeadline = defaultSchedulerDeadline
+	}
+	return newRuntimeHandlerWithDependencies(repo, sqs, queueURL, escalationQueueURL, tenantID, mode, runtimeHandlerDependencies{
+		now:               func() time.Time { return options.now },
+		executor:          options.executor,
+		resultClock:       fixedExecutionResultClock{at: options.now},
+		resultIDs:         fixedExecutionResultIDs{},
+		schedulerDeadline: options.schedulerDeadline,
+	})
+}
+
 type countingDialer struct{ calls int }
 
 func (d *countingDialer) DialContext(context.Context, string, string) (net.Conn, error) {
@@ -218,9 +249,7 @@ func TestRunSchedulerStopsAtDiscoveryDeadline(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
 	repo.listErr = context.DeadlineExceeded
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "execution-queue", "", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return now }
-	handler.schedulerDeadline = 5 * time.Second
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "execution-queue", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: now, schedulerDeadline: 5 * time.Second})
 
 	_, err := handler.runScheduler(context.Background())
 	if err == nil {
@@ -235,10 +264,10 @@ func TestRunSchedulerStopsAtDiscoveryDeadline(t *testing.T) {
 func TestExecutionResultCommandRejectsIdentityMismatch(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	monitor := testMonitor("https://example.com", true)
-	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: time.Now()}
-	mismatched := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OTHER", Outcome: checkexecution.OutcomeSuccess, FinishedAt: time.Now()}
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: testRuntimeNow}
+	mismatched := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_OTHER", Outcome: checkexecution.OutcomeSuccess, FinishedAt: testRuntimeNow}
 
-	if _, _, err := newExecutionResultCommand(repo, systemExecutionResultClock{}, generatedExecutionResultIDs{}).execute(context.Background(), monitor, work, mismatched); err == nil || !strings.Contains(err.Error(), "immutable_identity_conflict") {
+	if _, _, err := newExecutionResultCommand(repo, fixedExecutionResultClock{at: testRuntimeNow}, fixedExecutionResultIDs{}).execute(context.Background(), monitor, work, mismatched); err == nil || !strings.Contains(err.Error(), "immutable_identity_conflict") {
 		t.Fatalf("expected identity conflict, got %v", err)
 	}
 }
@@ -247,10 +276,8 @@ func TestRunSchedulerIgnoresExpiredFakeClockForDeadline(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "queue-url", "", defaultTenantID, modeScheduler)
-	handler.schedulerDeadline = 5 * time.Second
-	now := time.Now().UTC()
-	handler.now = func() time.Time { return now }
+	now := testRuntimeNow
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "queue-url", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: now, schedulerDeadline: 5 * time.Second})
 
 	summary, err := handler.runScheduler(context.Background())
 	if err != nil {
@@ -265,8 +292,7 @@ func TestRunSchedulerRespectsRecurringGate(t *testing.T) {
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: false}
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "", "", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC) }
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)})
 
 	summary, err := handler.runScheduler(context.Background())
 	if err != nil {
@@ -282,9 +308,8 @@ func TestRunSchedulerEnqueuesStableRecurringIdentity(t *testing.T) {
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
 	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
-	handler.now = func() time.Time { return now }
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: now})
 
 	summary, err := handler.runScheduler(context.Background())
 	if err != nil {
@@ -310,8 +335,7 @@ func TestRunSchedulerEnqueuesEnabledMonitorUnderDraftService(t *testing.T) {
 		"auth": {TenantID: defaultTenantID, ServiceID: "auth", LifecycleState: monitorconfig.ServiceLifecycleDraft},
 	}
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC) }
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)})
 
 	summary, err := handler.runScheduler(context.Background())
 	if err != nil {
@@ -328,8 +352,7 @@ func TestRunSchedulerDoesNotUseLastExecutionForIdentity(t *testing.T) {
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	repo.lastExec["auth/public-http"] = time.Date(2026, 5, 22, 11, 59, 30, 0, time.UTC)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC) }
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)})
 
 	summary, err := handler.runScheduler(context.Background())
 	if err != nil {
@@ -346,8 +369,7 @@ func TestRunSchedulerEnqueuesMonitorAfterIntervalElapsed(t *testing.T) {
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	repo.lastExec["auth/public-http"] = time.Date(2026, 5, 22, 11, 59, 0, 0, time.UTC)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC) }
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)})
 
 	summary, err := handler.runScheduler(context.Background())
 	if err != nil {
@@ -366,8 +388,7 @@ func TestRunSchedulerTreatsZeroIntervalAsAlwaysDue(t *testing.T) {
 	repo.monitors["auth/public-http"] = monitor
 	repo.lastExec["auth/public-http"] = time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 1, 0, time.UTC) }
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: time.Date(2026, 5, 22, 12, 0, 1, 0, time.UTC)})
 
 	summary, err := handler.runScheduler(context.Background())
 	if err != nil {
@@ -383,8 +404,7 @@ func TestRunWorkerSkipsDisabledMonitor(t *testing.T) {
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", false)
 	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "", "", defaultTenantID, modeWorker)
-	handler.now = func() time.Time { return time.Date(2026, 5, 22, 12, 0, 1, 0, time.UTC) }
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "", "", defaultTenantID, modeWorker, testRuntimeHandlerOptions{now: time.Date(2026, 5, 22, 12, 0, 1, 0, time.UTC)})
 
 	summary, err := handler.runWorker(context.Background())
 	if err != nil {
@@ -403,7 +423,7 @@ func TestHandleSQSEventSkipsDeletedMonitorDurably(t *testing.T) {
 	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "service", MonitorID: "monitor", RunID: "run", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now, Status: checkexecution.ExecutionWorkPending}
 	repo := newFakeRuntimeRepository()
 	repo.works = []checkexecution.ExecutionWork{work}
-	handler := runtimeHandler{repo: repo, tenantID: defaultTenantID, now: func() time.Time { return now }}
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker, testRuntimeHandlerOptions{now: now})
 	body, err := json.Marshal(checkexecution.ExecutionRequest{Monitor: monitorconfig.Monitor{TenantID: defaultTenantID, ServiceID: "service", MonitorID: "monitor"}, RunID: "run", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now})
 	if err != nil {
 		t.Fatalf("Marshal returned error: %v", err)
@@ -423,8 +443,7 @@ func TestRunWorkerProcessesManualRunIntoRecordedResult(t *testing.T) {
 	repo.monitors["auth/public-http"] = testMonitor("https://status.example.com", true)
 	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_MANUAL_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "", "", defaultTenantID, modeWorker)
-	handler.executor = fakeExecutor{response: outboundhttp.Response{StatusCode: 200, Body: []byte("ok")}}
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "", "", defaultTenantID, modeWorker, testRuntimeHandlerOptions{executor: fakeExecutor{response: outboundhttp.Response{StatusCode: 200, Body: []byte("ok")}}})
 
 	summary, err := handler.runWorker(context.Background())
 	if err != nil {
@@ -445,9 +464,8 @@ func TestRunWorkerRecordsUnsafePersistedTargetWithoutDialing(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	repo.monitors["auth/public-http"] = testMonitor("http://127.0.0.1", true)
 	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_UNSAFE_1", Trigger: checkexecution.TriggerTypeManual, RequestedAt: time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC), Status: checkexecution.ExecutionWorkPending}}
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
 	dialer := &countingDialer{}
-	handler.executor = &outboundhttp.Executor{Dialer: dialer}
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker, testRuntimeHandlerOptions{executor: &outboundhttp.Executor{Dialer: dialer}})
 
 	summary, err := handler.runWorker(context.Background())
 	if err != nil {
@@ -468,11 +486,10 @@ func TestRunWorkerRecordsUnsafePersistedTargetWithoutDialing(t *testing.T) {
 func TestHandleSQSEventRecordsUnsafeQueuedTargetWithoutDialing(t *testing.T) {
 	repo := newFakeRuntimeRepository()
 	dialer := &countingDialer{}
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
-	handler.executor = &outboundhttp.Executor{Dialer: dialer}
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker, testRuntimeHandlerOptions{executor: &outboundhttp.Executor{Dialer: dialer}})
 	request := checkexecution.ExecutionRequest{Monitor: testMonitor("http://127.0.0.1", true), RunID: "RUN_QUEUE_UNSAFE", Trigger: checkexecution.TriggerTypeManual}
 	repo.monitors["auth/public-http"] = request.Monitor
-	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: request.RunID, Trigger: request.Trigger, RequestedAt: time.Now().UTC(), Status: checkexecution.ExecutionWorkPending}}
+	repo.works = []checkexecution.ExecutionWork{{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: request.RunID, Trigger: request.Trigger, RequestedAt: testRuntimeNow, Status: checkexecution.ExecutionWorkPending}}
 	body, err := json.Marshal(request)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
@@ -492,7 +509,7 @@ func TestHandleSQSEventRecordsUnsafeQueuedTargetWithoutDialing(t *testing.T) {
 
 func TestHandleSQSEventBatchFailsOnlyMalformedRecord(t *testing.T) {
 	repo := newFakeRuntimeRepository()
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
+	handler := newTestRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
 	response, err := handler.handleSQSEventBatch(context.Background(), events.SQSEvent{Records: []events.SQSMessage{
 		{MessageId: "bad", Body: "{"},
 		{MessageId: "duplicate", Body: `{"monitor":{"tenantId":"DEFAULT"},"runId":"RUN_MISSING","trigger":"manual"}`},
@@ -515,8 +532,7 @@ func TestHandleSQSEventBatchKeepsSuccessfulRecordsAcknowledged(t *testing.T) {
 		{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_RETRY", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now, Status: checkexecution.ExecutionWorkPending},
 	}
 	repo.recordErr["RUN_RETRY"] = checkexecution.Storage("commit-result", "RUN_RETRY")
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
-	handler.now = func() time.Time { return now }
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker, testRuntimeHandlerOptions{now: now})
 	request := func(runID string) string {
 		body, err := json.Marshal(checkexecution.ExecutionRequest{Monitor: monitor, RunID: runID, Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now})
 		if err != nil {
@@ -543,8 +559,7 @@ func TestHandleSQSEventBatchKeepsSuccessfulRecordsAcknowledged(t *testing.T) {
 func TestReconcileDispatchPendingQueriesCurrentHourlyBucket(t *testing.T) {
 	now := time.Date(2026, 7, 19, 12, 34, 0, 0, time.UTC)
 	repo := newFakeRuntimeRepository()
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "escalation-queue", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return now }
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "", "escalation-queue", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: now})
 
 	if _, err := handler.reconcileDispatchPending(context.Background()); err != nil {
 		t.Fatalf("reconcileDispatchPending returned error: %v", err)
@@ -560,14 +575,12 @@ func TestReconcileDispatchPendingQueriesCurrentHourlyBucket(t *testing.T) {
 }
 
 func TestRunSchedulerDuplicateInvocationDerivesSameIdentity(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Minute)
+	now := testRuntimeNow
 	repo := newFakeRuntimeRepository()
 	repo.config = checkexecution.SchedulerConfig{RecurringEnabled: true}
 	repo.monitors["auth/public-http"] = testMonitor("https://example.com", true)
 	sqs := &fakeSQSClient{}
-	handler := newRuntimeHandler(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return now }
-	handler.schedulerDeadline = 5 * time.Second
+	handler := newTestRuntimeHandlerWithOptions(repo, sqs, "queue-url", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: now, schedulerDeadline: 5 * time.Second})
 
 	first, err := handler.runScheduler(context.Background())
 	if err != nil {
@@ -590,8 +603,7 @@ func TestHandleSQSEventRejectsDuplicateConcurrentDelivery(t *testing.T) {
 	repo.monitors["auth/public-http"] = monitor
 	repo.works = []checkexecution.ExecutionWork{work}
 	repo.claims["RUN_DUP"] = true
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
-	handler.now = func() time.Time { return now }
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "", "", defaultTenantID, modeWorker, testRuntimeHandlerOptions{now: now})
 	body, _ := json.Marshal(checkexecution.ExecutionRequest{Monitor: monitor, RunID: "RUN_DUP", Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now})
 	response, err := handler.handleSQSEventBatch(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{MessageId: "dup", Body: string(body)}}})
 	if err != nil {
@@ -628,8 +640,7 @@ func TestRuntimeOutcomeLogRedactsSecrets(t *testing.T) {
 func TestRecoverPublicationMarkersQueriesBoundedHourlyBuckets(t *testing.T) {
 	now := time.Date(2026, 7, 19, 12, 34, 0, 0, time.UTC)
 	repo := newFakeRuntimeRepository()
-	handler := newRuntimeHandler(repo, &fakeSQSClient{}, "execution-queue", "", defaultTenantID, modeScheduler)
-	handler.now = func() time.Time { return now }
+	handler := newTestRuntimeHandlerWithOptions(repo, &fakeSQSClient{}, "execution-queue", "", defaultTenantID, modeScheduler, testRuntimeHandlerOptions{now: now})
 
 	if _, err := handler.recoverPublicationMarkers(context.Background()); err != nil {
 		t.Fatalf("recoverPublicationMarkers returned error: %v", err)

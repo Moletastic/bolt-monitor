@@ -9,6 +9,28 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
+// commandClock and identifierGenerator are explicit command collaborators.
+// Composition roots choose production implementations; tests use fixed values.
+type commandClock func() time.Time
+
+type identifierGenerator struct {
+	newServiceID             func(time.Time) string
+	newMonitorID             func(string, string, string) string
+	newRunID                 func(time.Time) string
+	newEscalationPolicyID    func(time.Time) string
+	newNotificationChannelID func(time.Time) string
+}
+
+func productionIdentifierGenerator() identifierGenerator {
+	return identifierGenerator{
+		newServiceID:             newServiceID,
+		newMonitorID:             generateMonitorID,
+		newRunID:                 newRunID,
+		newEscalationPolicyID:    newEscalationPolicyID,
+		newNotificationChannelID: newNotificationChannelID,
+	}
+}
+
 func newAuditID(now time.Time) string {
 	return fmt.Sprintf("AUD_%s", ulid.Make().String())
 }

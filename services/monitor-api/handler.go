@@ -14,7 +14,6 @@ import (
 	"bolt-monitor/shared/auth"
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/checkexecution"
-	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/dynamodbschema"
 	sharederrors "bolt-monitor/shared/errors"
 	"bolt-monitor/shared/escalation"
@@ -30,41 +29,24 @@ const (
 	historyPageSize              = int32(20)
 )
 
-// manualRunStore is owned by the manual-run command. It deliberately excludes
-// unrelated monitor lifecycle methods.
-type manualRunStore interface {
-	GetMonitor(context.Context, string, string, string) (monitorconfig.Monitor, bool, error)
-	RecordExecutionResult(context.Context, monitorconfig.Monitor, string, checkexecution.ExecutionResult) error
-	ReserveManualIdempotency(context.Context, manualIdempotencyRecord) (manualIdempotencyRecord, error)
-}
-
-// deliveryStore is owned by delivery queries and the replay command.
-type deliveryStore interface {
-	ListIncidentDeliveries(context.Context, string, string) ([]notifications.DeliveryRecord, error)
-	PrepareDeliveryReplay(context.Context, notifications.ReplayCommand, string, time.Time, time.Duration) (string, error)
-	LookupReplayIdempotency(context.Context, string, string, string, string) (*notifications.ReplayIdempotencyRecord, error)
-}
-
 // monitorAPIOperations is the explicit application composition boundary. Each
 // embedded port is consumer-owned; the DynamoDB adapter happens to implement
 // all of them, but handlers never depend on one aggregate repository interface.
 type monitorAPIOperations struct {
-	ServiceStore
-	MonitorStore
-	IncidentStore
-	SchedulerStore
-	AuditStore
-	EscalationStore
-	SearchStore
-	manualRuns manualRunStore
-	deliveries deliveryStore
+	services  serviceOperations
+	monitors  monitorOperations
+	incidents incidentOperations
+	scheduler schedulerOperations
+	policies  escalationPolicyOperations
+	channels  notificationChannelOperations
+	search    searchResourcesQuery
 }
 
-func newMonitorAPIOperations(service ServiceStore, monitor MonitorStore, incident IncidentStore, scheduler SchedulerStore, audit AuditStore, escalation EscalationStore, search SearchStore, manual manualRunStore, delivery deliveryStore) monitorAPIOperations {
+func newMonitorAPIOperations(services serviceOperations, monitors monitorOperations, incidents incidentOperations, scheduler schedulerOperations, policies escalationPolicyOperations, channels notificationChannelOperations, search searchResourcesQuery) monitorAPIOperations {
 	return monitorAPIOperations{
-		ServiceStore: service, MonitorStore: monitor, IncidentStore: incident,
-		SchedulerStore: scheduler, AuditStore: audit, EscalationStore: escalation,
-		SearchStore: search, manualRuns: manual, deliveries: delivery,
+		services: services,
+		monitors: monitors, incidents: incidents,
+		scheduler: scheduler, policies: policies, channels: channels, search: search,
 	}
 }
 
@@ -84,6 +66,7 @@ type monitorHandler struct {
 type monitorHandlerDependencies struct {
 	securityEvents      securityEventEmitter
 	newSecurityEvent    func(auth.SecurityEvent, string, auth.Subject, string) securityEvent
+	tenantID            string
 	now                 func() time.Time
 	senders             notifications.SenderRegistry
 	executor            checkexecution.HTTPExecutor
@@ -97,6 +80,7 @@ func newAuthorizedMonitorHandlerWithDependencies(operations monitorAPIOperations
 		membershipResolver:  membershipResolver,
 		securityEvents:      dependencies.securityEvents,
 		newSecurityEvent:    dependencies.newSecurityEvent,
+		tenantID:            dependencies.tenantID,
 		now:                 dependencies.now,
 		senders:             dependencies.senders,
 		executor:            dependencies.executor,
@@ -272,7 +256,7 @@ func (h monitorHandler) searchResources(ctx context.Context, request events.APIG
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	results, err := h.operations.SearchResources(ctx, h.tenantID, request.QueryStringParameters["q"], limit, types)
+	results, err := h.operations.search.Execute(ctx, h.tenantID, request.QueryStringParameters["q"], limit, types)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -295,12 +279,7 @@ func (h monitorHandler) createService(ctx context.Context, request events.APIGat
 	if err := json.Unmarshal([]byte(request.Body), &payload); err != nil {
 		return respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 	}
-	service, err := payload.ToService(h.tenantID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	service.ServiceID = newServiceID(h.now())
-	created, err := h.operations.CreateService(ctx, service)
+	created, err := h.operations.services.create.Execute(ctx, createServiceInput{TenantID: h.tenantID, Request: payload})
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -309,91 +288,46 @@ func (h monitorHandler) createService(ctx context.Context, request events.APIGat
 }
 
 func (h monitorHandler) listServices(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
-	services, err := h.operations.ListServices(ctx, h.tenantID)
+	services, err := h.operations.services.list.Execute(ctx, h.tenantID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	payload := listServicesResponse{Services: make([]serviceResponse, 0, len(services))}
 	for _, service := range services {
-		serviceResponse := toServiceResponse(service)
-		metrics, err := h.operations.GetServiceCardMetrics(ctx, h.tenantID, service.ServiceID)
-		if err != nil {
-			return respondAPIGateway(err)
-		}
-		serviceResponse.CardMetrics = &metrics
+		serviceResponse := toServiceResponse(service.Service)
+		serviceResponse.CardMetrics = &service.Metrics
 		payload.Services = append(payload.Services, serviceResponse)
 	}
 	return envelopeResponse(http.StatusOK, response.OkPaginated(payload, 1, len(payload.Services), len(payload.Services)))
 }
 
 func (h monitorHandler) getService(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
-	service, found, err := h.operations.GetService(ctx, h.tenantID, serviceID)
+	detail, found, err := h.operations.services.get.Execute(ctx, h.tenantID, serviceID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
 	}
-	monitors, err := h.operations.ListMonitors(ctx, h.tenantID, serviceID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	serviceResponse := toServiceResponse(service)
-	metrics, err := h.operations.GetServiceCardMetrics(ctx, h.tenantID, serviceID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	serviceResponse.CardMetrics = &metrics
-	serviceResponse.Monitors = make([]monitorResponse, 0, len(monitors))
-	for _, monitor := range monitors {
-		status, foundStatus, err := h.operations.GetMonitorStatus(ctx, h.tenantID, serviceID, monitor.MonitorID)
-		if err != nil {
-			return respondAPIGateway(err)
-		}
+	serviceResponse := toServiceResponse(detail.Service)
+	serviceResponse.CardMetrics = &detail.Metrics
+	serviceResponse.Monitors = make([]monitorResponse, 0, len(detail.Monitors))
+	for _, monitor := range detail.Monitors {
 		var statusResponse *monitorStatusResponse
-		if foundStatus {
-			statusResponse = toStatusResponse(status)
+		if monitor.Status != nil {
+			statusResponse = toStatusResponse(*monitor.Status)
 		}
-		serviceResponse.Monitors = append(serviceResponse.Monitors, toMonitorResponse(monitor, statusResponse))
+		serviceResponse.Monitors = append(serviceResponse.Monitors, toMonitorResponse(monitor.Monitor, statusResponse))
 	}
 	return envelopeResponse(http.StatusOK, response.Ok(serviceResponse))
 }
 
 func (h monitorHandler) updateService(ctx context.Context, serviceID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	current, found, err := h.operations.GetService(ctx, h.tenantID, serviceID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
-	}
 	var payload updateServiceRequest
 	if err := json.Unmarshal([]byte(request.Body), &payload); err != nil {
 		return respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 	}
-	if payload.ServiceID != nil && !strings.EqualFold(*payload.ServiceID, current.ServiceID) {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeImmutableField, map[string]any{"field": "serviceId"}))
-	}
-	updated := current
-	if payload.Name != nil {
-		updated.Name = strings.TrimSpace(*payload.Name)
-	}
-	if payload.Description != nil {
-		updated.Description = strings.TrimSpace(*payload.Description)
-	}
-	if payload.ServiceCategory != nil {
-		updated.ServiceCategory = monitorconfig.ServiceCategory(strings.TrimSpace(*payload.ServiceCategory))
-	}
-	if payload.EscalationPolicyID != nil {
-		updated.EscalationPolicyID = strings.TrimSpace(*payload.EscalationPolicyID)
-	}
-	if payload.BusinessHours != nil {
-		updated.BusinessHours = dynamodbrecord.CloneBusinessHoursConfig(payload.BusinessHours)
-	}
-	if err := updated.Validate(); err != nil {
-		return respondAPIGateway(err)
-	}
-	stored, err := h.operations.UpdateService(ctx, updated)
+	stored, err := h.operations.services.update.Execute(ctx, updateServiceInput{TenantID: h.tenantID, ServiceID: serviceID, Request: payload})
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -401,7 +335,7 @@ func (h monitorHandler) updateService(ctx context.Context, serviceID string, req
 }
 
 func (h monitorHandler) deleteService(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
-	deleted, err := h.operations.DeleteService(ctx, h.tenantID, serviceID)
+	deleted, err := h.operations.services.delete.Execute(ctx, h.tenantID, serviceID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -412,7 +346,7 @@ func (h monitorHandler) deleteService(ctx context.Context, serviceID string) (ev
 }
 
 func (h monitorHandler) archiveService(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
-	service, err := h.operations.ArchiveService(ctx, h.tenantID, serviceID)
+	service, err := h.operations.services.archive.Execute(ctx, h.tenantID, serviceID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -420,7 +354,7 @@ func (h monitorHandler) archiveService(ctx context.Context, serviceID string) (e
 }
 
 func (h monitorHandler) reactivateService(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
-	service, err := h.operations.ReactivateService(ctx, h.tenantID, serviceID)
+	service, err := h.operations.services.reactivate.Execute(ctx, h.tenantID, serviceID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -428,31 +362,13 @@ func (h monitorHandler) reactivateService(ctx context.Context, serviceID string)
 }
 
 func (h monitorHandler) createMonitor(ctx context.Context, serviceID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if _, found, err := h.operations.GetService(ctx, h.tenantID, serviceID); err != nil {
-		return respondAPIGateway(err)
-	} else if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
-	}
 	var payload monitorconfig.CreateMonitorRequest
 	if err := json.Unmarshal([]byte(request.Body), &payload); err != nil {
 		return respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 	}
-	var targetURL string
-	if payload.HTTP != nil {
-		targetURL = payload.HTTP.Target
-	}
-	monitorID := generateMonitorID(string(payload.Type), targetURL, payload.Name)
-	monitor, err := payload.ToMonitor(serviceID, h.tenantID, monitorID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if err := monitor.Validate(); err != nil {
-		return respondAPIGateway(err)
-	}
-	if err := h.validateMonitorDestination(ctx, monitor); err != nil {
-		return respondAPIGateway(err)
-	}
-	created, err := h.operations.CreateMonitor(ctx, monitor)
+	command := h.operations.monitors.create
+	command.validateDestination = h.validateMonitorDestination
+	created, err := command.Execute(ctx, createMonitorInput{TenantID: h.tenantID, ServiceID: serviceID, Request: payload})
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -461,94 +377,51 @@ func (h monitorHandler) createMonitor(ctx context.Context, serviceID string, req
 }
 
 func (h monitorHandler) listMonitors(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
-	if _, found, err := h.operations.GetService(ctx, h.tenantID, serviceID); err != nil {
-		return respondAPIGateway(err)
-	} else if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
-	}
-	monitors, err := h.operations.ListMonitors(ctx, h.tenantID, serviceID)
+	monitors, found, err := h.operations.monitors.list.Execute(ctx, h.tenantID, serviceID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
+	if !found {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
+	}
 	payload := listMonitorsResponse{Monitors: make([]monitorResponse, 0, len(monitors))}
 	for _, monitor := range monitors {
-		status, found, err := h.operations.GetMonitorStatus(ctx, h.tenantID, serviceID, monitor.MonitorID)
-		if err != nil {
-			return respondAPIGateway(err)
-		}
 		var statusResponse *monitorStatusResponse
-		if found {
-			statusResponse = toStatusResponse(status)
+		if monitor.Status != nil {
+			statusResponse = toStatusResponse(*monitor.Status)
 		}
-		payload.Monitors = append(payload.Monitors, toMonitorResponse(monitor, statusResponse))
+		payload.Monitors = append(payload.Monitors, toMonitorResponse(monitor.Monitor, statusResponse))
 	}
 	return envelopeResponse(http.StatusOK, response.OkPaginated(payload, 1, len(payload.Monitors), len(payload.Monitors)))
 }
 
 func (h monitorHandler) getMonitor(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
-	monitor, found, err := h.operations.GetMonitor(ctx, h.tenantID, serviceID, monitorID)
+	detail, found, err := h.operations.monitors.get.Execute(ctx, h.tenantID, serviceID, monitorID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
 	}
-	status, foundStatus, err := h.operations.GetMonitorStatus(ctx, h.tenantID, serviceID, monitorID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
 	var statusResponse *monitorStatusResponse
-	if foundStatus {
-		statusResponse = toStatusResponse(status)
+	if detail.Status != nil {
+		statusResponse = toStatusResponse(*detail.Status)
 	}
-	return envelopeResponse(http.StatusOK, response.Ok(toMonitorResponse(monitor, statusResponse)))
+	return envelopeResponse(http.StatusOK, response.Ok(toMonitorResponse(detail.Monitor, statusResponse)))
 }
 
 func (h monitorHandler) updateMonitor(ctx context.Context, serviceID, monitorID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	current, found, err := h.operations.GetMonitor(ctx, h.tenantID, serviceID, monitorID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
-	}
 	var payload updateMonitorRequest
 	if err := json.Unmarshal([]byte(request.Body), &payload); err != nil {
 		return respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 	}
-	updated := current
-	if payload.Name != nil {
-		updated.Name = *payload.Name
-	}
-	if payload.IntervalSeconds != nil {
-		updated.IntervalSeconds = *payload.IntervalSeconds
-	}
-	if payload.FailureThreshold != nil {
-		updated.FailureThreshold = *payload.FailureThreshold
-	}
-	if payload.RecoveryThreshold != nil {
-		updated.RecoveryThreshold = *payload.RecoveryThreshold
-	}
-	if updated.FailureThreshold < 1 {
-		updated.FailureThreshold = 1
-	}
-	if updated.RecoveryThreshold < 1 {
-		updated.RecoveryThreshold = 1
-	}
-	if payload.HTTP != nil {
-		updated.HTTP = dynamodbrecord.CloneHTTPConfiguration(payload.HTTP)
-	}
-	if err := updated.Validate(); err != nil {
-		return respondAPIGateway(err)
-	}
-	if err := h.validateMonitorDestination(ctx, updated); err != nil {
-		return respondAPIGateway(err)
-	}
-	stored, err := h.operations.UpdateMonitor(ctx, updated)
+	command := h.operations.monitors.update
+	command.validateDestination = h.validateMonitorDestination
+	stored, err := command.Execute(ctx, updateMonitorInput{TenantID: h.tenantID, ServiceID: serviceID, MonitorID: monitorID, Request: payload})
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	status, foundStatus, err := h.operations.GetMonitorStatus(ctx, h.tenantID, serviceID, monitorID)
+	status, foundStatus, err := h.operations.monitors.status.Execute(ctx, h.tenantID, serviceID, monitorID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -573,7 +446,7 @@ func (h monitorHandler) validateMonitorDestination(ctx context.Context, monitor 
 }
 
 func (h monitorHandler) deleteMonitor(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
-	deleted, err := h.operations.DeleteMonitor(ctx, h.tenantID, serviceID, monitorID)
+	deleted, err := h.operations.monitors.delete.Execute(ctx, h.tenantID, serviceID, monitorID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -584,14 +457,14 @@ func (h monitorHandler) deleteMonitor(ctx context.Context, serviceID, monitorID 
 }
 
 func (h monitorHandler) setMonitorEnabled(ctx context.Context, serviceID, monitorID string, enabled bool) (events.APIGatewayV2HTTPResponse, error) {
-	monitor, found, err := h.operations.SetMonitorEnabled(ctx, h.tenantID, serviceID, monitorID, enabled)
+	monitor, found, err := h.operations.monitors.enable.Execute(ctx, h.tenantID, serviceID, monitorID, enabled)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
 	}
-	status, foundStatus, err := h.operations.GetMonitorStatus(ctx, h.tenantID, serviceID, monitorID)
+	status, foundStatus, err := h.operations.monitors.status.Execute(ctx, h.tenantID, serviceID, monitorID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -603,22 +476,18 @@ func (h monitorHandler) setMonitorEnabled(ctx context.Context, serviceID, monito
 }
 
 func (h monitorHandler) setMonitorMaintenance(ctx context.Context, serviceID, monitorID string, enabled bool) (events.APIGatewayV2HTTPResponse, error) {
-	_, found, err := h.operations.GetMonitor(ctx, h.tenantID, serviceID, monitorID)
+	status, found, err := h.operations.monitors.maintenance.Execute(ctx, h.tenantID, serviceID, monitorID, enabled)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
 	}
-	status, _, err := h.operations.SetMonitorMaintenance(ctx, h.tenantID, serviceID, monitorID, enabled)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
 	return envelopeResponse(http.StatusOK, response.Ok(*toStatusResponse(status)))
 }
 
 func (h monitorHandler) getMonitorStatus(ctx context.Context, serviceID, monitorID string) (events.APIGatewayV2HTTPResponse, error) {
-	status, found, err := h.operations.GetMonitorStatus(ctx, h.tenantID, serviceID, monitorID)
+	status, found, err := h.operations.monitors.status.Execute(ctx, h.tenantID, serviceID, monitorID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -634,7 +503,7 @@ func (h monitorHandler) getMonitorRuns(ctx context.Context, serviceID, monitorID
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	page, err := h.operations.ListMonitorRunsPage(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
+	page, err := h.operations.monitors.runs.Execute(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -654,52 +523,21 @@ func (h monitorHandler) runMonitor(ctx context.Context, serviceID, monitorID str
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	fingerprint := manualRequestFingerprint(h.tenantID, serviceID, monitorID, idempotencyKey)
-	now := h.now()
-	reserved := newManualIdempotencyRecord(h.tenantID, serviceID, monitorID, idempotencyKey, fingerprint, newRunID(now), now, manualIdempotencyRetentionSeconds)
-	existing, err := h.operations.manualRuns.ReserveManualIdempotency(ctx, reserved)
+	command := h.operations.monitors.manualRun
+	command.executor = h.executor
+	result, err := command.Execute(ctx, h.tenantID, serviceID, monitorID, idempotencyKey)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	if existing.Fingerprint != fingerprint {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "idempotencyKey", "reason": "idempotency key reused with different request"}))
+	if result.Existing != nil {
+		return envelopeResponse(http.StatusOK, response.Ok(manualRunResponseFromRecord(*result.Existing)))
 	}
-	if existing.RunID != reserved.RunID {
-		return envelopeResponse(http.StatusOK, response.Ok(manualRunResponseFromRecord(existing)))
-	}
-	monitor, found, err := h.operations.manualRuns.GetMonitor(ctx, h.tenantID, serviceID, monitorID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
-	}
-	if !monitor.Enabled {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorDisabled, nil))
-	}
-	exec := checkexecution.ExecutionRequest{
-		Monitor: monitor,
-		RunID:   reserved.RunID,
-		Trigger: checkexecution.TriggerTypeManual,
-	}
-	result := checkexecution.ExecuteHTTP(ctx, h.executor, exec)
-	if err := h.operations.manualRuns.RecordExecutionResult(ctx, monitor, reserved.RunID, result); err != nil {
-		return respondAPIGateway(err)
-	}
-	runRecord := manualRunRequestRecord{
-		RunID:      reserved.RunID,
-		ServiceID:  monitor.ServiceID,
-		MonitorID:  monitor.MonitorID,
-		TenantID:   monitor.TenantID,
-		Trigger:    checkexecution.TriggerTypeManual,
-		AcceptedAt: now.UTC().Format(time.RFC3339),
-	}
-	return envelopeResponse(http.StatusOK, response.Ok(toManualRunResponseWithResult(runRecord, result)))
+	return envelopeResponse(http.StatusOK, response.Ok(toManualRunResponseWithResult(result.Record, *result.Execution)))
 }
 
 func (h monitorHandler) listIncidents(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	status := strings.ToLower(strings.TrimSpace(request.QueryStringParameters["status"]))
-	incidents, err := h.operations.ListIncidents(ctx, h.tenantID, status)
+	incidents, err := h.operations.incidents.list.Execute(ctx, h.tenantID, status)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -711,7 +549,7 @@ func (h monitorHandler) listIncidents(ctx context.Context, request events.APIGat
 }
 
 func (h monitorHandler) getIncident(ctx context.Context, incidentID string) (events.APIGatewayV2HTTPResponse, error) {
-	incident, found, err := h.operations.GetIncident(ctx, h.tenantID, incidentID)
+	incident, found, err := h.operations.incidents.get.Execute(ctx, h.tenantID, incidentID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -722,14 +560,12 @@ func (h monitorHandler) getIncident(ctx context.Context, incidentID string) (eve
 }
 
 func (h monitorHandler) getEscalationState(ctx context.Context, incidentID string) (events.APIGatewayV2HTTPResponse, error) {
-	if _, found, err := h.operations.GetIncident(ctx, h.tenantID, incidentID); err != nil {
-		return respondAPIGateway(err)
-	} else if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeIncidentNotFound, nil))
-	}
-	state, err := h.operations.GetEscalationState(ctx, h.tenantID, incidentID)
+	state, found, err := h.operations.incidents.escalationState.Execute(ctx, h.tenantID, incidentID)
 	if err != nil {
 		return respondAPIGateway(err)
+	}
+	if !found {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeIncidentNotFound, nil))
 	}
 	if state == nil {
 		return envelopeResponse(http.StatusOK, response.Ok(escalationStateResponse{Exists: false}))
@@ -738,14 +574,12 @@ func (h monitorHandler) getEscalationState(ctx context.Context, incidentID strin
 }
 
 func (h monitorHandler) getIncidentActivities(ctx context.Context, incidentID string) (events.APIGatewayV2HTTPResponse, error) {
-	if _, found, err := h.operations.GetIncident(ctx, h.tenantID, incidentID); err != nil {
-		return respondAPIGateway(err)
-	} else if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeIncidentNotFound, nil))
-	}
-	activities, err := h.operations.ListIncidentActivities(ctx, h.tenantID, incidentID)
+	activities, found, err := h.operations.incidents.activities.Execute(ctx, h.tenantID, incidentID)
 	if err != nil {
 		return respondAPIGateway(err)
+	}
+	if !found {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeIncidentNotFound, nil))
 	}
 	payload := incidentActivitiesResponse{Activities: make([]incidentActivityResponse, 0, len(activities))}
 	for _, activity := range activities {
@@ -755,19 +589,17 @@ func (h monitorHandler) getIncidentActivities(ctx context.Context, incidentID st
 }
 
 func (h monitorHandler) getMonitorIncidents(ctx context.Context, serviceID, monitorID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if _, found, err := h.operations.GetMonitor(ctx, h.tenantID, serviceID, monitorID); err != nil {
-		return respondAPIGateway(err)
-	} else if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
-	}
 	resource := dynamodbschema.MonitorPK(h.tenantID, serviceID, monitorID)
 	startKey, err := historyStartKey(request, resource, "PK")
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	page, err := h.operations.ListMonitorIncidentsPage(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
+	page, found, err := h.operations.incidents.monitorIncidents.Execute(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
 	if err != nil {
 		return respondAPIGateway(err)
+	}
+	if !found {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
 	}
 	payload := listIncidentsResponse{Incidents: make([]incidentResponse, 0, len(page.Items))}
 	for _, incident := range page.Items {
@@ -781,11 +613,6 @@ func (h monitorHandler) getMonitorIncidents(ctx context.Context, serviceID, moni
 }
 
 func (h monitorHandler) getServiceIncidents(ctx context.Context, serviceID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if _, found, err := h.operations.GetService(ctx, h.tenantID, serviceID); err != nil {
-		return respondAPIGateway(err)
-	} else if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
-	}
 	limit := defaultServiceIncidentsLimit
 	if raw := strings.TrimSpace(request.QueryStringParameters["limit"]); raw != "" {
 		parsed, err := strconv.ParseInt(raw, 10, 32)
@@ -797,9 +624,12 @@ func (h monitorHandler) getServiceIncidents(ctx context.Context, serviceID strin
 		}
 		limit = int32(parsed)
 	}
-	incidents, err := h.operations.ListServiceIncidents(ctx, h.tenantID, serviceID, limit)
+	incidents, found, err := h.operations.incidents.serviceIncidents.Execute(ctx, h.tenantID, serviceID, limit)
 	if err != nil {
 		return respondAPIGateway(err)
+	}
+	if !found {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
 	}
 	payload := listIncidentsResponse{Incidents: make([]incidentResponse, 0, len(incidents))}
 	for _, incident := range incidents {
@@ -809,7 +639,7 @@ func (h monitorHandler) getServiceIncidents(ctx context.Context, serviceID strin
 }
 
 func (h monitorHandler) acknowledgeIncident(ctx context.Context, incidentID string) (events.APIGatewayV2HTTPResponse, error) {
-	incident, found, err := h.operations.AcknowledgeIncident(ctx, h.tenantID, incidentID, h.now())
+	incident, found, err := h.operations.incidents.acknowledge.Execute(ctx, h.tenantID, incidentID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -820,7 +650,7 @@ func (h monitorHandler) acknowledgeIncident(ctx context.Context, incidentID stri
 }
 
 func (h monitorHandler) resolveIncident(ctx context.Context, incidentID string) (events.APIGatewayV2HTTPResponse, error) {
-	incident, found, err := h.operations.ResolveIncident(ctx, h.tenantID, incidentID, h.now())
+	incident, found, err := h.operations.incidents.resolve.Execute(ctx, h.tenantID, incidentID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -831,7 +661,7 @@ func (h monitorHandler) resolveIncident(ctx context.Context, incidentID string) 
 }
 
 func (h monitorHandler) getSchedulerConfig(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
-	config, err := h.operations.GetSchedulerConfig(ctx, h.tenantID)
+	config, err := h.operations.scheduler.get.Execute(ctx, h.tenantID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -844,10 +674,7 @@ func (h monitorHandler) updateSchedulerConfig(ctx context.Context, request event
 		return respondAPIGateway(sharederrors.Wrap(sharederrors.CodeInvalidJSON, err, nil))
 	}
 	config := checkexecution.SchedulerConfig{RecurringEnabled: payload.RecurringEnabled, StopControlMode: checkexecution.StopControlMode(payload.StopControlMode)}
-	if err := config.Validate(); err != nil {
-		return respondAPIGateway(err)
-	}
-	updated, err := h.operations.UpdateSchedulerConfig(ctx, h.tenantID, config, h.now())
+	updated, err := h.operations.scheduler.update.Execute(ctx, h.tenantID, config)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -855,19 +682,17 @@ func (h monitorHandler) updateSchedulerConfig(ctx context.Context, request event
 }
 
 func (h monitorHandler) getMonitorAudit(ctx context.Context, serviceID, monitorID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if _, found, err := h.operations.GetMonitor(ctx, h.tenantID, serviceID, monitorID); err != nil {
-		return respondAPIGateway(err)
-	} else if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
-	}
 	resource := dynamodbschema.AuditResourceItem(h.tenantID, serviceID, monitorID, "cursor", "cursor").GSI3PK
 	startKey, err := historyStartKey(request, resource, "GSI3PK")
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	page, err := h.operations.ListMonitorAuditEventsPage(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
+	page, found, err := h.operations.monitors.audit.Execute(ctx, h.tenantID, serviceID, monitorID, historyPageSize, startKey)
 	if err != nil {
 		return respondAPIGateway(err)
+	}
+	if !found {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeMonitorNotFound, nil))
 	}
 	payload := monitorAuditEventsResponse{Events: make([]auditEventResponse, 0, len(page.Items))}
 	for _, event := range page.Items {
@@ -881,19 +706,17 @@ func (h monitorHandler) getMonitorAudit(ctx context.Context, serviceID, monitorI
 }
 
 func (h monitorHandler) getServiceAudit(ctx context.Context, serviceID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if _, found, err := h.operations.GetService(ctx, h.tenantID, serviceID); err != nil {
-		return respondAPIGateway(err)
-	} else if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
-	}
 	resource := dynamodbschema.AuditResourceItem(h.tenantID, serviceID, "", "cursor", "cursor").GSI3PK
 	startKey, err := historyStartKey(request, resource, "GSI3PK")
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	page, err := h.operations.ListServiceAuditEventsPage(ctx, h.tenantID, serviceID, historyPageSize, startKey)
+	page, found, err := h.operations.services.audit.Execute(ctx, h.tenantID, serviceID, historyPageSize, startKey)
 	if err != nil {
 		return respondAPIGateway(err)
+	}
+	if !found {
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
 	}
 	payload := monitorAuditEventsResponse{Events: make([]auditEventResponse, 0, len(page.Items))}
 	for _, event := range page.Items {
@@ -916,11 +739,10 @@ func (h monitorHandler) createNotificationChannel(ctx context.Context, request e
 		return resp, nil
 	}
 	channel.TenantID = h.tenantID
-	channel.ChannelID = newNotificationChannelID(h.now())
 	if err := h.validateChannelDestination(ctx, channel); err != nil {
 		return respondAPIGateway(err)
 	}
-	created, err := h.operations.CreateNotificationChannel(ctx, channel)
+	created, err := h.operations.channels.create.Execute(ctx, channel)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -929,7 +751,7 @@ func (h monitorHandler) createNotificationChannel(ctx context.Context, request e
 }
 
 func (h monitorHandler) listNotificationChannels(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
-	channels, err := h.operations.ListNotificationChannels(ctx, h.tenantID)
+	channels, err := h.operations.channels.list.Execute(ctx, h.tenantID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -941,7 +763,7 @@ func (h monitorHandler) listNotificationChannels(ctx context.Context) (events.AP
 }
 
 func (h monitorHandler) getNotificationChannel(ctx context.Context, channelID string) (events.APIGatewayV2HTTPResponse, error) {
-	channel, err := h.operations.GetNotificationChannel(ctx, h.tenantID, channelID)
+	channel, err := h.operations.channels.get.Execute(ctx, h.tenantID, channelID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -952,7 +774,7 @@ func (h monitorHandler) getNotificationChannel(ctx context.Context, channelID st
 }
 
 func (h monitorHandler) updateNotificationChannel(ctx context.Context, channelID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	current, err := h.operations.GetNotificationChannel(ctx, h.tenantID, channelID)
+	current, err := h.operations.channels.get.Execute(ctx, h.tenantID, channelID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -966,7 +788,7 @@ func (h monitorHandler) updateNotificationChannel(ctx context.Context, channelID
 	if err := h.validateChannelDestination(ctx, channel); err != nil {
 		return respondAPIGateway(err)
 	}
-	updated, err := h.operations.UpdateNotificationChannel(ctx, channel)
+	updated, err := h.operations.channels.update.Execute(ctx, channel)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -974,71 +796,28 @@ func (h monitorHandler) updateNotificationChannel(ctx context.Context, channelID
 }
 
 func (h monitorHandler) deleteNotificationChannel(ctx context.Context, channelID string) (events.APIGatewayV2HTTPResponse, error) {
-	channel, err := h.operations.GetNotificationChannel(ctx, h.tenantID, channelID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if channel == nil {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeChannelNotFound, nil))
-	}
-	references, err := h.operations.ChannelsReferencedByRoutes(ctx, h.tenantID, channelID)
+	references, err := h.operations.channels.delete.Execute(ctx, h.tenantID, channelID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	if len(references) > 0 {
 		return envelopeResponse(http.StatusConflict, response.Ok[channelInUseResponse](channelInUseResponse{Error: "channel in use", ReferencingRoutes: references}))
 	}
-	if err := h.operations.DeleteNotificationChannel(ctx, h.tenantID, channelID); err != nil {
+	if err != nil {
 		return respondAPIGateway(err)
 	}
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
 func (h monitorHandler) testNotificationChannel(ctx context.Context, channelID string) (events.APIGatewayV2HTTPResponse, error) {
-	channel, err := h.operations.GetNotificationChannel(ctx, h.tenantID, channelID)
+	command := h.operations.channels.test
+	command.senders = h.senders
+	command.now = h.now
+	result, err := command.Execute(ctx, h.tenantID, channelID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
-	if channel == nil {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeChannelNotFound, nil))
-	}
-	sender, ok := h.senders.Get(string(channel.Type))
-	if !ok {
-		return h.recordChannelTestFailure(ctx, *channel, errors.New("sender not registered"))
-	}
-	config, err := mergeNotificationChannelTarget(*channel)
-	if err != nil {
-		return h.recordChannelTestFailure(ctx, *channel, err)
-	}
-	now := h.now().UTC()
-	notification := notifications.Notification{
-		EventType:   notifications.EventTypeIncidentDown,
-		TenantID:    h.tenantID,
-		MonitorID:   "notification-channel-test",
-		ServiceID:   "notification-channel-test",
-		MonitorName: "Notification channel test",
-		ServiceName: "Bolt Monitor",
-		Timestamp:   now,
-		Message:     fmt.Sprintf("Bolt Monitor test notification\n\nChannel: %s\nType: %s\nThis is a test message from the dashboard. No incident was created.", channel.Name, channel.Type),
-		IncidentID:  "notification-channel-test",
-		Config:      config,
-	}
-	if _, err := sender.Send(ctx, notification); err != nil {
-		return h.recordChannelTestFailure(ctx, *channel, err)
-	}
-	if err := h.operations.RecordNotificationChannelTestAudit(ctx, h.tenantID, channel.ChannelID, string(channel.Type), "success", "", now); err != nil {
-		return respondAPIGateway(err)
-	}
-	return envelopeResponse(http.StatusOK, response.Ok(notificationChannelTestResponse{ChannelID: channel.ChannelID, SentAt: now.Format(time.RFC3339)}, "Test notification sent."))
-}
-
-func (h monitorHandler) recordChannelTestFailure(ctx context.Context, channel escalation.NotificationChannel, reason error) (events.APIGatewayV2HTTPResponse, error) {
-	now := h.now().UTC()
-	sanitized := sanitizeNotificationDeliveryError(reason, channel.Config)
-	if err := h.operations.RecordNotificationChannelTestAudit(ctx, h.tenantID, channel.ChannelID, string(channel.Type), "failure", sanitized, now); err != nil {
-		return respondAPIGateway(err)
-	}
-	return respondAPIGateway(sharederrors.New(sharederrors.CodeNotificationDelivery, map[string]any{"channelId": channel.ChannelID, "type": string(channel.Type), "reason": sanitized}))
+	return envelopeResponse(http.StatusOK, response.Ok(notificationChannelTestResponse{ChannelID: result.ChannelID, SentAt: result.SentAt.Format(time.RFC3339)}, "Test notification sent."))
 }
 
 func mergeNotificationChannelTarget(channel escalation.NotificationChannel) (json.RawMessage, error) {
@@ -1187,8 +966,7 @@ func (h monitorHandler) createEscalationPolicy(ctx context.Context, request even
 	if !ok {
 		return resp, nil
 	}
-	policy.PolicyID = newEscalationPolicyID(h.now())
-	created, err := h.operations.CreateEscalationPolicy(ctx, policy)
+	created, err := h.operations.policies.create.Execute(ctx, policy)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -1197,7 +975,7 @@ func (h monitorHandler) createEscalationPolicy(ctx context.Context, request even
 }
 
 func (h monitorHandler) listEscalationPolicies(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
-	policies, err := h.operations.ListEscalationPolicies(ctx, h.tenantID)
+	policies, err := h.operations.policies.list.Execute(ctx, h.tenantID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -1209,7 +987,7 @@ func (h monitorHandler) listEscalationPolicies(ctx context.Context) (events.APIG
 }
 
 func (h monitorHandler) getEscalationPolicy(ctx context.Context, policyID string) (events.APIGatewayV2HTTPResponse, error) {
-	policy, err := h.operations.GetEscalationPolicy(ctx, h.tenantID, policyID)
+	policy, err := h.operations.policies.get.Execute(ctx, h.tenantID, policyID)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -1220,18 +998,11 @@ func (h monitorHandler) getEscalationPolicy(ctx context.Context, policyID string
 }
 
 func (h monitorHandler) updateEscalationPolicy(ctx context.Context, policyID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	existing, err := h.operations.GetEscalationPolicy(ctx, h.tenantID, policyID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if existing == nil {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodePolicyNotFound, nil))
-	}
 	policy, resp, ok := h.policyFromRequest(ctx, request, policyID)
 	if !ok {
 		return resp, nil
 	}
-	updated, err := h.operations.UpdateEscalationPolicy(ctx, policy)
+	updated, err := h.operations.policies.update.Execute(ctx, policy)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
@@ -1239,43 +1010,16 @@ func (h monitorHandler) updateEscalationPolicy(ctx context.Context, policyID str
 }
 
 func (h monitorHandler) deleteEscalationPolicy(ctx context.Context, policyID string) (events.APIGatewayV2HTTPResponse, error) {
-	policy, err := h.operations.GetEscalationPolicy(ctx, h.tenantID, policyID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if policy == nil {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodePolicyNotFound, nil))
-	}
-	referenced, err := h.operations.ServiceReferencesEscalationPolicy(ctx, h.tenantID, policyID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if referenced {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodePolicyReferenced, nil))
-	}
-	if err := h.operations.DeleteEscalationPolicy(ctx, h.tenantID, policyID); err != nil {
+	if err := h.operations.policies.delete.Execute(ctx, h.tenantID, policyID); err != nil {
 		return respondAPIGateway(err)
 	}
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
 func (h monitorHandler) getServiceEscalationPolicy(ctx context.Context, serviceID string) (events.APIGatewayV2HTTPResponse, error) {
-	service, found, err := h.operations.GetService(ctx, h.tenantID, serviceID)
+	policy, err := h.operations.policies.service.Execute(ctx, h.tenantID, serviceID)
 	if err != nil {
 		return respondAPIGateway(err)
-	}
-	if !found {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceNotFound, nil))
-	}
-	if strings.TrimSpace(service.EscalationPolicyID) == "" {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodeServiceHasNoPolicy, nil))
-	}
-	policy, err := h.operations.GetEscalationPolicy(ctx, h.tenantID, service.EscalationPolicyID)
-	if err != nil {
-		return respondAPIGateway(err)
-	}
-	if policy == nil {
-		return respondAPIGateway(sharederrors.New(sharederrors.CodePolicyNotFound, nil))
 	}
 	return envelopeResponse(http.StatusOK, response.Ok(toEscalationPolicyResponse(*policy)))
 }
@@ -1302,33 +1046,7 @@ func (h monitorHandler) policyFromRequest(ctx context.Context, request events.AP
 		BusinessHoursPath: escalationPathFromRequest(payload.BusinessHoursPath),
 		OffHoursPath:      escalationPathFromRequest(payload.OffHoursPath),
 	}
-	if err := h.validateEscalationPolicy(ctx, policy); err != nil {
-		resp, _ := respondAPIGateway(err)
-		return escalation.EscalationPolicy{}, resp, false
-	}
 	return policy, events.APIGatewayV2HTTPResponse{}, true
-}
-
-func (h monitorHandler) validateEscalationPolicy(ctx context.Context, policy escalation.EscalationPolicy) error {
-	for _, path := range []struct {
-		name string
-		path escalation.EscalationPath
-	}{{name: "businessHoursPath", path: policy.BusinessHoursPath}, {name: "offHoursPath", path: policy.OffHoursPath}} {
-		for idx, step := range path.path.Steps {
-			channelID := strings.TrimSpace(step.ChannelID)
-			if channelID == "" {
-				return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": fmt.Sprintf("%s.steps[%d].channelId", path.name, idx), "reason": "required"})
-			}
-			channel, err := h.operations.GetNotificationChannel(ctx, policy.TenantID, channelID)
-			if err != nil {
-				return err
-			}
-			if channel == nil {
-				return sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": fmt.Sprintf("%s.steps[%d].channelId", path.name, idx), "reason": "channel not found"})
-			}
-		}
-	}
-	return nil
 }
 
 func escalationPathFromRequest(path escalationPathRequest) escalation.EscalationPath {

@@ -26,8 +26,7 @@ func TestEnvelopeShape(t *testing.T) {
 		TenantID: defaultTenantID, ServiceID: "auth", Name: "Auth",
 		LifecycleState: monitorconfig.ServiceLifecycleDraft,
 	}
-	handler := newMonitorHandler(repo)
-	handler.tenantID = defaultTenantID
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{tenantID: defaultTenantID})
 
 	request := events.APIGatewayV2HTTPRequest{
 		RawPath: "/api/v1/services", RequestContext: events.APIGatewayV2HTTPRequestContext{
@@ -60,8 +59,7 @@ func TestEnvelopeShape(t *testing.T) {
 // shape so the dashboard renderer can rely on the stable contract.
 func TestErrorEnvelopeShape(t *testing.T) {
 	repo := newFakeMonitorRepository()
-	handler := newMonitorHandler(repo)
-	handler.tenantID = defaultTenantID
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{tenantID: defaultTenantID})
 
 	request := events.APIGatewayV2HTTPRequest{
 		RawPath: "/api/v1/services/missing", RequestContext: events.APIGatewayV2HTTPRequestContext{
@@ -111,8 +109,7 @@ func TestPaginationEnvelopeShape(t *testing.T) {
 		StartedAt: now, FinishedAt: now.Add(time.Second),
 		DurationMs: 1000, Outcome: checkexecution.OutcomeSuccess,
 	}}
-	handler := newMonitorHandler(repo)
-	handler.tenantID = defaultTenantID
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{tenantID: defaultTenantID})
 
 	request := events.APIGatewayV2HTTPRequest{
 		RawPath: "/api/v1/services/auth/monitors/public-http/runs", RequestContext: events.APIGatewayV2HTTPRequestContext{
@@ -153,11 +150,10 @@ func TestManualRunResponseShape(t *testing.T) {
 		FailureThreshold: 1, RecoveryThreshold: 1,
 		HTTP: &monitorconfig.HTTPConfiguration{Target: "https://example.com", Method: "GET", TimeoutMs: 5000},
 	}
-	handler := newMonitorHandler(repo)
-	handler.tenantID = defaultTenantID
-	handler.now = func() time.Time { return time.Date(2026, 5, 17, 22, 0, 0, 0, time.UTC) }
-
-	handler.executor = &recordingMonitorExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte("ok")}}
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{
+		now:      commandClock(func() time.Time { return time.Date(2026, 5, 17, 22, 0, 0, 0, time.UTC) }),
+		executor: &recordingMonitorExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte("ok")}},
+	})
 	response, err := handler.runMonitor(context.Background(), "auth", "public-http", events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "idempotent-regression-key"}})
 	if err != nil {
 		t.Fatalf("handleRequest returned error: %v", err)
@@ -190,8 +186,7 @@ func TestEscalationPolicyResponseShape(t *testing.T) {
 			{DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeEmail, Target: "ops@example.com"}}},
 		}},
 	}
-	handler := newMonitorHandler(repo)
-	handler.tenantID = defaultTenantID
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{tenantID: defaultTenantID})
 
 	request := events.APIGatewayV2HTTPRequest{
 		RawPath: "/api/v1/escalation-policies", RequestContext: events.APIGatewayV2HTTPRequestContext{

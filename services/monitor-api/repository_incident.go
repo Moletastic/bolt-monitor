@@ -11,17 +11,6 @@ import (
 	"bolt-monitor/shared/dynamodbschema"
 )
 
-// IncidentStore is the narrow interface used by incident-lifecycle handlers.
-// It deliberately excludes the audit and scheduler methods so handler tests
-// stay focused on incident flows.
-type IncidentStore interface {
-	ListIncidents(context.Context, string, string) ([]dynamodbrecord.IncidentRecord, error)
-	GetIncident(context.Context, string, string) (dynamodbrecord.IncidentRecord, bool, error)
-	ListIncidentActivities(context.Context, string, string) ([]dynamodbrecord.IncidentActivityRecord, error)
-	AcknowledgeIncident(context.Context, string, string, time.Time) (dynamodbrecord.IncidentRecord, bool, error)
-	ResolveIncident(context.Context, string, string, time.Time) (dynamodbrecord.IncidentRecord, bool, error)
-}
-
 func (r *dynamoMonitorRepository) ListIncidents(ctx context.Context, tenantID, status string) ([]dynamodbrecord.IncidentRecord, error) {
 	if err := r.requireTableName(); err != nil {
 		return nil, err
