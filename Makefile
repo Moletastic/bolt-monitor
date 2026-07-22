@@ -1,5 +1,6 @@
 .PHONY: \
 	setup \
+	bootstrap \
 	test-go test-go-all test-dashboard \
 	format-go-check vet-go ci-go \
 	lint-go lint-dashboard lint-infra lint-all \
@@ -21,9 +22,12 @@ OPS_SCRIPT := infra/scripts/ops.mjs
 setup:
 	pnpm --dir infra install --frozen-lockfile
 	pnpm --dir apps/dashboard install --frozen-lockfile
+	$(MAKE) bootstrap
+
+bootstrap:
 	go work sync
 
-test-go: setup
+test-go: bootstrap
 	$(foreach module,$(GO_MODULE_DIRS),go test $(module);)
 
 test-go-all: test-go
@@ -35,7 +39,7 @@ format-go-check:
 		exit 1; \
 	fi
 
-vet-go: setup
+vet-go: bootstrap
 	$(foreach module,$(GO_MODULE_DIRS),go vet $(module);)
 
 ci-go: format-go-check vet-go test-go-all
@@ -43,7 +47,7 @@ ci-go: format-go-check vet-go test-go-all
 test-dashboard:
 	cd apps/dashboard && pnpm run test
 
-lint-go: setup
+lint-go: bootstrap
 	$(foreach svc,$(GO_SERVICES),golangci-lint run ./services/$(svc);)
 	$(foreach lib,$(GO_SHARED),golangci-lint run ./shared/$(lib);)
 
@@ -131,7 +135,7 @@ commitlint:
 		pnpm exec commitlint --edit "$(COMMIT_MSG_FILE)"; \
 	fi
 
-build-go: setup
+build-go: bootstrap
 	GOOS=linux GOARCH=arm64 go build -o services/api-health/handler ./services/api-health
 	GOOS=linux GOARCH=arm64 go build -o services/check-runtime/handler ./services/check-runtime
 	GOOS=linux GOARCH=arm64 go build -o services/escalation-runtime/handler ./services/escalation-runtime
