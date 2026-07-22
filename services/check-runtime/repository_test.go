@@ -259,9 +259,10 @@ func TestRecordExecutionResultWritesEqualTransitionAndOutboxIdentities(t *testin
 	client := &fakeDynamoClient{}
 	repo := newDynamoRuntimeRepository(client, "table-name")
 	monitor := monitorconfig.Monitor{ServiceID: "auth", MonitorID: "public-http", TenantID: defaultTenantID, FailureThreshold: 1, RecoveryThreshold: 1}
-	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_T1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: time.Now(), FencingToken: "TOKEN"}
-	scheduledFor := time.Now()
-	result := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_T1", Outcome: checkexecution.OutcomeFailure, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &scheduledFor, FinishedAt: time.Now()}
+	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	work := checkexecution.ExecutionWork{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_T1", Trigger: checkexecution.TriggerTypeRecurring, AcceptedAt: now, FencingToken: "TOKEN"}
+	scheduledFor := now
+	result := checkexecution.ExecutionResult{TenantID: defaultTenantID, ServiceID: "auth", MonitorID: "public-http", RunID: "RUN_T1", Outcome: checkexecution.OutcomeFailure, Trigger: checkexecution.TriggerTypeRecurring, ScheduledFor: &scheduledFor, FinishedAt: now}
 
 	if _, _, err := repo.RecordExecutionResult(context.Background(), monitor, work, result); err != nil {
 		t.Fatalf("RecordExecutionResult returned error: %v", err)

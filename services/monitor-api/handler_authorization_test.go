@@ -137,9 +137,12 @@ func TestHandleRequestEmitsSecretSafeAuthorizationDenial(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	identity := &stubPrincipalResolver{identity: auth.AuthenticatedIdentity{Subject: "operator", AuthTime: 2}}
 	membership := &stubMembershipResolver{err: sharederrors.New(sharederrors.CodeAuthorizationDenied, nil)}
-	handler := newAuthorizedMonitorHandler(repo, identity, membership)
 	var emitted []securityEvent
-	handler.securityEvents = func(event securityEvent) { emitted = append(emitted, event) }
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{
+		principalResolver:  identity,
+		membershipResolver: membership,
+		securityEvents:     func(event securityEvent) { emitted = append(emitted, event) },
+	})
 
 	_, err := handler.handleRequest(context.Background(), events.APIGatewayV2HTTPRequest{
 		RawPath:        "/api/v1/services",

@@ -45,10 +45,6 @@ type escalationHandler struct {
 	transitionLookup func(notifications.NotificationEvent) string
 }
 
-func newEscalationHandler(repo escalationRepository, scheduler scheduleClient) *escalationHandler {
-	return newEscalationHandlerWithDependencies(repo, scheduler, escalationHandlerDependencies{senders: notifications.NewSenderRegistry(), now: time.Now})
-}
-
 type escalationHandlerDependencies struct {
 	senders notifications.SenderRegistry
 	now     func() time.Time

@@ -122,7 +122,7 @@ func TestSQSWorkerRequestShape(t *testing.T) {
 // TestSQSEventDecodingRejectsGarbageBody ensures the worker fails closed when
 // the scheduler publishes an unparseable body.
 func TestSQSEventDecodingRejectsGarbageBody(t *testing.T) {
-	handler := runtimeHandler{now: time.Now}
+	handler := newTestRuntimeHandler(newFakeRuntimeRepository(), &fakeSQSClient{}, "", "", defaultTenantID, modeWorker)
 	_, err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: "not-json"}}})
 	if err == nil {
 		t.Fatal("expected error for unparseable SQS body")

@@ -725,6 +725,3 @@ func monitorStatusRecordToDomain(record resultstatus.MonitorStatusRecord) result
 		LastOutcome:    checkexecution.Outcome(strings.ToLower(firstNonEmpty(record.LastOutcome, rollupUnknown))),
 	}
 }
-
-// monitorStatusLookup is a small adapter used by ServiceStore to keep its
-// dependency surface tight.

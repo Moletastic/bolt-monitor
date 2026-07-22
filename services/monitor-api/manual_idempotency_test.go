@@ -20,9 +20,7 @@ func newRunMonitorFixture() (monitorHandler, *fakeMonitorRepository, *recordingM
 	}
 	repo.monitors[monitorKey("auth", "public-http")] = monitor
 	executor := &recordingMonitorExecutor{response: outboundhttp.Response{StatusCode: http.StatusOK, Body: []byte("ok")}}
-	handler := newMonitorHandler(repo)
-	handler.tenantID = defaultTenantID
-	handler.executor = executor
+	handler := newMonitorHandler(repo, monitorHandlerTestDependencies{executor: executor, tenantID: defaultTenantID})
 	return handler, repo, executor
 }
 

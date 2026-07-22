@@ -14,23 +14,6 @@ import (
 	"bolt-monitor/shared/resultstatus"
 )
 
-// ServiceStore is the narrow interface used by service-lifecycle handlers.
-// It depends on MonitorStore for monitor listings but the handler wiring
-// keeps it locally available.
-type ServiceStore interface {
-	CreateService(context.Context, monitorconfig.Service) (monitorconfig.Service, error)
-	ListServices(context.Context, string) ([]monitorconfig.Service, error)
-	GetService(context.Context, string, string) (monitorconfig.Service, bool, error)
-	UpdateService(context.Context, monitorconfig.Service) (monitorconfig.Service, error)
-	DeleteService(context.Context, string, string) (bool, error)
-	ArchiveService(context.Context, string, string) (monitorconfig.Service, error)
-	ReactivateService(context.Context, string, string) (monitorconfig.Service, error)
-	ServiceReferencesEscalationPolicy(context.Context, string, string) (bool, error)
-}
-
-// monitorStoreRef is the subset of MonitorStore that ServiceStore consumes.
-// Keeping it locally avoids leaking the full monitor interface.
-
 func (r *dynamoMonitorRepository) CreateService(ctx context.Context, service monitorconfig.Service) (monitorconfig.Service, error) {
 	if err := r.requireTableName(); err != nil {
 		return monitorconfig.Service{}, err

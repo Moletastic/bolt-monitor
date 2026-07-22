@@ -41,6 +41,19 @@ type fakeSender struct {
 	notifications []notifications.Notification
 }
 
+var testEscalationNow = time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+
+func newTestEscalationHandler(repo escalationRepository, scheduler scheduleClient) *escalationHandler {
+	return newTestEscalationHandlerWithDependencies(repo, scheduler, notifications.SenderRegistry{}, testEscalationNow)
+}
+
+func newTestEscalationHandlerWithDependencies(repo escalationRepository, scheduler scheduleClient, senders notifications.SenderRegistry, now time.Time) *escalationHandler {
+	return newEscalationHandlerWithDependencies(repo, scheduler, escalationHandlerDependencies{
+		senders: senders,
+		now:     func() time.Time { return now },
+	})
+}
+
 type capturingEscalationExecutor struct {
 	request outboundhttp.Request
 }
@@ -150,8 +163,7 @@ func TestHandleIncidentDownCreatesEscalationState(t *testing.T) {
 		incident: &incidentRecord{TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Status: incidentStatusOpen, OpenedAt: "2026-06-16T10:00:00Z", UpdatedAt: "2026-06-16T10:00:00Z"},
 	}
 	scheduler := &fakeScheduler{}
-	handler := newEscalationHandler(repo, scheduler)
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender, "email": emailSender}
+	handler := newTestEscalationHandlerWithDependencies(repo, scheduler, notifications.SenderRegistry{"telegram": tgSender, "email": emailSender}, testEscalationNow)
 	jsonEvent, _ := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)}.ToJSON()
 	err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: jsonEvent}}})
 	if err != nil {
@@ -201,8 +213,7 @@ func TestHandleIncidentDownResolvesChannelID(t *testing.T) {
 		policy:   &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", Name: "Primary", OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1", DelayMinutes: 0}}}},
 		channels: map[string]escalation.NotificationChannel{"CH_1": {TenantID: "DEFAULT", ChannelID: "CH_1", Name: "Telegram", Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"token"}`)}},
 	}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender}
+	handler := newTestEscalationHandlerWithDependencies(repo, &fakeScheduler{}, notifications.SenderRegistry{"telegram": tgSender}, testEscalationNow)
 	jsonEvent, _ := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: time.Date(2026, 6, 16, 2, 0, 0, 0, time.UTC)}.ToJSON()
 
 	if err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: jsonEvent}}}); err != nil {
@@ -227,8 +238,7 @@ func TestEscalationDispatchUsesProductionSenderRegistryWithInjectedExecutor(t *t
 			"CH_1": {TenantID: "DEFAULT", ChannelID: "CH_1", Name: "Webhook", Type: escalation.ChannelTypeWebhook, Target: "https://hooks.example.com", Config: json.RawMessage(`{"headers":{"Authorization":"Bearer secret"}}`)},
 		},
 	}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
-	handler.senders = notifications.NewSenderRegistry(executor)
+	handler := newTestEscalationHandlerWithDependencies(repo, &fakeScheduler{}, notifications.NewSenderRegistry(executor), testEscalationNow)
 	event := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: time.Date(2026, 6, 16, 2, 0, 0, 0, time.UTC), Message: "disk full"}
 
 	if err := handler.fireStep(context.Background(), event, escalation.EscalationStep{ChannelID: "CH_1"}); err != nil {
@@ -248,8 +258,7 @@ func TestHandleIncidentDownSkipsDeletedChannel(t *testing.T) {
 		service: &serviceRecord{TenantID: "DEFAULT", ServiceID: "auth", EscalationPolicyID: "POL_1"},
 		policy:  &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", Name: "Primary", OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_MISSING", DelayMinutes: 0}}}},
 	}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender}
+	handler := newTestEscalationHandlerWithDependencies(repo, &fakeScheduler{}, notifications.SenderRegistry{"telegram": tgSender}, testEscalationNow)
 	jsonEvent, _ := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: time.Date(2026, 6, 16, 2, 0, 0, 0, time.UTC)}.ToJSON()
 
 	if err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: jsonEvent}}}); err != nil {
@@ -264,7 +273,7 @@ func TestHandleIncidentUpSuppressesEscalationState(t *testing.T) {
 	repo := &fakeEscalationRepository{
 		state: &escalation.EscalationState{TenantID: "DEFAULT", IncidentID: "INC_1", PolicyID: "POL_1", ServiceID: "auth", MonitorID: "public-http", CurrentStep: 2, Status: escalation.EscalationStatusActive, CreatedAt: "2026-06-16T00:00:00Z", UpdatedAt: "2026-06-16T00:00:00Z"},
 	}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	jsonEvent, _ := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentUp, TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)}.ToJSON()
 	err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: jsonEvent}}})
 	if err != nil {
@@ -289,10 +298,8 @@ func TestHandleIncidentDownSchedulesNextStep(t *testing.T) {
 		policy:   &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", Name: "Primary", BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"token"}`)}}}, {DelayMinutes: 15, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-2", Config: json.RawMessage(`{"botToken":"token"}`)}}}}}},
 		incident: &incidentRecord{TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Status: incidentStatusOpen, OpenedAt: "2026-06-16T10:00:00Z", UpdatedAt: "2026-06-16T10:00:00Z"},
 	}
-	handler := newEscalationHandler(repo, scheduler)
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender}
 	now := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
-	handler.now = func() time.Time { return now }
+	handler := newTestEscalationHandlerWithDependencies(repo, scheduler, notifications.SenderRegistry{"telegram": tgSender}, now)
 	jsonEvent, _ := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: now}.ToJSON()
 	err := handler.handleSQSEvent(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{Body: jsonEvent}}})
 	if err != nil {
@@ -320,10 +327,8 @@ func TestHandleScheduledInvocationFiresNextStep(t *testing.T) {
 		policy:   &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", Name: "Primary", BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"token"}`)}}}, {DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-2", Config: json.RawMessage(`{"botToken":"token"}`)}}}}}},
 		incident: &incidentRecord{TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Status: incidentStatusOpen, OpenedAt: "2026-06-16T10:00:00Z", UpdatedAt: "2026-06-16T10:00:00Z"},
 	}
-	handler := newEscalationHandler(repo, scheduler)
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender}
 	now := time.Date(2026, 6, 16, 10, 15, 0, 0, time.UTC)
-	handler.now = func() time.Time { return now }
+	handler := newTestEscalationHandlerWithDependencies(repo, scheduler, notifications.SenderRegistry{"telegram": tgSender}, now)
 	if err := handler.handleScheduledInvocation(context.Background(), scheduledInvocationEvent{IncidentID: "INC_1", Step: 2}); err != nil {
 		t.Fatalf("handleScheduledInvocation returned error: %v", err)
 	}
@@ -359,10 +364,8 @@ func TestScheduledInvocationSchedulesNextStep(t *testing.T) {
 		policy:   &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", Name: "Primary", BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"token"}`)}}}, {DelayMinutes: 30, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-2", Config: json.RawMessage(`{"botToken":"token"}`)}}}, {DelayMinutes: 45, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-3", Config: json.RawMessage(`{"botToken":"token"}`)}}}}}},
 		incident: &incidentRecord{TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Status: incidentStatusOpen, OpenedAt: "2026-06-16T10:00:00Z", UpdatedAt: "2026-06-16T10:00:00Z"},
 	}
-	handler := newEscalationHandler(repo, scheduler)
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender}
 	now := time.Date(2026, 6, 16, 10, 15, 0, 0, time.UTC)
-	handler.now = func() time.Time { return now }
+	handler := newTestEscalationHandlerWithDependencies(repo, scheduler, notifications.SenderRegistry{"telegram": tgSender}, now)
 	if err := handler.handleScheduledInvocation(context.Background(), scheduledInvocationEvent{IncidentID: "INC_1", Step: 2}); err != nil {
 		t.Fatalf("handleScheduledInvocation returned error: %v", err)
 	}
@@ -389,8 +392,7 @@ func TestSuppressionBeforeDelayedStepSkipsFiring(t *testing.T) {
 	repo := &fakeEscalationRepository{
 		state: &escalation.EscalationState{TenantID: "DEFAULT", IncidentID: "INC_1", PolicyID: "POL_1", ServiceID: "auth", MonitorID: "public-http", CurrentStep: 2, StepsFired: []int{1}, SelectedPath: pathBusinessHours, Status: escalation.EscalationStatusActive, CreatedAt: "2026-06-16T00:00:00Z", UpdatedAt: "2026-06-16T00:00:00Z", ScheduledFor: "2026-06-16T10:15:00Z"},
 	}
-	handler := newEscalationHandler(repo, scheduler)
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender}
+	handler := newTestEscalationHandlerWithDependencies(repo, scheduler, notifications.SenderRegistry{"telegram": tgSender}, testEscalationNow)
 	if err := handler.handleIncidentUp(context.Background(), notifications.NotificationEvent{TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: time.Date(2026, 6, 16, 10, 10, 0, 0, time.UTC)}); err != nil {
 		t.Fatalf("handleIncidentUp returned error: %v", err)
 	}
@@ -416,10 +418,8 @@ func TestExhaustionSkippedWhenOriginalIncidentResolved(t *testing.T) {
 		policy:   &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", Name: "Primary", BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"token"}`)}}}, {DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-2", Config: json.RawMessage(`{"botToken":"token"}`)}}}}}},
 		incident: &incidentRecord{TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Status: incidentStatusResolved, OpenedAt: "2026-06-16T10:00:00Z", UpdatedAt: "2026-06-16T10:14:00Z", ResolvedAt: "2026-06-16T10:14:00Z"},
 	}
-	handler := newEscalationHandler(repo, scheduler)
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender}
 	now := time.Date(2026, 6, 16, 10, 15, 0, 0, time.UTC)
-	handler.now = func() time.Time { return now }
+	handler := newTestEscalationHandlerWithDependencies(repo, scheduler, notifications.SenderRegistry{"telegram": tgSender}, now)
 	if err := handler.handleScheduledInvocation(context.Background(), scheduledInvocationEvent{IncidentID: "INC_1", Step: 2}); err != nil {
 		t.Fatalf("handleScheduledInvocation returned error: %v", err)
 	}
@@ -440,10 +440,8 @@ func TestScheduledInvocationDoesNotScheduleAfterFinalStep(t *testing.T) {
 		policy:   &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", Name: "Primary", BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"token"}`)}}}, {DelayMinutes: 0, Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeTelegram, Target: "chat-2", Config: json.RawMessage(`{"botToken":"token"}`)}}}}}},
 		incident: &incidentRecord{TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Status: incidentStatusOpen, OpenedAt: "2026-06-16T10:00:00Z", UpdatedAt: "2026-06-16T10:00:00Z"},
 	}
-	handler := newEscalationHandler(repo, scheduler)
-	handler.senders = notifications.SenderRegistry{"telegram": tgSender}
 	now := time.Date(2026, 6, 16, 10, 15, 0, 0, time.UTC)
-	handler.now = func() time.Time { return now }
+	handler := newTestEscalationHandlerWithDependencies(repo, scheduler, notifications.SenderRegistry{"telegram": tgSender}, now)
 	if err := handler.handleScheduledInvocation(context.Background(), scheduledInvocationEvent{IncidentID: "INC_1", Step: 2}); err != nil {
 		t.Fatalf("handleScheduledInvocation returned error: %v", err)
 	}

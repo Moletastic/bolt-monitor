@@ -29,7 +29,7 @@ func TestStepTerminalForIncidentRequiresAllChannelsTerminal(t *testing.T) {
 
 func TestChannelsForStepResolvesSingleChannelID(t *testing.T) {
 	repo := &fakeEscalationRepository{channels: map[string]escalation.NotificationChannel{"CH_1": {ChannelID: "CH_1", TenantID: "DEFAULT", Type: escalation.ChannelTypeTelegram}}}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	event := notifications.NotificationEvent{TenantID: "DEFAULT"}
 	step := escalation.EscalationStep{ChannelID: "CH_1"}
 	channels, err := handler.channelsForStep(context.Background(), event, step)
@@ -43,7 +43,7 @@ func TestChannelsForStepResolvesSingleChannelID(t *testing.T) {
 
 func TestChannelsForStepAssignsInlineOrdinalKeys(t *testing.T) {
 	repo := &fakeEscalationRepository{}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	step := escalation.EscalationStep{Channels: []escalation.ChannelConfig{{Type: escalation.ChannelTypeEmail, Target: "ops@example.com"}, {Type: escalation.ChannelTypeSMS, Target: "+1"}}}
 	channels, err := handler.channelsForStep(context.Background(), notifications.NotificationEvent{TenantID: "DEFAULT"}, step)
 	if err != nil {
@@ -56,7 +56,7 @@ func TestChannelsForStepAssignsInlineOrdinalKeys(t *testing.T) {
 
 func TestBuildEscalationPlanCapturesStepAndChannelKeys(t *testing.T) {
 	repo := &fakeEscalationRepository{channels: map[string]escalation.NotificationChannel{"CH_1": {ChannelID: "CH_1", TenantID: "DEFAULT", Type: escalation.ChannelTypeTelegram}}}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	policy := escalation.EscalationPolicy{PolicyID: "POL_1"}
 	path := escalation.EscalationPath{Steps: []escalation.EscalationStep{
 		{ChannelID: "CH_1"},
@@ -80,7 +80,7 @@ func TestBuildEscalationPlanCapturesStepAndChannelKeys(t *testing.T) {
 func TestSuppressIfRecoveredReturnsTrueForResolvedIncident(t *testing.T) {
 	now := "2026-07-19T12:00:00Z"
 	repo := &fakeEscalationRepository{incident: &incidentRecord{Status: "resolved", UpdatedAt: now}}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	suppressed, err := handler.suppressIfRecovered(context.Background(), "DEFAULT", "INC_1")
 	if err != nil || !suppressed {
 		t.Fatalf("expected suppressed=true, got %v err=%v", suppressed, err)
@@ -89,7 +89,7 @@ func TestSuppressIfRecoveredReturnsTrueForResolvedIncident(t *testing.T) {
 
 func TestSuppressIfRecoveredReturnsFalseForOpenIncident(t *testing.T) {
 	repo := &fakeEscalationRepository{incident: &incidentRecord{Status: "open"}}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	suppressed, err := handler.suppressIfRecovered(context.Background(), "DEFAULT", "INC_1")
 	if err != nil || suppressed {
 		t.Fatalf("expected suppressed=false, got %v err=%v", suppressed, err)
@@ -98,7 +98,7 @@ func TestSuppressIfRecoveredReturnsFalseForOpenIncident(t *testing.T) {
 
 func TestPersistEscalationPlanAndDeliveriesWritesImmutableShape(t *testing.T) {
 	repo := &fakeEscalationRepository{channels: map[string]escalation.NotificationChannel{"CH_1": {ChannelID: "CH_1", TenantID: "DEFAULT", Type: escalation.ChannelTypeTelegram}}}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	policy := escalation.EscalationPolicy{PolicyID: "POL_1"}
 	path := escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1"}}}
 	if err := handler.persistEscalationPlanAndDeliveries(context.Background(), "TRN_1", notifications.NotificationEvent{TenantID: "DEFAULT", IncidentID: "INC_1"}, policy, pathBusinessHours, path, 1); err != nil {
@@ -112,7 +112,7 @@ func TestPersistEscalationPlanAndDeliveriesWritesImmutableShape(t *testing.T) {
 
 func TestAdvanceStepOncePersistsTransition(t *testing.T) {
 	repo := &fakeEscalationRepository{}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	state := escalation.EscalationState{TenantID: "DEFAULT", IncidentID: "INC_1", CurrentStep: 1}
 	deliveries := []notifications.DeliveryRecord{
 		{DeliveryID: "dlv_a", StepNumber: 1, State: notifications.DeliveryDelivered},
@@ -129,7 +129,7 @@ func TestAdvanceStepOncePersistsTransition(t *testing.T) {
 
 func TestAdvanceStepOnceDoesNotAdvanceWhileInFlight(t *testing.T) {
 	repo := &fakeEscalationRepository{}
-	handler := newEscalationHandler(repo, &fakeScheduler{})
+	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	state := escalation.EscalationState{TenantID: "DEFAULT", IncidentID: "INC_1", CurrentStep: 1}
 	deliveries := []notifications.DeliveryRecord{{DeliveryID: "dlv_a", StepNumber: 1, State: notifications.DeliveryInFlight}}
 	next, err := handler.advanceAfterStepTerminal(context.Background(), "TRN_1", state, deliveries, escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1"}}})
@@ -156,8 +156,6 @@ func TestDeliveryIdentityDoesNotCollideAcrossSteps(t *testing.T) {
 }
 
 func TestHandlerAcceptsTypedOutcomeWithoutErrorForRetryable(t *testing.T) {
-	handler := newEscalationHandler(&fakeEscalationRepository{}, &fakeScheduler{})
-	handler.senders = notifications.SenderRegistry{"telegram": &fakeSender{}}
 	state := escalation.EscalationState{TenantID: "DEFAULT", IncidentID: "INC_1", CurrentStep: 1}
 	deliveries := []notifications.DeliveryRecord{{DeliveryID: "dlv_a", StepNumber: 1, State: notifications.DeliveryRetryable}}
 	if stepTerminalForIncident(deliveries, state.CurrentStep) {
