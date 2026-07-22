@@ -16,4 +16,4 @@ script for this work.
 
 #### Scenario: Infrastructure CI runs release gates
 - **WHEN** infrastructure CI installs dependencies before type checking
-- **THEN** it runs `sst install` through pnpm and generated platform types are available
+- **THEN** it selects the committed example target, runs `sst install` through pnpm, and generated platform types are available
