@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -22,19 +22,50 @@ async function withTarget(name, target, run) {
   mkdirSync(targetsDir, { recursive: true })
   const path = join(targetsDir, `${name}.target.json`)
   writeFileSync(path, JSON.stringify(target))
-  const previousTarget = process.env.TARGET
   const previousFile = process.env.TARGET_FILE
-  process.env.TARGET = name
+  delete process.env.TARGET
   process.env.TARGET_FILE = path
   try {
     await run()
   } finally {
-    if (previousTarget === undefined) delete process.env.TARGET
-    else process.env.TARGET = previousTarget
     if (previousFile === undefined) delete process.env.TARGET_FILE
     else process.env.TARGET_FILE = previousFile
   }
 }
+
+test('preflight and SST receive the same explicit target path', async () => {
+  await withTarget('staging', persistent, async () => {
+    const ops = await import('./ops.mjs')
+    const expectedPath = realpathSync(process.env.TARGET_FILE)
+    let receivedEnvironment
+
+    await ops.status({
+      run: (_command, _args, environment) => {
+        receivedEnvironment = environment
+        return persistent.accountId
+      },
+    })
+
+    assert.equal(receivedEnvironment.SST_TARGET_FILE, expectedPath)
+  })
+})
+
+test('conflicting target name and explicit path fail before preflight', async () => {
+  await withTarget('staging', persistent, async () => {
+    const ops = await import('./ops.mjs')
+    const previousTarget = process.env.TARGET
+    process.env.TARGET = 'local'
+    try {
+      assert.throws(
+        () => ops.resolveTarget(),
+        /conflicting target selection.*TARGET=local.*TARGET_FILE=/
+      )
+    } finally {
+      if (previousTarget === undefined) delete process.env.TARGET
+      else process.env.TARGET = previousTarget
+    }
+  })
+})
 
 test('status rejects account mismatch before mutation', async () => {
   await withTarget('staging', persistent, async () => {

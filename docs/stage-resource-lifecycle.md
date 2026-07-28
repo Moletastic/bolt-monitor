@@ -2,9 +2,9 @@
 
 ## Target Contract
 
-Every SST mutation reads one ignored target file at `infra/targets/<name>.target.json`. The file declares the stage name, AWS profile, expected AWS account, expected AWS region, lifecycle class (`persistent` or `ephemeral`), owner, service, dashboard origin, and required class-specific configuration. Copy `infra/targets/example.target.json` to a target file and fill in the local AWS identity.
+Every SST mutation reads one ignored target file at `infra/targets/<name>.target.json`. The file declares the stage name, AWS profile, expected AWS account, expected AWS region, lifecycle class (`persistent` or `ephemeral`), owner, service, dashboard origin, and required class-specific configuration. Copy `infra/targets/example.target.json` to a target file and fill in the local AWS identity. Select it with `TARGET=<name>`; the orchestrator resolves its canonical path and passes that same path to SST as `SST_TARGET_FILE`.
 
-AWS credentials come from standard AWS profile or credential-provider configuration, never from the target file. The orchestrator binds `AWS_PROFILE` and `AWS_REGION` from the selected target before invoking AWS APIs.
+AWS credentials come from standard AWS profile or credential-provider configuration, never from the target file. The orchestrator binds `AWS_PROFILE` and `AWS_REGION` from the selected target before invoking AWS APIs. `TARGET_FILE` is an explicit-path input for automation; if supplied with `TARGET`, it must resolve to that named target file or the command fails before preflight and SST invocation.
 
 Persistent targets require `approved: true` and an explicitly configured stage name. `prod` and `production` are reserved as protected aliases even when an installation chooses another production name. Ephemeral targets require `disposable: true` and a future `expiresAt`; expiry detects stale targets and does not delete AWS resources automatically.
 

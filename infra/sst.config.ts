@@ -1,27 +1,28 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
-async function resolveTargetPath(stage?: string): Promise<string> {
-  const path = await import('node:path')
-  const url = await import('node:url')
-  const fs = await import('node:fs')
-  const targetName = process.env.TARGET ?? 'staging'
-  const suffix = targetName.endsWith('.target.json') ? targetName : `${targetName}.target.json`
-  const here = url.fileURLToPath(import.meta.url)
-  let dir = path.dirname(here)
-  for (let i = 0; i < 6; i += 1) {
-    const candidate = path.resolve(dir, 'infra', 'targets', suffix)
-    if (fs.existsSync(candidate)) return candidate
-    const parent = path.dirname(dir)
-    if (parent === dir) break
-    dir = parent
+function resolveTargetPath(): string {
+  const targetPath = process.env.SST_TARGET_FILE
+  if (targetPath === undefined || targetPath.trim() === '') {
+    throw new Error(
+      'SST_TARGET_FILE is required; invoke infrastructure commands through infra/scripts/ops.mjs'
+    )
   }
-  return path.resolve(dir, 'infra', 'targets', suffix)
+  return targetPath
+}
+
+async function loadTarget(stage?: string) {
+  const { loadDeploymentTargetFromPath } = await import('./deployment-target')
+  const target = loadDeploymentTargetFromPath(resolveTargetPath())
+  if (stage !== undefined && stage !== target.stage) {
+    throw new Error(`SST stage ${stage} conflicts with target stage ${target.stage}`)
+  }
+  return target
 }
 
 export default $config({
   async app(input?: { stage?: string }) {
-    const { loadDeploymentTargetFromPath, lifecyclePolicy } = await import('./deployment-target')
-    const target = loadDeploymentTargetFromPath(await resolveTargetPath(input?.stage))
+    const { lifecyclePolicy } = await import('./deployment-target')
+    const target = await loadTarget(input?.stage)
     const policy = lifecyclePolicy(target)
     return {
       name: 'bolt-monitor',
@@ -37,8 +38,7 @@ export default $config({
     }
   },
   async run() {
-    const { loadDeploymentTargetFromPath } = await import('./deployment-target')
-    const target = loadDeploymentTargetFromPath(await resolveTargetPath($app.stage))
+    const target = await loadTarget($app.stage)
     const { createBootstrapStack } = await import('./stacks/bootstrap')
     return createBootstrapStack(target)
   },

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
@@ -13,23 +13,37 @@ function projectRoot() {
   return resolve(__dirname, '..', '..')
 }
 
-function targetPath(targetName) {
-  if (process.env.TARGET_FILE !== undefined) {
-    return process.env.TARGET_FILE
-  }
+function namedTargetPath(targetName) {
   const suffix = targetName.endsWith('.target.json') ? targetName : `${targetName}.target.json`
   return resolve(projectRoot(), 'infra', 'targets', suffix)
 }
 
-function resolveTarget() {
-  const name = process.env.TARGET ?? 'staging'
-  const path = targetPath(name)
+function resolvedTargetPath() {
+  const configuredName = process.env.TARGET
+  const name = configuredName ?? 'staging'
+  const namedPath = namedTargetPath(name)
+  const configuredPath = process.env.TARGET_FILE
+  const path = resolve(configuredPath ?? namedPath)
+
   if (!existsSync(path)) {
     throw new Error(
       `target file not found: ${path}\nCopy infra/targets/example.target.json to ${path} and fill it in.`
     )
   }
-  return loadDeploymentTargetFromPath(path)
+  if (
+    configuredPath !== undefined &&
+    configuredName !== undefined &&
+    (!existsSync(namedPath) || realpathSync(path) !== realpathSync(namedPath))
+  ) {
+    throw new Error(
+      `conflicting target selection: TARGET=${configuredName} resolves to ${namedPath}, TARGET_FILE=${configuredPath}`
+    )
+  }
+  return realpathSync(path)
+}
+
+export function resolveTarget() {
+  return loadDeploymentTargetFromPath(resolvedTargetPath())
 }
 
 function targetEnvironment(target) {
@@ -38,6 +52,7 @@ function targetEnvironment(target) {
     AWS_PROFILE: target.profile,
     AWS_REGION: target.region,
     TARGET: target.stage,
+    SST_TARGET_FILE: resolvedTargetPath(),
   }
 }
 
