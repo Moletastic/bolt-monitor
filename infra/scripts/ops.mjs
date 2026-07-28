@@ -3,7 +3,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
-import { loadDeploymentTargetFromPath } from '../deployment-target.ts'
+import { loadDeploymentTargetFromPath, validateTargetExpiry } from '../deployment-target.ts'
 import { cleanupEphemeral, outputsPath } from './cleanup.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -42,32 +42,35 @@ function resolvedTargetPath() {
   return realpathSync(path)
 }
 
-export function resolveTarget() {
-  return loadDeploymentTargetFromPath(resolvedTargetPath())
+export function resolveTarget(operation = 'status') {
+  const target = loadDeploymentTargetFromPath(resolvedTargetPath())
+  validateTargetExpiry(target, operation === 'remove')
+  return target
 }
 
-function targetEnvironment(target) {
+function targetEnvironment(target, operation) {
   return {
     ...process.env,
     AWS_PROFILE: target.profile,
     AWS_REGION: target.region,
     TARGET: target.stage,
     SST_TARGET_FILE: resolvedTargetPath(),
+    SST_OPERATION: operation,
   }
 }
 
-function targetSummary(target, accountId) {
+export function targetSummary(target, accountId) {
   return [
-    `target=${target.stage}`,
-    `stage=${target.stage}`,
-    `class=${target.lifecycle}`,
-    `owner=${target.owner}`,
-    `service=${target.service}`,
-    `account=${accountId}`,
-    `region=${target.region}`,
-    `profile=${target.profile}`,
-    `dashboard-origin=${target.dashboardOrigin}`,
-  ].join(' ')
+    `  target: ${target.stage}`,
+    `  stage: ${target.stage}`,
+    `  class: ${target.lifecycle}`,
+    `  owner: ${target.owner}`,
+    `  service: ${target.service}`,
+    `  account: ${accountId}`,
+    `  region: ${target.region}`,
+    `  profile: ${target.profile}`,
+    `  dashboard origin: ${target.dashboardOrigin}`,
+  ].join('\n')
 }
 
 export function runCommand(command, args, environment, { inherit = false, cwd } = {}) {
@@ -120,9 +123,9 @@ export function sstOutputs(stage) {
 }
 
 export async function status({ run = runCommand } = {}) {
-  const target = resolveTarget()
-  const { accountId } = preflight(target, targetEnvironment(target), { run })
-  console.log(`SST target validated: ${targetSummary(target, accountId)}`)
+  const target = resolveTarget('status')
+  const { accountId } = preflight(target, targetEnvironment(target, 'status'), { run })
+  console.log(`SST target validated:\n${targetSummary(target, accountId)}`)
   return { target, accountId }
 }
 
@@ -131,10 +134,10 @@ export async function deploy({
   preflight: pre = preflight,
   outputs = sstOutputs,
 } = {}) {
-  const target = resolveTarget()
-  const env = targetEnvironment(target)
+  const target = resolveTarget('deploy')
+  const env = targetEnvironment(target, 'deploy')
   const { accountId } = pre(target, env, { run })
-  console.log(`SST deploy target: ${targetSummary(target, accountId)}`)
+  console.log(`SST deploy target:\n${targetSummary(target, accountId)}`)
   run('pnpm', sstArgs('deploy', target), env, { inherit: true })
   const data = outputs(target.stage)
   if (typeof data?.apiUrl === 'string') {
@@ -175,21 +178,26 @@ export async function deploy({
 }
 
 export async function dev({ run = runCommand, preflight: pre = preflight } = {}) {
-  const target = resolveTarget()
-  const { accountId } = pre(target, targetEnvironment(target), { run })
-  console.log(`SST dev target: ${targetSummary(target, accountId)}`)
-  run('pnpm', sstArgs('dev', target), targetEnvironment(target), { inherit: true })
+  const target = resolveTarget('dev')
+  const env = targetEnvironment(target, 'dev')
+  const { accountId } = pre(target, env, { run })
+  console.log(`SST dev target:\n${targetSummary(target, accountId)}`)
+  run('pnpm', sstArgs('dev', target), env, { inherit: true })
 }
 
-export async function remove(options = {}, { run = runCommand, preflight: pre = preflight } = {}) {
-  const target = resolveTarget()
+export async function remove(
+  options = {},
+  { run = runCommand, preflight: pre = preflight, cleanup = cleanupEphemeral } = {}
+) {
+  const target = resolveTarget('remove')
   if (target.lifecycle === 'persistent' && options.destroy !== true) {
     throw new Error('persistent removal requires DESTROY=yes')
   }
-  const { accountId } = pre(target, targetEnvironment(target), { run })
-  console.log(`SST remove target: ${targetSummary(target, accountId)}`)
+  const env = targetEnvironment(target, 'remove')
+  const { accountId } = pre(target, env, { run })
+  console.log(`SST remove target:\n${targetSummary(target, accountId)}`)
   if (target.lifecycle === 'ephemeral') {
-    const result = cleanupEphemeral(target, targetEnvironment(target))
+    const result = cleanup(target, env)
     console.log(
       `SST cleanup verified zero residual resources across: ${result.coveredResourceKinds.join(', ')}`
     )
@@ -199,7 +207,7 @@ export async function remove(options = {}, { run = runCommand, preflight: pre = 
     'pnpm',
     sstArgs('remove', target),
     {
-      ...targetEnvironment(target),
+      ...env,
       SST_ALLOW_PERSISTENT_REMOVAL: '1',
     },
     { inherit: true }
@@ -214,15 +222,16 @@ export async function inviteAdmin(
   if (typeof email !== 'string' || email.trim() === '') {
     throw new Error('invite-admin requires EMAIL=<email>')
   }
-  const target = resolveTarget()
-  const { accountId } = pre(target, targetEnvironment(target), { run })
+  const target = resolveTarget('invite-admin')
+  const env = targetEnvironment(target, 'invite-admin')
+  const { accountId } = pre(target, env, { run })
   const data = outputs(target.stage)
   const userPoolId = data?.operatorUserPoolId
   const authTable = data?.authTableName
   if (typeof userPoolId !== 'string' || typeof authTable !== 'string') {
     throw new Error('invite-admin requires deploy outputs; run make deploy-infra first')
   }
-  console.log(`Invite target: ${targetSummary(target, accountId)} user=${email}`)
+  console.log(`Invite target:\n${targetSummary(target, accountId)}\n  user: ${email}`)
   run(
     'go',
     [
@@ -237,14 +246,14 @@ export async function inviteAdmin(
       '--stage',
       target.stage,
     ],
-    targetEnvironment(target),
+    env,
     { inherit: true }
   )
 }
 
 export async function rotateAuthKey({ run = runCommand, preflight: pre = preflight } = {}) {
-  const target = resolveTarget()
-  const env = targetEnvironment(target)
+  const target = resolveTarget('rotate-auth-key')
+  const env = targetEnvironment(target, 'rotate-auth-key')
   const { accountId } = pre(target, env, { run })
   console.log(`Auth key rotation target: ${targetSummary(target, accountId)}`)
   const { randomBytes } = await import('node:crypto')

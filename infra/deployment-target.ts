@@ -132,15 +132,21 @@ export function validateDeploymentTarget(target: DeploymentTarget) {
   if (target.approved !== undefined) {
     throw new Error('ephemeral target cannot declare approved')
   }
-  if (
-    target.expiresAt === undefined ||
-    Number.isNaN(Date.parse(target.expiresAt)) ||
-    Date.parse(target.expiresAt) <= Date.now()
-  ) {
+  if (target.expiresAt === undefined || Number.isNaN(Date.parse(target.expiresAt))) {
     throw new Error('ephemeral target requires a valid expiresAt')
   }
   if (PROTECTED_NORMALIZED.has(normalizedStage)) {
     throw new Error(`ephemeral stage uses protected name: ${target.stage}`)
+  }
+}
+
+export function validateTargetExpiry(target: DeploymentTarget, allowExpired = false) {
+  if (
+    target.lifecycle === 'ephemeral' &&
+    allowExpired !== true &&
+    Date.parse(target.expiresAt!) <= Date.now()
+  ) {
+    throw new Error(`ephemeral target expiresAt must be in the future: ${target.expiresAt}`)
   }
 }
 

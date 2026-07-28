@@ -11,8 +11,9 @@ function resolveTargetPath(): string {
 }
 
 async function loadTarget(stage?: string) {
-  const { loadDeploymentTargetFromPath } = await import('./deployment-target')
+  const { loadDeploymentTargetFromPath, validateTargetExpiry } = await import('./deployment-target')
   const target = loadDeploymentTargetFromPath(resolveTargetPath())
+  validateTargetExpiry(target, process.env.SST_OPERATION === 'remove')
   if (stage !== undefined && stage !== target.stage) {
     throw new Error(`SST stage ${stage} conflicts with target stage ${target.stage}`)
   }

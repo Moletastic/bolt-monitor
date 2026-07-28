@@ -16,6 +16,19 @@ const persistent = {
   approved: true,
 }
 
+const expiredEphemeral = {
+  stage: 'dev-jane-expired',
+  profile: 'bolt-monitor',
+  lifecycle: 'ephemeral',
+  owner: 'jane',
+  service: 'bolt-monitor',
+  accountId: '123456789012',
+  region: 'us-east-1',
+  dashboardOrigin: 'https://dev-jane.example.com',
+  disposable: true,
+  expiresAt: '2000-01-01T00:00:00Z',
+}
+
 async function withTarget(name, target, run) {
   const dir = mkdtempSync(join(tmpdir(), 'bolt-ops-'))
   const targetsDir = join(dir, 'infra', 'targets')
@@ -67,6 +80,64 @@ test('conflicting target name and explicit path fail before preflight', async ()
   })
 })
 
+test('expired ephemeral targets run verified cleanup for removal', async () => {
+  await withTarget('expired', expiredEphemeral, async () => {
+    const ops = await import('./ops.mjs')
+    let cleanupTarget
+    let cleanupEnvironment
+
+    await ops.remove(
+      {},
+      {
+        preflight: () => ({
+          accountId: expiredEphemeral.accountId,
+          region: expiredEphemeral.region,
+        }),
+        cleanup: (target, environment) => {
+          cleanupTarget = target
+          cleanupEnvironment = environment
+          return { coveredResourceKinds: [] }
+        },
+      }
+    )
+
+    assert.equal(cleanupTarget.stage, expiredEphemeral.stage)
+    assert.equal(cleanupEnvironment.SST_OPERATION, 'remove')
+  })
+})
+
+test('expired ephemeral targets reject deployment before preflight', async () => {
+  await withTarget('expired', expiredEphemeral, async () => {
+    const ops = await import('./ops.mjs')
+
+    await assert.rejects(
+      () =>
+        ops.deploy({
+          preflight: () => {
+            throw new Error('preflight must not run')
+          },
+        }),
+      /expiresAt must be in the future/
+    )
+  })
+})
+
+test('expired ephemeral targets reject every non-removal operation', async () => {
+  await withTarget('expired', expiredEphemeral, async () => {
+    const ops = await import('./ops.mjs')
+    const operations = [
+      () => ops.status(),
+      () => ops.dev(),
+      () => ops.inviteAdmin('jane@example.com'),
+      () => ops.rotateAuthKey(),
+    ]
+
+    for (const operation of operations) {
+      await assert.rejects(operation, /expiresAt must be in the future/)
+    }
+  })
+})
+
 test('status rejects account mismatch before mutation', async () => {
   await withTarget('staging', persistent, async () => {
     const ops = await import('./ops.mjs')
@@ -80,6 +151,25 @@ test('status rejects account mismatch before mutation', async () => {
       /account mismatch/
     )
   })
+})
+
+test('target summary presents non-secret target details one field per line', async () => {
+  const ops = await import('./ops.mjs')
+
+  assert.equal(
+    ops.targetSummary(persistent, persistent.accountId),
+    [
+      '  target: staging',
+      '  stage: staging',
+      '  class: persistent',
+      '  owner: platform',
+      '  service: bolt-monitor',
+      '  account: 123456789012',
+      '  region: us-east-1',
+      '  profile: bolt-monitor',
+      '  dashboard origin: https://staging.example.com',
+    ].join('\n')
+  )
 })
 
 test('persistent remove refuses without DESTROY=yes', async () => {

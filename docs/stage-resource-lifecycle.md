@@ -6,7 +6,7 @@ Every SST mutation reads one ignored target file at `infra/targets/<name>.target
 
 AWS credentials come from standard AWS profile or credential-provider configuration, never from the target file. The orchestrator binds `AWS_PROFILE` and `AWS_REGION` from the selected target before invoking AWS APIs. `TARGET_FILE` is an explicit-path input for automation; if supplied with `TARGET`, it must resolve to that named target file or the command fails before preflight and SST invocation.
 
-Persistent targets require `approved: true` and an explicitly configured stage name. `prod` and `production` are reserved as protected aliases even when an installation chooses another production name. Ephemeral targets require `disposable: true` and a future `expiresAt`; expiry detects stale targets and does not delete AWS resources automatically.
+Persistent targets require `approved: true` and an explicitly configured stage name. `prod` and `production` are reserved as protected aliases even when an installation chooses another production name. Ephemeral targets require `disposable: true` and a valid `expiresAt`. Expired targets cannot deploy, develop, inspect, invite, or rotate keys; run `make remove-infra TARGET=<name>` to trigger exact-stage verified cleanup. Expiry never deletes AWS resources automatically.
 
 `staging` is persistent only when its target file explicitly approves it for deliberate shared validation. Prefer a developer-owned ephemeral target for local work. Never omit a target and never use a unique persistent smoke stage.
 
@@ -22,7 +22,7 @@ Persistent targets require `approved: true` and an explicitly configured stage n
 
 Provider default tags apply `service`, `stage`, `owner`, `lifecycle`, and, for ephemeral targets, `expiresAt` to every taggable AWS resource. The bootstrap stack has no stage-name conditionals: policy derives from validated target. The non-printing AES-key helper applies the same policy tags to its SSM parameter; persistent inventory lists its name but never its value.
 
-SST is pinned to `4.14.1`. Ephemeral `make remove-infra` invokes the pinned SST removal path and bounded Resource Groups Tagging API verification for exact `service` and `stage` tags; it reports non-secret orphan ARNs. Resource kinds covered are Cognito, DynamoDB, SSM/SST secrets, EventBridge, SQS, S3, functions, APIs, dashboard resources, logs, subscriptions, and SST support resources. Cleanup also requires SST state to report the target as not deployed, covering generated resources that cannot be listed by ownership tags.
+SST is pinned to `4.14.1`. Ephemeral `make remove-infra` accepts an expired disposable target and invokes the pinned SST removal path and bounded Resource Groups Tagging API verification for exact `service` and `stage` tags; it reports non-secret orphan ARNs. Resource kinds covered are Cognito, DynamoDB, SSM/SST secrets, EventBridge, SQS, S3, functions, APIs, dashboard resources, logs, subscriptions, and SST support resources. Cleanup also requires SST state to report the target as not deployed, covering generated resources that cannot be listed by ownership tags.
 
 ## Verification Evidence
 

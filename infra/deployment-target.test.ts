@@ -7,6 +7,7 @@ import {
   loadDeploymentTargetFromPath,
   parseTarget,
   validateDeploymentTarget,
+  validateTargetExpiry,
   type DeploymentTarget,
 } from './deployment-target.ts'
 
@@ -62,12 +63,19 @@ test('rejects target without AWS profile', () => {
   assert.throws(() => validateDeploymentTarget({ ...persistent, profile: '' }), /profile/)
 })
 
-test('rejects ephemeral target without disposable expiry', () => {
+test('rejects ephemeral target without a valid expiry', () => {
   assert.throws(() => validateDeploymentTarget({ ...ephemeral, expiresAt: undefined }), /expiresAt/)
   assert.throws(
-    () => validateDeploymentTarget({ ...ephemeral, expiresAt: '2000-01-01T00:00:00Z' }),
+    () => validateDeploymentTarget({ ...ephemeral, expiresAt: 'not-a-date' }),
     /expiresAt/
   )
+})
+
+test('accepts expired targets structurally but rejects them for non-removal operations', () => {
+  const expired = { ...ephemeral, expiresAt: '2000-01-01T00:00:00Z' }
+  assert.doesNotThrow(() => validateDeploymentTarget(expired))
+  assert.throws(() => validateTargetExpiry(expired), /expiresAt must be in the future/)
+  assert.doesNotThrow(() => validateTargetExpiry(expired, true))
 })
 
 test('rejects persistent target without approval', () => {
