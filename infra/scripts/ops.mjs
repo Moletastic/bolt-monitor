@@ -112,14 +112,57 @@ export function sstArgs(action, target) {
   throw new Error(`unknown action: ${action}`)
 }
 
+const requiredDeployOutputFields = ['apiUrl', 'dashboardUrl', 'appTableName', 'authTableName']
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasDeployOutputField(value) {
+  return requiredDeployOutputFields.some((field) => Object.hasOwn(value, field))
+}
+
+export function resolveDeployOutputs(all, stage) {
+  if (!isRecord(all)) {
+    throw new Error('deploy outputs are malformed: expected an object')
+  }
+
+  let data
+  if (Object.hasOwn(all, stage)) {
+    if (hasDeployOutputField(all)) {
+      throw new Error('deploy outputs are malformed: mixed flat and stage-scoped outputs')
+    }
+    data = all[stage]
+  } else if (hasDeployOutputField(all)) {
+    data = all
+  } else if (Object.values(all).some(isRecord)) {
+    throw new Error(`deploy outputs do not contain selected stage: ${stage}`)
+  } else {
+    data = all
+  }
+
+  if (!isRecord(data)) {
+    throw new Error(`deploy outputs are malformed for stage ${stage}: expected an object`)
+  }
+
+  const missing = requiredDeployOutputFields.filter(
+    (field) => typeof data[field] !== 'string' || data[field].trim() === ''
+  )
+  if (missing.length > 0) {
+    throw new Error(
+      `deploy outputs missing required fields for stage ${stage}: ${missing.join(', ')}`
+    )
+  }
+  return data
+}
+
 export function sstOutputs(stage) {
   const path = resolve(projectRoot(), 'infra', '.sst', 'outputs.json')
-  if (!existsSync(path)) return null
-  const all = JSON.parse(readFileSync(path, 'utf8'))
-  if (all && typeof all === 'object' && all[stage] !== undefined) {
-    return all[stage]
+  if (!existsSync(path)) {
+    throw new Error(`SST outputs not found at ${path}; deploy first`)
   }
-  return all
+  const all = JSON.parse(readFileSync(path, 'utf8'))
+  return resolveDeployOutputs(all, stage)
 }
 
 export async function status({ run = runCommand } = {}) {
@@ -139,14 +182,12 @@ export async function deploy({
   const { accountId } = pre(target, env, { run })
   console.log(`SST deploy target:\n${targetSummary(target, accountId)}`)
   run('pnpm', sstArgs('deploy', target), env, { inherit: true })
-  const data = outputs(target.stage)
-  if (typeof data?.apiUrl === 'string') {
-    try {
-      run('curl', ['-fsS', `${data.apiUrl.replace(/\/$/, '')}/api/health`], env, { inherit: false })
-      console.log('Public health endpoint reachable')
-    } catch (error) {
-      throw new Error(`public health endpoint failed after deploy: ${error.message}`)
-    }
+  const data = resolveDeployOutputs(outputs(target.stage), target.stage)
+  try {
+    run('curl', ['-fsS', `${data.apiUrl.replace(/\/$/, '')}/api/health`], env, { inherit: false })
+    console.log('Public health endpoint reachable')
+  } catch (error) {
+    throw new Error(`public health endpoint failed after deploy: ${error.message}`)
   }
   if (target.lifecycle === 'persistent') {
     const tableName = data?.appTableName

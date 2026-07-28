@@ -51,6 +51,19 @@ Every credentialed infrastructure operation SHALL provide SST configuration the 
 - **THEN** the operation fails before SST deploy, development, or removal begins
 - **AND** the error identifies the conflicting non-secret target inputs
 
+### Requirement: Expired ephemeral targets remain eligible for verified removal
+The infrastructure orchestrator SHALL permit an expired target only when it is structurally valid, `ephemeral`, and `disposable=true`, and only for exact-stage removal plus residual verification. It SHALL reject that expired target before development, deployment, status, invitation, or credential/key mutation.
+
+#### Scenario: Operator removes expired ephemeral stage
+- **WHEN** an operator selects an otherwise valid expired disposable target for `make remove-infra`
+- **THEN** the orchestrator runs the existing exact-stage SST removal and residual verification
+- **AND** does not require expiry to be in the future
+
+#### Scenario: Operator deploys expired ephemeral stage
+- **WHEN** an operator selects an expired ephemeral target for deployment or development
+- **THEN** validation fails before AWS mutation
+- **AND** the error identifies expiry without exposing credentials
+
 ### Requirement: Local, staging, and credentialed smoke workflows declare lifecycle intent
 The supported workflows SHALL document `staging.target.json` as the named persistent target only when its file explicitly approves long-lived shared validation. Local SST development SHALL explicitly select either `staging.target.json` or a developer-owned `TARGET=<name>` ephemeral target and SHALL NOT gain a lifecycle class from an omitted or unconfigured target. The repository SHALL NOT provide a credentialed staging smoke workflow or require staging token, invitation, or MFA automation as a deployment gate.
 

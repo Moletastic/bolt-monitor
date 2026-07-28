@@ -36,7 +36,7 @@ The persistent `staging` inventory was checked without mutation: AppTable and Au
 
 ### Local staging verification
 
-Repository CI never deploys or receives AWS credentials. After deliberately deploying the configured persistent staging target from a workstation, run `make deploy-infra`; the orchestrator verifies SST outputs, persistent protections, and public health. Authentication flow validation is performed manually through the dashboard sign-in, invitation activation, optional TOTP enrollment, and protected API access paths.
+Repository CI never deploys or receives AWS credentials. After deliberately deploying a configured target from a workstation, run `make deploy-infra`; the orchestrator requires unambiguous flat or selected-stage SST outputs containing `apiUrl`, `dashboardUrl`, `appTableName`, and `authTableName`, then checks the public health endpoint. Persistent targets additionally verify DynamoDB deletion protection and point-in-time recovery. Authentication flow validation is performed manually through the dashboard sign-in, invitation activation, optional TOTP enrollment, and protected API access paths.
 
 ## Authentication Cutover Gate
 

@@ -195,10 +195,84 @@ test('deploy postflight fails when health endpoint unreachable', async () => {
             }
             return ''
           },
-          outputs: () => ({ apiUrl: 'https://example.com', appTableName: 'AppTable' }),
+          outputs: () => ({
+            apiUrl: 'https://example.com',
+            dashboardUrl: 'https://dashboard.example.com',
+            appTableName: 'AppTable',
+            authTableName: 'AuthTable',
+          }),
         }),
       /health endpoint failed/
     )
+  })
+})
+
+test('deploy outputs accept flat and selected stage-scoped shapes', async () => {
+  const ops = await import('./ops.mjs')
+  const output = {
+    apiUrl: 'https://api.example.com',
+    dashboardUrl: 'https://dashboard.example.com',
+    appTableName: 'AppTable',
+    authTableName: 'AuthTable',
+  }
+
+  assert.deepEqual(ops.resolveDeployOutputs(output, 'staging'), output)
+  assert.deepEqual(ops.resolveDeployOutputs({ staging: output }, 'staging'), output)
+})
+
+test('deploy outputs reject missing, malformed, and stage-mismatched shapes', async () => {
+  const ops = await import('./ops.mjs')
+  const output = {
+    apiUrl: 'https://api.example.com',
+    dashboardUrl: 'https://dashboard.example.com',
+    appTableName: 'AppTable',
+    authTableName: 'AuthTable',
+  }
+
+  assert.throws(
+    () => ops.resolveDeployOutputs({ ...output, authTableName: '' }, 'staging'),
+    /missing required fields.*authTableName/
+  )
+  assert.throws(() => ops.resolveDeployOutputs([], 'staging'), /outputs are malformed/)
+  assert.throws(
+    () => ops.resolveDeployOutputs({ development: output }, 'staging'),
+    /do not contain selected stage: staging/
+  )
+})
+
+test('persistent deploy verifies health before protection and PITR', async () => {
+  await withTarget('staging', persistent, async () => {
+    const ops = await import('./ops.mjs')
+    const calls = []
+
+    await ops.deploy({
+      preflight: () => ({ accountId: persistent.accountId, region: persistent.region }),
+      run: (command, args) => {
+        calls.push([command, args])
+        if (command === 'aws' && args[0] === 'dynamodb' && args[1] === 'describe-table') {
+          return JSON.stringify({ Table: { DeletionProtectionEnabled: true } })
+        }
+        if (command === 'aws' && args[0] === 'dynamodb') {
+          return JSON.stringify({
+            ContinuousBackupsDescription: {
+              PointInTimeRecoveryDescription: { PointInTimeRecoveryStatus: 'ENABLED' },
+            },
+          })
+        }
+        return ''
+      },
+      outputs: () => ({
+        apiUrl: 'https://api.example.com',
+        dashboardUrl: 'https://dashboard.example.com',
+        appTableName: 'AppTable',
+        authTableName: 'AuthTable',
+      }),
+    })
+
+    assert.equal(calls[1][0], 'curl')
+    assert.deepEqual(calls[1][1], ['-fsS', 'https://api.example.com/api/health'])
+    assert.equal(calls[2][0], 'aws')
+    assert.equal(calls[3][0], 'aws')
   })
 })
 
