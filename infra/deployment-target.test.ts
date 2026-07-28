@@ -21,6 +21,8 @@ const persistent: DeploymentTarget = {
   region: 'us-east-1',
   dashboardOrigin: 'https://staging.example.com',
   approved: true,
+  budgetAmountUsd: 10,
+  alertEmails: ['ops@example.com'],
 }
 
 const ephemeral: DeploymentTarget = {
@@ -53,6 +55,8 @@ test('parses a complete target file', () => {
     region: 'us-east-1',
     dashboardOrigin: 'https://staging.example.com',
     approved: true,
+    budgetAmountUsd: 10,
+    alertEmails: ['ops@example.com'],
   })
   assert.equal(target.profile, 'bolt-monitor')
   assert.equal(target.lifecycle, 'persistent')
@@ -80,6 +84,18 @@ test('accepts expired targets structurally but rejects them for non-removal oper
 
 test('rejects persistent target without approval', () => {
   assert.throws(() => validateDeploymentTarget({ ...persistent, approved: false }), /approved=true/)
+})
+
+test('accepts persistent target with an explicit documented budget opt-out', () => {
+  assert.doesNotThrow(() =>
+    validateDeploymentTarget({
+      ...persistent,
+      budgetAmountUsd: undefined,
+      alertEmails: undefined,
+      budgetAlertsOptOut: true,
+      budgetAlertsOptOutReason: 'The account disallows AWS Budgets for this installation.',
+    })
+  )
 })
 
 test('rejects persistent smoke stage names', () => {

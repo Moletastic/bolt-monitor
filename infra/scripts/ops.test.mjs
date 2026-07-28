@@ -14,6 +14,8 @@ const persistent = {
   region: 'us-east-1',
   dashboardOrigin: 'https://staging.example.com',
   approved: true,
+  budgetAlertsOptOut: true,
+  budgetAlertsOptOutReason: 'The account disallows AWS Budgets for this test fixture.',
 }
 
 const expiredEphemeral = {

@@ -37,7 +37,7 @@ test('optional AWS Budget wiring is conditional and absent by default', () => {
   assert.match(stackSource, /subscriberEmailAddresses: target\.alertEmails/)
 })
 
-test('parseTarget accepts target without budget fields', () => {
+test('persistent target requires budget configuration or an explicit documented opt-out', () => {
   const raw = {
     stage: 'staging',
     profile: 'bolt-monitor',
@@ -49,11 +49,15 @@ test('parseTarget accepts target without budget fields', () => {
     dashboardOrigin: 'https://staging.example.com',
     approved: true,
   }
-  const target = parseTarget(raw)
-  assert.equal(target.budgetAmountUsd, undefined)
-  assert.equal(target.alertEmails, undefined)
-  assert.equal(hasBudgetConfig(target), false)
-  validateDeploymentTarget(target)
+  assert.throws(() => validateDeploymentTarget(parseTarget(raw)), /requires budgetAmountUsd/)
+
+  const optOutTarget = parseTarget({
+    ...raw,
+    budgetAlertsOptOut: true,
+    budgetAlertsOptOutReason: 'The account disallows AWS Budgets for this installation.',
+  })
+  assert.equal(hasBudgetConfig(optOutTarget), false)
+  assert.doesNotThrow(() => validateDeploymentTarget(optOutTarget))
 })
 
 test('parseTarget accepts target with valid budget fields', () => {
@@ -76,7 +80,7 @@ test('parseTarget accepts target with valid budget fields', () => {
   assert.equal(hasBudgetConfig(target), true)
 })
 
-test('parseTarget rejects non-positive budgetAmountUsd', () => {
+test('parseTarget rejects malformed budget fields', () => {
   const base = {
     stage: 'staging',
     profile: 'bolt-monitor',
@@ -89,12 +93,12 @@ test('parseTarget rejects non-positive budgetAmountUsd', () => {
     approved: true,
     alertEmails: ['ops@example.com'],
   }
-  assert.equal(parseTarget({ ...base, budgetAmountUsd: 0 }).budgetAmountUsd, undefined)
-  assert.equal(parseTarget({ ...base, budgetAmountUsd: -1 }).budgetAmountUsd, undefined)
-  assert.equal(parseTarget({ ...base, budgetAmountUsd: Number.NaN }).budgetAmountUsd, undefined)
+  assert.throws(() => parseTarget({ ...base, budgetAmountUsd: 0 }), /finite positive/)
+  assert.throws(() => parseTarget({ ...base, budgetAmountUsd: -1 }), /finite positive/)
+  assert.throws(() => parseTarget({ ...base, budgetAmountUsd: Number.NaN }), /finite positive/)
 })
 
-test('parseTarget rejects empty alertEmails array', () => {
+test('parseTarget rejects an invalid alertEmails list', () => {
   const raw = {
     stage: 'staging',
     profile: 'bolt-monitor',
@@ -108,9 +112,7 @@ test('parseTarget rejects empty alertEmails array', () => {
     budgetAmountUsd: 10,
     alertEmails: [],
   }
-  const target = parseTarget(raw)
-  assert.equal(target.alertEmails, undefined)
-  assert.equal(hasBudgetConfig(target), false)
+  assert.throws(() => parseTarget(raw), /alertEmails/)
 })
 
 test('parseTarget trims whitespace inside alertEmails', () => {
@@ -131,32 +133,37 @@ test('parseTarget trims whitespace inside alertEmails', () => {
   assert.deepEqual(target.alertEmails, ['ops@example.com', 'oncall@example.com'])
 })
 
-test('hasBudgetConfig is false for partially configured targets', () => {
-  const amountOnly: DeploymentTarget = parseTarget({
-    stage: 'staging',
-    profile: 'bolt-monitor',
-    accountId: '123456789012',
-    region: 'us-east-1',
-    lifecycle: 'persistent',
-    owner: 'team',
-    service: 'bolt-monitor',
-    dashboardOrigin: 'https://staging.example.com',
-    approved: true,
-    budgetAmountUsd: 10,
-  })
-  assert.equal(hasBudgetConfig(amountOnly), false)
-
-  const emailsOnly: DeploymentTarget = parseTarget({
-    stage: 'staging',
-    profile: 'bolt-monitor',
-    accountId: '123456789012',
-    region: 'us-east-1',
-    lifecycle: 'persistent',
-    owner: 'team',
-    service: 'bolt-monitor',
-    dashboardOrigin: 'https://staging.example.com',
-    approved: true,
-    alertEmails: ['ops@example.com'],
-  })
-  assert.equal(hasBudgetConfig(emailsOnly), false)
+test('parseTarget rejects partial budget configuration', () => {
+  assert.throws(
+    () =>
+      parseTarget({
+        stage: 'staging',
+        profile: 'bolt-monitor',
+        accountId: '123456789012',
+        region: 'us-east-1',
+        lifecycle: 'persistent',
+        owner: 'team',
+        service: 'bolt-monitor',
+        dashboardOrigin: 'https://staging.example.com',
+        approved: true,
+        budgetAmountUsd: 10,
+      }),
+    /together/
+  )
+  assert.throws(
+    () =>
+      parseTarget({
+        stage: 'staging',
+        profile: 'bolt-monitor',
+        accountId: '123456789012',
+        region: 'us-east-1',
+        lifecycle: 'persistent',
+        owner: 'team',
+        service: 'bolt-monitor',
+        dashboardOrigin: 'https://staging.example.com',
+        approved: true,
+        alertEmails: ['ops@example.com'],
+      }),
+    /together/
+  )
 })

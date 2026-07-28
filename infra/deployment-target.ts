@@ -16,6 +16,8 @@ export interface DeploymentTarget {
   expiresAt?: string
   budgetAmountUsd?: number
   alertEmails?: string[]
+  budgetAlertsOptOut?: true
+  budgetAlertsOptOutReason?: string
 }
 
 export interface LifecyclePolicy {
@@ -47,6 +49,55 @@ export function parseTarget(value: unknown): DeploymentTarget {
     throw new Error(`deployment target has unknown lifecycle: ${lifecycle}`)
   }
 
+  const hasBudgetAmount = Object.hasOwn(target, 'budgetAmountUsd')
+  const hasAlertEmails = Object.hasOwn(target, 'alertEmails')
+  if (hasBudgetAmount !== hasAlertEmails) {
+    throw new Error('deployment target requires budgetAmountUsd and alertEmails together')
+  }
+
+  const budgetAmountUsd = target.budgetAmountUsd
+  const alertEmails = target.alertEmails
+  if (
+    hasBudgetAmount &&
+    (typeof budgetAmountUsd !== 'number' ||
+      !Number.isFinite(budgetAmountUsd) ||
+      budgetAmountUsd <= 0)
+  ) {
+    throw new Error('deployment target budgetAmountUsd must be a finite positive number')
+  }
+  if (
+    hasAlertEmails &&
+    (!Array.isArray(alertEmails) ||
+      alertEmails.length === 0 ||
+      !alertEmails.every((entry) => typeof entry === 'string' && entry.trim() !== ''))
+  ) {
+    throw new Error(
+      'deployment target alertEmails must contain one or more non-empty email addresses'
+    )
+  }
+
+  const hasBudgetOptOut = Object.hasOwn(target, 'budgetAlertsOptOut')
+  const hasBudgetOptOutReason = Object.hasOwn(target, 'budgetAlertsOptOutReason')
+  if (hasBudgetOptOut && target.budgetAlertsOptOut !== true) {
+    throw new Error('deployment target budgetAlertsOptOut must be true when supplied')
+  }
+  if (hasBudgetOptOut !== hasBudgetOptOutReason) {
+    throw new Error('deployment target budgetAlertsOptOut requires budgetAlertsOptOutReason')
+  }
+  if (
+    hasBudgetOptOutReason &&
+    (typeof target.budgetAlertsOptOutReason !== 'string' ||
+      target.budgetAlertsOptOutReason.trim() === '')
+  ) {
+    throw new Error('deployment target budgetAlertsOptOutReason must be non-empty')
+  }
+  if (hasBudgetAmount && hasBudgetOptOut) {
+    throw new Error('deployment target cannot configure both budget alerts and a budget opt-out')
+  }
+  if (lifecycle === 'ephemeral' && hasBudgetOptOut) {
+    throw new Error('ephemeral target cannot declare a budget opt-out')
+  }
+
   return {
     stage: requireText(target.stage, 'stage'),
     profile: requireText(target.profile, 'profile'),
@@ -59,15 +110,13 @@ export function parseTarget(value: unknown): DeploymentTarget {
     ...(typeof target.approved === 'boolean' ? { approved: target.approved } : {}),
     ...(typeof target.disposable === 'boolean' ? { disposable: target.disposable } : {}),
     ...(typeof target.expiresAt === 'string' ? { expiresAt: target.expiresAt } : {}),
-    ...(typeof target.budgetAmountUsd === 'number' &&
-    Number.isFinite(target.budgetAmountUsd) &&
-    target.budgetAmountUsd > 0
-      ? { budgetAmountUsd: target.budgetAmountUsd }
+    ...(hasBudgetAmount ? { budgetAmountUsd: budgetAmountUsd as number } : {}),
+    ...(hasAlertEmails
+      ? { alertEmails: (alertEmails as string[]).map((entry) => entry.trim()) }
       : {}),
-    ...(Array.isArray(target.alertEmails) &&
-    target.alertEmails.length > 0 &&
-    target.alertEmails.every((entry) => typeof entry === 'string' && entry.trim() !== '')
-      ? { alertEmails: target.alertEmails.map((entry) => (entry as string).trim()) }
+    ...(hasBudgetOptOut ? { budgetAlertsOptOut: true as const } : {}),
+    ...(hasBudgetOptOutReason
+      ? { budgetAlertsOptOutReason: (target.budgetAlertsOptOutReason as string).trim() }
       : {}),
   }
 }
@@ -77,9 +126,11 @@ export function hasBudgetConfig(
 ): target is DeploymentTarget & { budgetAmountUsd: number; alertEmails: string[] } {
   return (
     typeof target.budgetAmountUsd === 'number' &&
+    Number.isFinite(target.budgetAmountUsd) &&
     target.budgetAmountUsd > 0 &&
     Array.isArray(target.alertEmails) &&
-    target.alertEmails.length > 0
+    target.alertEmails.length > 0 &&
+    target.alertEmails.every((entry) => typeof entry === 'string' && entry.trim() !== '')
   )
 }
 
@@ -122,6 +173,24 @@ export function validateDeploymentTarget(target: DeploymentTarget) {
     }
     if (target.disposable !== undefined || target.expiresAt !== undefined) {
       throw new Error('persistent target cannot declare disposable or expiresAt')
+    }
+    if (hasBudgetConfig(target)) {
+      if (
+        target.budgetAlertsOptOut !== undefined ||
+        target.budgetAlertsOptOutReason !== undefined
+      ) {
+        throw new Error(
+          'persistent target cannot configure both budget alerts and a budget opt-out'
+        )
+      }
+    } else if (
+      target.budgetAlertsOptOut !== true ||
+      typeof target.budgetAlertsOptOutReason !== 'string' ||
+      target.budgetAlertsOptOutReason.trim() === ''
+    ) {
+      throw new Error(
+        'persistent target requires budgetAmountUsd and alertEmails or an explicit documented budget opt-out'
+      )
     }
     return
   }

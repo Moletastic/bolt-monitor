@@ -1,8 +1,8 @@
-# Optional AWS Budget Setup
+# AWS Budget Setup
 
-This document describes how to wire an optional stage-attributed AWS Budget against the cost estimates in [`cost-worksheet.md`](./cost-worksheet.md). The budget is alert-only: it never takes automatic action and never disables monitoring.
+This document describes how to wire a stage-attributed AWS Budget against the cost estimates in [`cost-worksheet.md`](./cost-worksheet.md). The budget is alert-only: it never takes automatic action and never disables monitoring.
 
-The wiring is opt-in via the deployment target file. When the target omits budget configuration, no `AWS::Budgets::Budget` resource is provisioned and deployment succeeds unchanged. A clean account without budget permissions can install Bolt Monitor.
+Persistent targets require budget configuration. Ephemeral targets may omit it because preview environments do not warrant a budget resource. A persistent installation that cannot use AWS Budgets must record an explicit opt-out and rationale in its target file.
 
 ## What you get
 
@@ -17,7 +17,7 @@ Both alerts notify recipients sourced from deployment configuration (never from 
 
 ## Configuration
 
-Add the optional fields to the deployment target file at `infra/targets/<name>.target.json`:
+Add the paired fields to a persistent deployment target file at `infra/targets/<name>.target.json`:
 
 ```json
 {
@@ -37,10 +37,23 @@ Add the optional fields to the deployment target file at `infra/targets/<name>.t
 
 | Field | Required | Type | Meaning |
 | --- | --- | --- | --- |
-| `budgetAmountUsd` | optional | number | Monthly cost amount in USD. |
-| `alertEmails` | optional | string[] | One or more email recipients. |
+| `budgetAmountUsd` | persistent targets | positive finite number | Monthly cost amount in USD. |
+| `alertEmails` | persistent targets | non-empty string[] | One or more email recipients. |
 
-Both fields must be present and non-empty for the budget resource to be provisioned. If either is missing, the field is treated as absent, no budget is created, and no error is raised.
+Both fields must be supplied together. Partial, empty, and malformed configuration fails target validation before AWS mutation.
+
+### Explicit persistent opt-out
+
+Use this only when the installation deliberately cannot create AWS Budgets. The reason is required so the exception is visible in deployment configuration:
+
+```json
+{
+  "budgetAlertsOptOut": true,
+  "budgetAlertsOptOutReason": "The account disallows AWS Budgets for this installation."
+}
+```
+
+The opt-out cannot be combined with budget fields. Ephemeral targets omit both the budget configuration and the opt-out.
 
 ## Choosing the amount
 
@@ -79,17 +92,9 @@ Verify the alert path before relying on it. From the AWS console or CLI:
 
 If no recipient receives the alert, fix the subscription before treating the budget as operational.
 
-If budget configuration is absent, run the same query: the result should be empty for the `bolt-monitor-<stage>-monthly` budget name.
-
-## No-op default
-
-The repository deploys cleanly without any budget configuration. The SST wiring conditionally creates the `AWS::Budgets::Budget` resource only when both `budgetAmountUsd` and `alertEmails` are present and non-empty in the target file. Missing fields produce no resource and no deployment error.
-
-The deployment target validator does not require budget fields. Targets without budget configuration pass `validateDeploymentTarget` unchanged.
-
 ## Rollback
 
-Remove the `budgetAmountUsd` and `alertEmails` fields from the target file and run `make deploy-infra`. The budget resource is removed; no other resources change.
+For a persistent target, replace the paired budget fields with the explicit documented opt-out above and run `make deploy-infra`. The budget resource is removed; no other resources change.
 
 ## Limitations
 

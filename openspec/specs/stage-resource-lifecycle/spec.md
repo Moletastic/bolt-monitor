@@ -22,6 +22,18 @@ The infrastructure system SHALL classify every deployable SST stage as exactly o
 - **THEN** validation fails before any AWS resource mutation
 - **AND** the error identifies the invalid configuration without exposing credentials
 
+### Requirement: Persistent target budget configuration fails closed
+When budget configuration is supplied, the target validator SHALL require a finite positive USD amount and one or more non-empty alert email addresses as one paired configuration. A persistent target SHALL require valid paired budget configuration unless it declares a documented explicit FinOps opt-out; malformed or partial fields SHALL fail validation before AWS mutation.
+
+#### Scenario: Persistent target has valid budget configuration
+- **WHEN** a persistent target provides positive budget amount and alert recipients
+- **THEN** target validation succeeds and conditional budget infrastructure remains enabled
+
+#### Scenario: Persistent target has malformed budget configuration
+- **WHEN** a persistent target supplies only one budget field or an invalid amount or recipient list
+- **THEN** validation fails before deploy
+- **AND** it does not silently disable budget alerts
+
 ### Requirement: Credentialed mutations confirm the effective AWS target
 Before deploy, removal, import, adoption, or protection changes, the infrastructure orchestrator SHALL set AWS profile and region from the selected target file, resolve the effective AWS caller account and region, and compare them with explicit expected configuration. It SHALL present application, target name, stage, lifecycle class, owner, account, region, and profile without printing credentials. Ordinary deployment is confirmed by explicit invocation of `make deploy-infra`; persistent removal or protection changes SHALL require separate destructive intent from ordinary deployment.
 

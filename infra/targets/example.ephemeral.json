@@ -1,0 +1,12 @@
+{
+  "stage": "dev-jane-20260801",
+  "profile": "bolt-monitor",
+  "accountId": "123456789012",
+  "region": "us-east-1",
+  "lifecycle": "ephemeral",
+  "owner": "jane",
+  "service": "bolt-monitor",
+  "dashboardOrigin": "https://dev-jane.example.com",
+  "disposable": true,
+  "expiresAt": "2026-08-15T00:00:00Z"
+}
