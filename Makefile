@@ -1,4 +1,10 @@
+.DEFAULT_GOAL := help
+SHELL := /bin/bash
+.SHELLFLAGS := -euo pipefail -c
+.DELETE_ON_ERROR:
+
 .PHONY: \
+	help \
 	setup \
 	bootstrap \
 	test-go test-go-all test-dashboard \
@@ -19,86 +25,89 @@ GO_MODULE_DIRS := $(addprefix ./services/,$(GO_SERVICES)) $(addprefix ./tools/,$
 OPS_NODE_FLAGS := --experimental-strip-types --no-warnings
 OPS_SCRIPT := infra/scripts/ops.mjs
 
-setup:
+help: ## Show documented Make targets
+	@awk 'BEGIN { FS = ":.*## "; } /^[[:alnum:]_-]+:.*## / { printf "  %-36s %s\n", $$1, $$2; }' $(MAKEFILE_LIST)
+
+setup: ## Install JavaScript dependencies and synchronize Go workspace
 	pnpm --dir infra install --frozen-lockfile
 	pnpm --dir apps/dashboard install --frozen-lockfile
 	$(MAKE) bootstrap
 
-bootstrap:
+bootstrap: ## Synchronize Go workspace modules
 	go work sync
 
-test-go: bootstrap
+test-go: bootstrap ## Run Go tests for every workspace module
 	$(foreach module,$(GO_MODULE_DIRS),go test $(module);)
 
-test-go-all: test-go
+test-go-all: test-go ## Run all Go tests
 
-format-go-check:
+format-go-check: ## Check Go source formatting
 	@files="$$(gofmt -l $(GO_MODULE_DIRS))"; \
 	if [ -n "$$files" ]; then \
 		printf 'gofmt needed:\n%s\n' "$$files"; \
 		exit 1; \
 	fi
 
-vet-go: bootstrap
+vet-go: bootstrap ## Vet every Go workspace module
 	$(foreach module,$(GO_MODULE_DIRS),go vet $(module);)
 
-ci-go: format-go-check vet-go test-go-all
+ci-go: format-go-check vet-go test-go-all ## Run Go format, vet, and test checks
 
-test-dashboard:
+test-dashboard: ## Run dashboard tests
 	cd apps/dashboard && pnpm run test
 
-lint-go: bootstrap
+lint-go: bootstrap ## Lint Go services and shared packages
 	$(foreach svc,$(GO_SERVICES),golangci-lint run ./services/$(svc);)
 	$(foreach lib,$(GO_SHARED),golangci-lint run ./shared/$(lib);)
 
-lint-dashboard:
+lint-dashboard: ## Lint dashboard code
 	cd apps/dashboard && pnpm run lint
 
-lint-infra:
+lint-infra: ## Check infrastructure formatting
 	cd infra && pnpm run format:check
 
-lint-all: lint-go lint-dashboard lint-infra
+lint-all: lint-go lint-dashboard lint-infra ## Run all lint checks
 
-check-dashboard:
+check-dashboard: ## Type-check dashboard code
 	cd apps/dashboard && pnpm run typecheck
 
-check-infra:
+check-infra: ## Type-check infrastructure code
 	cd infra && pnpm run check
 
-test-infra:
+test-infra: ## Run infrastructure and repository script tests
 	cd infra && pnpm run test
-	node --test scripts/check-auth-cutover-prerequisites.test.mjs scripts/check-pnpm-install-trust.test.mjs
+	node --test scripts/check-auth-cutover-prerequisites.test.mjs scripts/check-pnpm-install-trust.test.mjs scripts/check-makefile-safety.test.mjs
 
-check-bruno:
+check-bruno: ## Validate Bruno API collection coverage
 	node scripts/check-bruno.mjs
 
-check-auth-routes:
+check-auth-routes: ## Validate protected API route coverage
 	node scripts/check-auth-routes.mjs
 
-check-auth-cutover-prerequisites:
+check-auth-cutover-prerequisites: ## Validate auth cutover lifecycle prerequisites
 	node scripts/check-auth-cutover-prerequisites.mjs
 
-check-pnpm-install-trust:
+check-pnpm-install-trust: ## Validate reviewed pnpm install-script allowlists
 	node --test scripts/check-pnpm-install-trust.test.mjs
 	node scripts/check-pnpm-install-trust.mjs
 
 # Local release gates required before protected-route cutover. The dashboard build runs here once.
-check-pre-cutover-gate: build-dashboard check-bruno check-api-contract check-auth-cutover-prerequisites
+check-pre-cutover-gate: build-dashboard check-bruno check-api-contract check-auth-cutover-prerequisites ## Run local protected-route cutover gates
 
-test-api-contract:
+test-api-contract: ## Run API contract tests
 	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/check-openapi-auth.test.mjs
 
-check-api-contract: test-api-contract
+check-api-contract: test-api-contract ## Validate API contract and OpenAPI authentication coverage
 	node scripts/check-api-contract.mjs
 	node scripts/check-openapi-auth.mjs
 
-format-dashboard:
+format-dashboard: ## Format dashboard files
 	cd apps/dashboard && pnpm run format
 
-format-dashboard-check:
+format-dashboard-check: ## Check dashboard formatting
 	cd apps/dashboard && pnpm run format:check
 
-format-dashboard-files:
+format-dashboard-files: ## Format dashboard FILES (whitespace-delimited; no spaces or single quotes)
 	@if [ -n "$(FILES)" ]; then \
 		set --; \
 		for file in $(foreach file,$(FILES),'$(file)'); do \
@@ -110,13 +119,13 @@ format-dashboard-files:
 		pnpm --dir apps/dashboard exec prettier --write "$$@"; \
 	fi
 
-format-infra:
+format-infra: ## Format infrastructure files
 	cd infra && pnpm run format
 
-format-infra-check:
+format-infra-check: ## Check infrastructure formatting
 	cd infra && pnpm run format:check
 
-format-infra-files:
+format-infra-files: ## Format infrastructure FILES (whitespace-delimited; no spaces or single quotes)
 	@if [ -n "$(FILES)" ]; then \
 		set --; \
 		for file in $(foreach file,$(FILES),'$(file)'); do \
@@ -128,52 +137,47 @@ format-infra-files:
 		pnpm --dir infra exec prettier --write "$$@"; \
 	fi
 
-commitlint:
+commitlint: ## Validate COMMIT_MSG_FILE or current commit message
 	@if [ -z "$(COMMIT_MSG_FILE)" ]; then \
 		pnpm exec commitlint --edit; \
 	else \
 		pnpm exec commitlint --edit "$(COMMIT_MSG_FILE)"; \
 	fi
 
-build-go: bootstrap
-	GOOS=linux GOARCH=arm64 go build -o services/api-health/handler ./services/api-health
-	GOOS=linux GOARCH=arm64 go build -o services/check-runtime/handler ./services/check-runtime
-	GOOS=linux GOARCH=arm64 go build -o services/escalation-runtime/handler ./services/escalation-runtime
-	GOOS=linux GOARCH=arm64 go build -o services/monitor-api/handler ./services/monitor-api
-	cd services/api-health && zip function.zip handler
-	cd services/check-runtime && zip function.zip handler
-	cd services/escalation-runtime && zip function.zip handler
-	cd services/monitor-api && zip function.zip handler
+build-go: bootstrap ## Build and package Go Lambda handlers
+	@for service in $(GO_SERVICES); do \
+		GOOS=linux GOARCH=arm64 go build -o "services/$$service/handler" "./services/$$service"; \
+		(cd "services/$$service" && zip function.zip handler); \
+	done
 
-build-dashboard:
+build-dashboard: ## Build dashboard production bundle
 	cd apps/dashboard && pnpm run build
 
-build-all: build-go build-dashboard
+build-all: build-go build-dashboard ## Build Go handlers and dashboard
 
-infra-status:
+infra-status: ## Show selected infrastructure target and AWS identity
 	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) status
 
-deploy-infra:
+deploy-infra: ## Deploy selected infrastructure target
 	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) deploy
 
-dev-infra:
+dev-infra: ## Start selected infrastructure target in local development mode
 	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) dev
 
-remove-infra:
-	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) remove DESTROY=yes
+remove-infra: ## Remove selected target; persistent targets require DESTROY=yes
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) remove DESTROY=$(DESTROY)
 
-invite-admin:
+invite-admin: ## Invite administrator with EMAIL=operator@example.com
 	@if [ -z "$(EMAIL)" ]; then \
 		printf '%s\n' 'EMAIL is required; usage: make invite-admin EMAIL=operator@example.com'; \
 		exit 1; \
 	fi
 	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) invite-admin EMAIL=$(EMAIL)
 
-rotate-auth-key:
+rotate-auth-key: ## Rotate selected target authentication encryption key
 	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) rotate-auth-key
 
-clean:
-	rm -f services/api-health/function.zip services/api-health/handler
-	rm -f services/check-runtime/function.zip services/check-runtime/handler
-	rm -f services/escalation-runtime/function.zip services/escalation-runtime/handler
-	rm -f services/monitor-api/function.zip services/monitor-api/handler
+clean: ## Remove locally built Go Lambda artifacts
+	@for service in $(GO_SERVICES); do \
+		rm -f "services/$$service/function.zip" "services/$$service/handler"; \
+	done
