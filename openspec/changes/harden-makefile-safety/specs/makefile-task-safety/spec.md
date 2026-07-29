@@ -29,6 +29,13 @@ The `build-go` target SHALL build and package each service in `GO_SERVICES` exac
 - **THEN** `make build-go` exits nonzero
 - **AND** later services are not built or packaged
 
+### Requirement: Infrastructure target summary is readable
+Infrastructure commands SHALL present the selected target as labeled, multi-line non-secret fields. `make infra-status` SHALL include target, stage, lifecycle class, owner, service, account, region, profile, and dashboard origin without credentials.
+
+#### Scenario: Operator inspects target
+- **WHEN** an operator runs `make infra-status` with a valid selected target
+- **THEN** output includes a status heading followed by one labeled target field per line
+
 ### Requirement: Targeted formatting documents supported path input
 The `format-dashboard-files` and `format-infra-files` help descriptions SHALL state that `FILES` accepts whitespace-delimited paths and does not support paths containing whitespace or single quotes.
 

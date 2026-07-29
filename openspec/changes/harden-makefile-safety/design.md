@@ -48,6 +48,10 @@ Alternative: create a shell wrapper with another transport format. Rejected as d
 
 Alternative: add Make pattern rules for handler and zip files. Rejected because no source-file prerequisites exist today, so they would imply incorrect incremental freshness behavior or extra maintenance.
 
+### Render infrastructure target details one field per line
+
+The infrastructure orchestrator will format its selected target summary with one labeled field per line and an action heading. This preserves every non-secret detail already printed while making `make infra-status` readable in terminals and build logs. Deploy, development, removal, and invitation output will use the same formatter.
+
 ## Risks / Trade-offs
 
 - [Existing recipe relies on an unset variable] -> strict mode surfaces failure; validate all documented targets before merge.

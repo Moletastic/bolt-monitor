@@ -10,6 +10,7 @@ The root Makefile can silently accept failed Go checks, runs dependency installa
 - Document every public Make target through `make help`.
 - Define the supported input contract for targeted dashboard and infrastructure formatting.
 - Replace repeated Go Lambda build and packaging commands with one loop over the canonical service list.
+- Render selected infrastructure target details as labeled multi-line output for operator commands.
 
 ## Capabilities
 
