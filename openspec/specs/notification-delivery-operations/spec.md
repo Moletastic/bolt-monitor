@@ -1,5 +1,13 @@
 ## ADDED Requirements
 
+### Requirement: Incident delivery route takes precedence over incident detail
+The API dispatcher SHALL route `GET /api/v1/incidents/{incidentId}/deliveries` to incident delivery listing before generic incident-detail matching.
+
+#### Scenario: Operator requests incident deliveries through API Gateway
+- **WHEN** an authenticated request targets `GET /api/v1/incidents/{incidentId}/deliveries`
+- **THEN** the response contains incident-scoped delivery outcomes under the standard envelope
+- **AND** the request is not handled as generic incident detail
+
 ### Requirement: API exposes incident-scoped delivery outcomes
 The system SHALL provide an incident-scoped API operation that lists notification deliveries for an existing tenant-owned incident in stable chronological order. Each result SHALL include delivery identity, transition identity, policy step, channel ID and type, exactly one state from `pending`, `in_flight`, `retryable_failed`, `ambiguous`, `delivered`, or `terminal_failed`, attempt count, timestamps, normalized outcome classification, and sanitized provider metadata, and SHALL use the standard response envelope. Recovery suppression SHALL be returned separately as escalation/replay eligibility, not as a delivery state.
 
