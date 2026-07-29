@@ -213,6 +213,7 @@ type fakeDynamoClient struct {
 	transactInputs []*sharedaws.DynamoDBTransactWriteItemsInput
 	getItemOutput  *sharedaws.DynamoDBGetItemOutput
 	queryOutput    *sharedaws.DynamoDBQueryOutput
+	putInput       *sharedaws.DynamoDBPutItemInput
 	items          map[string]map[string]sharedaws.AttributeValue
 }
 
@@ -265,6 +266,7 @@ func (f *fakeDynamoClient) TransactWriteItems(_ context.Context, input *sharedaw
 }
 
 func (f *fakeDynamoClient) PutItem(_ context.Context, input *sharedaws.DynamoDBPutItemInput) (*sharedaws.DynamoDBPutItemOutput, error) {
+	f.putInput = input
 	if f.items != nil {
 		pk := input.Item["PK"].(*sharedaws.AttributeValueMemberS).Value
 		sk := input.Item["SK"].(*sharedaws.AttributeValueMemberS).Value

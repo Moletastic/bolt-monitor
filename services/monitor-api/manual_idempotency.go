@@ -13,8 +13,8 @@ const (
 )
 
 // manualIdempotencyRecord represents one scoped key. Stored at the deterministic
-// idempotency address derived from tenant/service/monitor/key. TTL bounds the
-// replay window; manual runs always carry a fresh runID.
+// idempotency address derived from tenant/service/monitor/key. TTL is the
+// absolute DynamoDB expiry; manual runs always carry a fresh runID.
 type manualIdempotencyRecord struct {
 	TenantID    string
 	ServiceID   string
@@ -39,7 +39,7 @@ func newManualIdempotencyRecord(tenantID, serviceID, monitorID, key, fingerprint
 		RunID:       runID,
 		CreatedAt:   now.UTC(),
 		ExpiresAt:   now.UTC().Add(time.Duration(ttl) * time.Second),
-		TTL:         ttl,
+		TTL:         now.UTC().Add(time.Duration(ttl) * time.Second).Unix(),
 	}
 }
 

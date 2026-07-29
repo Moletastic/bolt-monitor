@@ -31,10 +31,12 @@ func (r *dynamoMonitorRepository) ReserveManualIdempotency(ctx context.Context, 
 	itemMap["MonitorID"] = &sharedaws.AttributeValueMemberS{Value: record.MonitorID}
 	itemMap["Key"] = &sharedaws.AttributeValueMemberS{Value: record.Key}
 	itemMap["CreatedAt"] = &sharedaws.AttributeValueMemberS{Value: record.CreatedAt.Format(time.RFC3339)}
+	itemMap["TTL"] = &sharedaws.AttributeValueMemberN{Value: strconv.FormatInt(record.TTL, 10)}
 	_, err := r.client.PutItem(ctx, &sharedaws.DynamoDBPutItemInput{
-		TableName:           sharedaws.String(r.tableName),
-		Item:                itemMap,
-		ConditionExpression: sharedaws.String("attribute_not_exists(PK) AND attribute_not_exists(SK)"),
+		TableName:                 sharedaws.String(r.tableName),
+		Item:                      itemMap,
+		ConditionExpression:       sharedaws.String("attribute_not_exists(PK) OR TTL <= :now"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{":now": &sharedaws.AttributeValueMemberN{Value: strconv.FormatInt(record.CreatedAt.Unix(), 10)}},
 	})
 	if err == nil {
 		return record, nil
@@ -78,6 +80,7 @@ func (r *dynamoMonitorRepository) LoadManualIdempotency(ctx context.Context, ten
 		Outcome:     manualIdempotencyOutcome(outcome),
 		RunID:       runID,
 		CreatedAt:   parseTimeOrZero(createdAt),
+		ExpiresAt:   time.Unix(ttl, 0).UTC(),
 		TTL:         ttl,
 	}
 	return record, true, nil
