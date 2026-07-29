@@ -22,7 +22,7 @@ Persistent targets require `approved: true`, an explicitly configured stage name
 
 Provider default tags apply `service`, `stage`, `owner`, `lifecycle`, and, for ephemeral targets, `expiresAt` to every taggable AWS resource. The bootstrap stack has no stage-name conditionals: policy derives from validated target. The non-printing AES-key helper applies the same policy tags to its SSM parameter; persistent inventory lists its name but never its value.
 
-SST is pinned to `4.14.1`. Ephemeral `make remove-infra` accepts an expired disposable target and invokes the pinned SST removal path and bounded Resource Groups Tagging API verification for exact `service` and `stage` tags; it reports non-secret orphan ARNs. Resource kinds covered are Cognito, DynamoDB, SSM/SST secrets, EventBridge, SQS, S3, functions, APIs, dashboard resources, logs, subscriptions, and SST support resources. Cleanup also requires SST state to report the target as not deployed, covering generated resources that cannot be listed by ownership tags.
+SST is pinned to `4.14.1`. Ephemeral `make remove-infra` accepts an expired disposable target and captures its exact-stage SST inventory before invoking the pinned removal path. It reports this non-secret inventory after successful cleanup, then requires exact-stage SST state evidence that the target is not deployed and bounded Resource Groups Tagging API verification for exact `service` and `stage` tags. Missing state evidence, deployed-stage residue, or non-secret orphan ARNs fail cleanup with bounded diagnostics. Resource kinds covered are Cognito, DynamoDB, SSM/SST secrets, EventBridge, SQS, S3, functions, APIs, dashboard resources, logs, subscriptions, and SST support resources. SST state covers generated resources that cannot be listed by ownership tags.
 
 ## Verification Evidence
 
@@ -36,7 +36,7 @@ The persistent `staging` inventory was checked without mutation: AppTable and Au
 
 ### Local staging verification
 
-Repository CI never deploys or receives AWS credentials. After deliberately deploying a configured target from a workstation, run `make deploy-infra`; the orchestrator requires unambiguous flat or selected-stage SST outputs containing `apiUrl`, `dashboardUrl`, `appTableName`, and `authTableName`, then checks the public health endpoint. Persistent targets additionally verify DynamoDB deletion protection and point-in-time recovery. Authentication flow validation is performed manually through the dashboard sign-in, invitation activation, optional TOTP enrollment, and protected API access paths.
+Repository CI never deploys or receives AWS credentials. After deliberately deploying a configured target from a workstation, run `make deploy-infra`; the orchestrator requires unambiguous flat or selected-stage SST outputs containing `apiUrl`, `dashboardUrl`, `appTableName`, and `authTableName`, then validates the existing public health JSON envelope (`status: "success"`, `data.status: "ok"`). Persistent targets additionally verify DynamoDB deletion protection and point-in-time recovery through exact reads for both output-named tables. Authentication flow validation is performed manually through the dashboard sign-in, invitation activation, optional TOTP enrollment, and protected API access paths.
 
 ## Authentication Cutover Gate
 

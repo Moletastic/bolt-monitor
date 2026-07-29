@@ -165,6 +165,46 @@ export function sstOutputs(stage) {
   return resolveDeployOutputs(all, stage)
 }
 
+export function verifyHealthResponse(body) {
+  let response
+  try {
+    response = JSON.parse(body)
+  } catch {
+    throw new Error('public health endpoint returned malformed JSON')
+  }
+  if (response?.status !== 'success' || response?.data?.status !== 'ok') {
+    throw new Error('public health endpoint returned an unsuccessful health envelope')
+  }
+}
+
+export function verifyPersistentTable(tableName, environment, run = runCommand) {
+  const tableJson = JSON.parse(
+    run(
+      'aws',
+      ['dynamodb', 'describe-table', '--table-name', tableName, '--output', 'json'],
+      environment
+    )
+  )
+  if (tableJson.Table?.DeletionProtectionEnabled !== true) {
+    throw new Error(`persistent table lacks deletion protection: ${tableName}`)
+  }
+  const backupJson = JSON.parse(
+    run(
+      'aws',
+      ['dynamodb', 'describe-continuous-backups', '--table-name', tableName, '--output', 'json'],
+      environment
+    )
+  )
+  const status =
+    backupJson?.ContinuousBackupsDescription?.PointInTimeRecoveryDescription
+      ?.PointInTimeRecoveryStatus
+  if (status !== 'ENABLED') {
+    throw new Error(
+      `persistent table lacks point-in-time recovery: ${tableName} (status=${status ?? 'unknown'})`
+    )
+  }
+}
+
 export async function status({ run = runCommand } = {}) {
   const target = resolveTarget('status')
   const { accountId } = preflight(target, targetEnvironment(target, 'status'), { run })
@@ -184,37 +224,17 @@ export async function deploy({
   run('pnpm', sstArgs('deploy', target), env, { inherit: true })
   const data = resolveDeployOutputs(outputs(target.stage), target.stage)
   try {
-    run('curl', ['-fsS', `${data.apiUrl.replace(/\/$/, '')}/api/health`], env, { inherit: false })
-    console.log('Public health endpoint reachable')
+    const body = run('curl', ['-fsS', `${data.apiUrl.replace(/\/$/, '')}/api/health`], env, {
+      inherit: false,
+    })
+    verifyHealthResponse(body)
+    console.log('Public health endpoint validated')
   } catch (error) {
-    throw new Error(`public health endpoint failed after deploy: ${error.message}`)
+    throw new Error(`public health endpoint contract failed after deploy: ${error.message}`)
   }
   if (target.lifecycle === 'persistent') {
-    const tableName = data?.appTableName
-    if (typeof tableName !== 'string') {
-      throw new Error('persistent deploy verification could not resolve AppTable output')
-    }
-    const tableJson = JSON.parse(
-      run('aws', ['dynamodb', 'describe-table', '--table-name', tableName, '--output', 'json'], env)
-    )
-    if (tableJson.Table?.DeletionProtectionEnabled !== true) {
-      throw new Error(`persistent AppTable lacks deletion protection: ${tableName}`)
-    }
-    const backupJson = JSON.parse(
-      run(
-        'aws',
-        ['dynamodb', 'describe-continuous-backups', '--table-name', tableName, '--output', 'json'],
-        env
-      )
-    )
-    const status =
-      backupJson?.ContinuousBackupsDescription?.PointInTimeRecoveryDescription
-        ?.PointInTimeRecoveryStatus
-    if (status !== 'ENABLED') {
-      throw new Error(
-        `persistent AppTable lacks point-in-time recovery: ${tableName} (status=${status ?? 'unknown'})`
-      )
-    }
+    verifyPersistentTable(data.appTableName, env, run)
+    verifyPersistentTable(data.authTableName, env, run)
   }
 }
 
@@ -242,6 +262,7 @@ export async function remove(
     console.log(
       `SST cleanup verified zero residual resources across: ${result.coveredResourceKinds.join(', ')}`
     )
+    console.log(`SST cleanup pre-removal inventory: ${result.stateResources.join(', ') || 'none'}`)
     return result
   }
   run(
@@ -337,14 +358,14 @@ export async function rotateAuthKey({ run = runCommand, preflight: pre = preflig
   console.log(`Wrote SecureString parameter ${parameterName}`)
 }
 
-function parseFlags(argv) {
+export function parseOperationInputs(argv) {
   const flags = {}
   for (const arg of argv) {
     const eq = arg.indexOf('=')
     if (eq === -1) continue
-    const key = arg.slice(0, eq)
+    const key = arg.slice(0, eq).replace(/^--/, '')
     const value = arg.slice(eq + 1)
-    if (key.startsWith('--')) flags[key.slice(2)] = value
+    if (key === 'DESTROY' || key === 'EMAIL') flags[key] = value
   }
   return flags
 }
@@ -353,18 +374,27 @@ function positional(argv) {
   return argv.filter((arg) => !arg.startsWith('--') && !arg.includes('='))
 }
 
+export async function dispatch(
+  command,
+  inputs,
+  rest = [],
+  operations = { status, deploy, dev, remove, inviteAdmin, rotateAuthKey }
+) {
+  if (command === 'status') return operations.status()
+  if (command === 'deploy') return operations.deploy()
+  if (command === 'dev') return operations.dev()
+  if (command === 'remove') return operations.remove({ destroy: inputs.DESTROY === 'yes' })
+  if (command === 'invite-admin') return operations.inviteAdmin(inputs.EMAIL ?? rest[0])
+  if (command === 'rotate-auth-key') return operations.rotateAuthKey()
+  throw new Error(`unknown command: ${command}`)
+}
+
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const args = process.argv.slice(2)
   const [command, ...rest] = positional(args)
-  const flags = parseFlags(args)
+  const inputs = parseOperationInputs(args)
   try {
-    if (command === 'status') await status()
-    else if (command === 'deploy') await deploy()
-    else if (command === 'dev') await dev()
-    else if (command === 'remove') await remove({ destroy: flags.DESTROY === 'yes' })
-    else if (command === 'invite-admin') await inviteAdmin(flags.EMAIL ?? rest[0])
-    else if (command === 'rotate-auth-key') await rotateAuthKey()
-    else throw new Error(`unknown command: ${command}`)
+    await dispatch(command, inputs, rest)
   } catch (error) {
     console.error(error.message)
     process.exit(1)

@@ -98,7 +98,7 @@ test('expired ephemeral targets run verified cleanup for removal', async () => {
         cleanup: (target, environment) => {
           cleanupTarget = target
           cleanupEnvironment = environment
-          return { coveredResourceKinds: [] }
+          return { coveredResourceKinds: [], stateResources: [] }
         },
       }
     )
@@ -181,6 +181,46 @@ test('persistent remove refuses without DESTROY=yes', async () => {
   })
 })
 
+test('operation inputs accept Make and flag forms for documented keys only', async () => {
+  const ops = await import('./ops.mjs')
+
+  assert.deepEqual(ops.parseOperationInputs(['DESTROY=yes', 'EMAIL=admin@example.com']), {
+    DESTROY: 'yes',
+    EMAIL: 'admin@example.com',
+  })
+  assert.deepEqual(ops.parseOperationInputs(['--DESTROY=yes', '--EMAIL=admin@example.com']), {
+    DESTROY: 'yes',
+    EMAIL: 'admin@example.com',
+  })
+  assert.deepEqual(ops.parseOperationInputs(['UNKNOWN=value', '--OTHER=value']), {})
+})
+
+test('dispatch routes Make-compatible removal intent and invitation values', async () => {
+  const ops = await import('./ops.mjs')
+  let destroy
+  let email
+
+  await ops.dispatch('remove', ops.parseOperationInputs(['DESTROY=yes']), [], {
+    remove: ({ destroy: value }) => {
+      destroy = value
+    },
+  })
+  await ops.dispatch('invite-admin', ops.parseOperationInputs(['EMAIL=admin@example.com']), [], {
+    inviteAdmin: (value) => {
+      email = value
+    },
+  })
+  assert.equal(destroy, true)
+  assert.equal(email, 'admin@example.com')
+})
+
+test('operation inputs reject missing or invalid destructive and invitation values', async () => {
+  const ops = await import('./ops.mjs')
+  assert.equal(ops.parseOperationInputs([]).DESTROY === 'yes', false)
+  assert.equal(ops.parseOperationInputs(['DESTROY=YES']).DESTROY === 'yes', false)
+  await assert.rejects(() => ops.inviteAdmin(''), /EMAIL=<email>/)
+})
+
 test('deploy postflight fails when health endpoint unreachable', async () => {
   await withTarget('staging', persistent, async () => {
     const ops = await import('./ops.mjs')
@@ -261,6 +301,7 @@ test('persistent deploy verifies health before protection and PITR', async () =>
             },
           })
         }
+        if (command === 'curl') return JSON.stringify({ status: 'success', data: { status: 'ok' } })
         return ''
       },
       outputs: () => ({
@@ -275,7 +316,51 @@ test('persistent deploy verifies health before protection and PITR', async () =>
     assert.deepEqual(calls[1][1], ['-fsS', 'https://api.example.com/api/health'])
     assert.equal(calls[2][0], 'aws')
     assert.equal(calls[3][0], 'aws')
+    assert.equal(calls[4][1][3], 'AuthTable')
+    assert.equal(calls[5][1][3], 'AuthTable')
   })
+})
+
+test('persistent deploy rejects missing protection on either exact output table', async () => {
+  await withTarget('staging', persistent, async () => {
+    const ops = await import('./ops.mjs')
+    await assert.rejects(
+      () =>
+        ops.deploy({
+          preflight: () => ({ accountId: persistent.accountId, region: persistent.region }),
+          run: (command, args) => {
+            if (command === 'curl')
+              return JSON.stringify({ status: 'success', data: { status: 'ok' } })
+            if (args[1] === 'describe-table') {
+              return JSON.stringify({
+                Table: { DeletionProtectionEnabled: args[3] !== 'AuthTable' },
+              })
+            }
+            return JSON.stringify({
+              ContinuousBackupsDescription: {
+                PointInTimeRecoveryDescription: { PointInTimeRecoveryStatus: 'ENABLED' },
+              },
+            })
+          },
+          outputs: () => ({
+            apiUrl: 'https://api.example.com',
+            dashboardUrl: 'https://dashboard.example.com',
+            appTableName: 'AppTable',
+            authTableName: 'AuthTable',
+          }),
+        }),
+      /deletion protection: AuthTable/
+    )
+  })
+})
+
+test('deploy rejects malformed and unsuccessful health envelopes without a second request', async () => {
+  const ops = await import('./ops.mjs')
+  assert.throws(() => ops.verifyHealthResponse('{'), /malformed JSON/)
+  assert.throws(
+    () => ops.verifyHealthResponse(JSON.stringify({ status: 'error', data: { status: 'ok' } })),
+    /unsuccessful health envelope/
+  )
 })
 
 test('invite-admin fails when deploy outputs are missing', async () => {

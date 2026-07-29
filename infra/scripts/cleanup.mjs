@@ -35,19 +35,15 @@ function resourceUrns(value) {
 }
 
 export function stateInventory(target, environment = process.env, execute = execFileSync) {
-  try {
-    const output = execute(
-      'pnpm',
-      ['--dir', 'infra', 'exec', 'sst', 'state', 'export', '--stage', target.stage],
-      {
-        encoding: 'utf8',
-        env: environment,
-      }
-    )
-    return [...new Set(resourceUrns(JSON.parse(output)))]
-  } catch {
-    return []
-  }
+  const output = execute(
+    'pnpm',
+    ['--dir', 'infra', 'exec', 'sst', 'state', 'export', '--stage', target.stage],
+    {
+      encoding: 'utf8',
+      env: environment,
+    }
+  )
+  return [...new Set(resourceUrns(JSON.parse(output)))]
 }
 
 export function stageStateIsDeployed(target, environment = process.env, execute = execFileSync) {
@@ -55,9 +51,12 @@ export function stageStateIsDeployed(target, environment = process.env, execute 
     encoding: 'utf8',
     env: environment,
   })
-  if (typeof output !== 'string') return false
-  const stageLine = output.split('\n').find((line) => line.trim().startsWith(target.stage))
-  return stageLine !== undefined && !stageLine.includes('(not deployed)')
+  if (typeof output !== 'string') throw new Error('SST state verification returned no output')
+  const stageLine = output.split('\n').find((line) => line.trim().split(/\s+/)[0] === target.stage)
+  if (stageLine === undefined) {
+    throw new Error(`SST state verification did not contain stage: ${target.stage}`)
+  }
+  return !stageLine.includes('(not deployed)')
 }
 
 function defaultAws(environment, args) {
@@ -119,7 +118,13 @@ export function cleanupEphemeral(
   if (target.lifecycle !== 'ephemeral' || target.disposable !== true) {
     throw new Error('ephemeral cleanup refuses persistent or non-disposable target')
   }
-  const stateResources = stateInventory(target, environment, execute)
+  let stateResources = []
+  let inventoryError
+  try {
+    stateResources = stateInventory(target, environment, execute)
+  } catch (error) {
+    inventoryError = error
+  }
   let removeError
   try {
     execute('pnpm', ['--dir', 'infra', 'exec', 'sst', 'remove', '--stage', target.stage], {
@@ -144,6 +149,7 @@ export function cleanupEphemeral(
   }
   if (
     removeError !== undefined ||
+    inventoryError !== undefined ||
     residuals.length > 0 ||
     stateDeployed ||
     stateError !== undefined
@@ -155,8 +161,9 @@ export function cleanupEphemeral(
         : stateDeployed
           ? 'stage remains deployed'
           : 'none'
+    const inventory = inventoryError instanceof Error ? inventoryError.message : 'none'
     throw new Error(
-      `ephemeral cleanup failed; original=${original}; residuals=${residuals.join(',') || 'none'}; state=${state}`
+      `ephemeral cleanup failed; original=${original}; inventory=${inventory}; residuals=${residuals.join(',') || 'none'}; state=${state}`
     )
   }
   return { residuals, stateResources, coveredResourceKinds }

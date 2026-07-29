@@ -14,14 +14,19 @@ const target = {
   service: 'bolt-monitor',
 }
 const empty = () => JSON.stringify({ ResourceTagMappingList: [] })
+const stateExport = JSON.stringify({ deployment: { resources: [] } })
+const successfulExecute = (_command, args) => {
+  if (args.includes('export')) return stateExport
+  if (args.includes('list')) return 'dev-jane (not deployed)'
+}
 
 test('cleanup rejects persistent targets and succeeds idempotently with zero residuals', () => {
   assert.throws(
     () => cleanupEphemeral({ ...target, lifecycle: 'persistent' }, {}, () => {}, empty),
     /refuses persistent/
   )
-  assert.deepEqual(cleanupEphemeral(target, {}, () => {}, empty).residuals, [])
-  assert.deepEqual(cleanupEphemeral(target, {}, () => {}, empty).residuals, [])
+  assert.deepEqual(cleanupEphemeral(target, {}, successfulExecute, empty).residuals, [])
+  assert.deepEqual(cleanupEphemeral(target, {}, successfulExecute, empty).residuals, [])
 })
 
 test('cleanup preserves provider failure and reports exact owned residual identifiers', () => {
@@ -71,7 +76,7 @@ test('residual inventory ignores a stale deleted Cognito user pool tag', () => {
   assert.deepEqual(residualInventory(target, {}, query), [])
 })
 
-test('state inventory records non-secret logical identifiers and tolerates missing state', () => {
+test('state inventory records non-secret logical identifiers and rejects missing state', () => {
   const execute = () =>
     JSON.stringify({
       deployment: {
@@ -87,11 +92,12 @@ test('state inventory records non-secret logical identifiers and tolerates missi
   assert.deepEqual(stateInventory(target, {}, execute), [
     'urn:pulumi:dev::app::aws:s3/bucket:Bucket::owned',
   ])
-  assert.deepEqual(
-    stateInventory(target, {}, () => {
-      throw new Error('state missing')
-    }),
-    []
+  assert.throws(
+    () =>
+      stateInventory(target, {}, () => {
+        throw new Error('state missing')
+      }),
+    /state missing/
   )
 })
 
@@ -103,7 +109,7 @@ test('cleanup supports interrupted and versioned bucket retry fixtures', () => {
     () => cleanupEphemeral(target, {}, providerFailure, empty),
     /versioned bucket deletion interrupted/
   )
-  assert.deepEqual(cleanupEphemeral(target, {}, () => {}, empty).residuals, [])
+  assert.deepEqual(cleanupEphemeral(target, {}, successfulExecute, empty).residuals, [])
 })
 
 test('cleanup removes the exact ephemeral auth key and tolerates an absent key', () => {
@@ -113,6 +119,8 @@ test('cleanup removes the exact ephemeral auth key and tolerates an absent key',
     {},
     (command, args) => {
       calls.push([command, args])
+      if (args.includes('export')) return stateExport
+      if (args.includes('list')) return 'dev-jane (not deployed)'
     },
     empty
   )
@@ -124,12 +132,14 @@ test('cleanup removes the exact ephemeral auth key and tolerates an absent key',
     cleanupEphemeral(
       target,
       {},
-      (command) => {
+      (command, args) => {
         if (command === 'aws') {
           const error = new Error('Command failed')
           error.stderr = 'ParameterNotFound'
           throw error
         }
+        if (args.includes('export')) return stateExport
+        if (args.includes('list')) return 'dev-jane (not deployed)'
       },
       empty
     )
@@ -150,7 +160,50 @@ test('state verification covers SST-managed resources after taggable resources a
     true
   )
   assert.throws(
-    () => cleanupEphemeral(target, {}, () => 'Stages:\n  dev-jane', empty),
+    () =>
+      cleanupEphemeral(
+        target,
+        {},
+        (_command, args) => {
+          if (args.includes('export')) return stateExport
+          return 'Stages:\n  dev-jane'
+        },
+        empty
+      ),
     /state=stage remains deployed/
   )
+})
+
+test('cleanup fails with bounded diagnostics when state inventory or stage evidence is missing', () => {
+  assert.throws(
+    () =>
+      cleanupEphemeral(
+        target,
+        {},
+        (_command, args) => (args.includes('list') ? 'staging (not deployed)' : 'not JSON'),
+        empty
+      ),
+    /inventory=.*Unexpected token.*state=.*did not contain stage/
+  )
+})
+
+test('cleanup reports pre-removal SST inventory after exact-stage checks succeed', () => {
+  const execute = (_command, args) => {
+    if (args.includes('export')) {
+      return JSON.stringify({
+        deployment: {
+          resources: [
+            {
+              urn: 'urn:pulumi:dev::app::aws:s3/bucket:Bucket::owned',
+              type: 'aws:s3/bucket:Bucket',
+            },
+          ],
+        },
+      })
+    }
+    if (args.includes('list')) return 'dev-jane (not deployed)'
+  }
+  assert.deepEqual(cleanupEphemeral(target, {}, execute, empty).stateResources, [
+    'urn:pulumi:dev::app::aws:s3/bucket:Bucket::owned',
+  ])
 })
