@@ -60,11 +60,18 @@ func newEscalationHandlerWithDependencies(repo escalationRepository, scheduler s
 }
 
 func (h *escalationHandler) handleScheduledInvocation(ctx context.Context, event scheduledInvocationEvent) error {
-	state, err := h.repo.GetEscalationState(ctx, "DEFAULT", event.IncidentID)
+	tenantID := event.TenantID
+	if tenantID == "" {
+		tenantID = "DEFAULT"
+	}
+	state, err := h.repo.GetEscalationState(ctx, tenantID, event.IncidentID)
 	if err != nil {
 		return err
 	}
 	if state == nil || state.Status != escalation.EscalationStatusActive {
+		return nil
+	}
+	if event.Step != state.CurrentStep {
 		return nil
 	}
 	policy, err := h.repo.GetEscalationPolicy(ctx, state.TenantID, state.PolicyID)
@@ -130,6 +137,12 @@ func (h *escalationHandler) handleSQSEvent(ctx context.Context, event events.SQS
 func (h *escalationHandler) handleSQSEventResponse(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
 	response := events.SQSEventResponse{}
 	for _, msg := range event.Records {
+		if handled, err := h.handleScheduledStepEnvelope(ctx, msg.Body); handled {
+			if err != nil {
+				response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: msg.MessageId})
+			}
+			continue
+		}
 		if handled, err := h.handleTransitionEnvelope(ctx, msg.Body); handled {
 			if err != nil {
 				response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: msg.MessageId})
@@ -155,6 +168,24 @@ func (h *escalationHandler) handleSQSEventResponse(ctx context.Context, event ev
 		}
 	}
 	return response, nil
+}
+
+func (h *escalationHandler) handleScheduledStepEnvelope(ctx context.Context, body string) (bool, error) {
+	var envelope notifications.CanonicalEnvelope
+	if err := json.Unmarshal([]byte(body), &envelope); err != nil || envelope.Kind != notifications.CanonicalKindScheduled {
+		return false, nil
+	}
+	if err := envelope.Validate(); err != nil {
+		return true, err
+	}
+	if strings.TrimSpace(envelope.IncidentID) == "" || envelope.StepNumber <= 0 {
+		return true, fmt.Errorf("scheduled step envelope requires incidentId and positive stepNumber")
+	}
+	return true, h.handleScheduledInvocation(ctx, scheduledInvocationEvent{
+		TenantID:   envelope.TenantID,
+		IncidentID: envelope.IncidentID,
+		Step:       envelope.StepNumber,
+	})
 }
 
 func (h *escalationHandler) handleTransitionEnvelope(ctx context.Context, body string) (bool, error) {
@@ -283,7 +314,7 @@ func (h *escalationHandler) scheduleNextIfNeeded(ctx context.Context, state *esc
 	}
 	when := h.now().UTC().Add(time.Duration(step.DelayMinutes) * time.Minute)
 	state.ScheduledFor = when.Format(time.RFC3339)
-	return h.scheduler.ScheduleNextStep(ctx, scheduledInvocationEvent{IncidentID: state.IncidentID, Step: state.CurrentStep}, when)
+	return h.scheduler.ScheduleNextStep(ctx, scheduledInvocationEvent{TenantID: state.TenantID, IncidentID: state.IncidentID, Step: state.CurrentStep}, when)
 }
 
 func selectedPolicyPath(policy escalation.EscalationPolicy, selectedPath string) escalation.EscalationPath {

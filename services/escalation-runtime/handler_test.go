@@ -355,6 +355,42 @@ func TestHandleScheduledInvocationFiresNextStep(t *testing.T) {
 	}
 }
 
+func TestHandleSQSEventResponseConsumesScheduledStepEnvelope(t *testing.T) {
+	sender := &fakeSender{}
+	repo := &fakeEscalationRepository{
+		state: &escalation.EscalationState{TenantID: "DEFAULT", IncidentID: "INC_1", PolicyID: "POL_1", ServiceID: "auth", MonitorID: "public-http", CurrentStep: 2, StepsFired: []int{1}, SelectedPath: pathOffHours, Status: escalation.EscalationStatusActive, CreatedAt: "2026-06-16T00:00:00Z", UpdatedAt: "2026-06-16T00:00:00Z"},
+		policy: &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{
+			{Channels: []escalation.ChannelConfig{{Type: "fake"}}},
+			{Channels: []escalation.ChannelConfig{{Type: "fake"}}},
+		}}},
+		incident: &incidentRecord{IncidentID: "INC_1", Status: incidentStatusOpen},
+	}
+	handler := newTestEscalationHandlerWithDependencies(repo, nil, notifications.SenderRegistry{"fake": sender}, testEscalationNow)
+	valid, err := json.Marshal(notifications.CanonicalEnvelope{
+		Version: notifications.CanonicalEnvelopeVersion, Kind: notifications.CanonicalKindScheduled, SourceKind: notifications.CanonicalSourceSchedule,
+		TenantID: "DEFAULT", IncidentID: "INC_1", TransitionID: "INC_1", StepNumber: 2,
+	})
+	if err != nil {
+		t.Fatalf("marshal scheduled envelope: %v", err)
+	}
+	response, err := handler.handleSQSEventResponse(context.Background(), events.SQSEvent{Records: []events.SQSMessage{
+		{MessageId: "valid", Body: string(valid)},
+		{MessageId: "invalid", Body: `{"version":"1","kind":"scheduled_step","tenantId":"DEFAULT","transitionId":"INC_2","incidentId":"INC_2","stepNumber":0}`},
+	}})
+	if err != nil {
+		t.Fatalf("handleSQSEventResponse returned error: %v", err)
+	}
+	if len(response.BatchItemFailures) != 1 || response.BatchItemFailures[0].ItemIdentifier != "invalid" {
+		t.Fatalf("failures = %+v, want only invalid message", response.BatchItemFailures)
+	}
+	if len(sender.notifications) != 1 {
+		t.Fatalf("notifications = %d, want 1", len(sender.notifications))
+	}
+	if repo.state.CurrentStep != 3 || len(repo.state.StepsFired) != 2 || repo.state.StepsFired[1] != 2 {
+		t.Fatalf("state = %+v, want scheduled step to advance", repo.state)
+	}
+}
+
 func TestScheduledInvocationSchedulesNextStep(t *testing.T) {
 	tgSender := &fakeSender{}
 	scheduler := &fakeScheduler{}

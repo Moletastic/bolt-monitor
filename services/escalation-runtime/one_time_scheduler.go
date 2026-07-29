@@ -88,10 +88,15 @@ type scheduledStepPayload struct {
 }
 
 func scheduledStepPayloadFromEvent(event scheduledInvocationEvent) scheduledStepPayload {
+	tenantID := event.TenantID
+	if strings.TrimSpace(tenantID) == "" {
+		tenantID = "DEFAULT"
+	}
 	return scheduledStepPayload{
 		Version:      notifications.CanonicalEnvelopeVersion,
 		Kind:         notifications.CanonicalKindScheduled,
 		SourceKind:   notifications.CanonicalSourceSchedule,
+		TenantID:     tenantID,
 		IncidentID:   event.IncidentID,
 		TransitionID: event.IncidentID,
 		StepNumber:   event.Step,

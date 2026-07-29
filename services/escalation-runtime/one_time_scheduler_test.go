@@ -85,7 +85,7 @@ func TestOneTimeSchedulerPayloadEncodesCanonicalShape(t *testing.T) {
 	client := &recordingScheduler{}
 	scheduler := newOneTimeScheduler(client, "group", "arn:aws:iam::1:role/exec", "arn:aws:sqs:us-east-1:1:notif", "", sharedaws.SchedulerRetryPolicy{})
 	when := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
-	if err := scheduler.ScheduleNextStep(context.Background(), scheduledInvocationEvent{IncidentID: "INC_42", Step: 3}, when); err != nil {
+	if err := scheduler.ScheduleNextStep(context.Background(), scheduledInvocationEvent{TenantID: "DEFAULT", IncidentID: "INC_42", Step: 3}, when); err != nil {
 		t.Fatalf("schedule failed: %v", err)
 	}
 	body := *client.calls[0].Target.Input
@@ -96,7 +96,7 @@ func TestOneTimeSchedulerPayloadEncodesCanonicalShape(t *testing.T) {
 	if payload.Version != "1" || payload.Kind != "scheduled_step" || payload.SourceKind != "scheduler_target" {
 		t.Fatalf("payload = %+v", payload)
 	}
-	if payload.StepNumber != 3 || payload.IncidentID != "INC_42" {
+	if payload.TenantID != "DEFAULT" || payload.StepNumber != 3 || payload.IncidentID != "INC_42" {
 		t.Fatalf("payload mismatch: %+v", payload)
 	}
 }
@@ -156,5 +156,8 @@ func TestScheduleInvocationPayloadHasRequiredFields(t *testing.T) {
 	}
 	if payload.SourceKind != "scheduler_target" {
 		t.Fatalf("source kind = %q", payload.SourceKind)
+	}
+	if payload.TenantID != "DEFAULT" {
+		t.Fatalf("tenantId = %q, want DEFAULT", payload.TenantID)
 	}
 }

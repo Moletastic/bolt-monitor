@@ -10,6 +10,7 @@ type scheduleClient interface {
 }
 
 type scheduledInvocationEvent struct {
+	TenantID   string `json:"tenantId"`
 	IncidentID string `json:"incidentId"`
 	Step       int    `json:"step"`
 }
