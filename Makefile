@@ -76,7 +76,7 @@ check-infra: ## Type-check infrastructure code
 
 test-infra: ## Run infrastructure and repository script tests
 	cd infra && pnpm run test
-	node --test scripts/check-auth-cutover-prerequisites.test.mjs scripts/check-pnpm-install-trust.test.mjs scripts/check-makefile-safety.test.mjs
+	node --test scripts/check-auth-cutover-prerequisites.test.mjs scripts/check-pnpm-install-trust.test.mjs scripts/check-makefile-safety.test.mjs scripts/check-gitleaks-hook.test.mjs
 
 check-bruno: ## Validate Bruno API collection coverage
 	node scripts/check-bruno.mjs

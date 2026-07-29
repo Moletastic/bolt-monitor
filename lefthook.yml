@@ -10,6 +10,13 @@ pre-commit:
       glob: "*.{css,js,jsx,json,md,mdx,ts,tsx,yaml,yml}"
       run: pnpm exec prettier --write "{staged_files}"
       stage_fixed: true
+    - name: scan staged credentials
+      run: |
+        if ! command -v gitleaks >/dev/null 2>&1; then
+          printf '%s\n' 'No credential leak analysis ran: install Gitleaks and retry.' >&2
+          exit 1
+        fi
+        gitleaks protect --staged --redact --no-banner
 
 commit-msg:
   jobs:
