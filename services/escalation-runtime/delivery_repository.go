@@ -218,6 +218,29 @@ func (r *dynamoEscalationRepository) CompleteDelivery(ctx context.Context, deliv
 	return err
 }
 
+func (r *dynamoEscalationRepository) MarkDeliveryAmbiguous(ctx context.Context, delivery notifications.DeliveryRecord, outcome notifications.SendOutcome) error {
+	if err := outcome.Validate(); err != nil {
+		return err
+	}
+	record := dynamodbrecord.NewDeliveryItemRecord(delivery)
+	_, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
+		TableName: sharedaws.String(r.tableName), Key: sharedaws.NewPrimaryKey(record.PK, record.SK).AttributeMap(),
+		UpdateExpression:         sharedaws.String("SET #state = :state, LastOutcomeClass = :outcome, ProviderStatusClass = :status, ProviderRequestID = :requestID, RetryAfterSeconds = :retryAfter, UpdatedAt = :updated REMOVE LeaseUntil"),
+		ConditionExpression:      sharedaws.String("FencingToken = :token AND #state = :inflight"),
+		ExpressionAttributeNames: map[string]string{"#state": "State"},
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":token": &sharedaws.AttributeValueMemberS{Value: delivery.FencingToken}, ":inflight": &sharedaws.AttributeValueMemberS{Value: string(notifications.DeliveryInFlight)},
+			":state": &sharedaws.AttributeValueMemberS{Value: string(notifications.DeliveryAmbiguous)}, ":outcome": &sharedaws.AttributeValueMemberS{Value: string(outcome.Class)},
+			":status": &sharedaws.AttributeValueMemberS{Value: outcome.Metadata.ProviderStatusClass}, ":requestID": &sharedaws.AttributeValueMemberS{Value: outcome.Metadata.ProviderRequestID},
+			":retryAfter": &sharedaws.AttributeValueMemberN{Value: fmt.Sprintf("%d", outcome.Metadata.RetryAfterSeconds)}, ":updated": &sharedaws.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
+		},
+	})
+	if sharedaws.IsConditionalCheckFailure(err) {
+		return nil
+	}
+	return err
+}
+
 // PrepareReplay makes delivery reset, replay idempotency, canonical dispatch,
 // and sparse pending recovery one atomic write. Existing keys converge on the
 // stored result and never create another replay.

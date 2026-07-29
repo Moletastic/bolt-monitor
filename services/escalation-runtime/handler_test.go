@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +24,9 @@ type fakeEscalationRepository struct {
 	incident        *incidentRecord
 	createdIncident *incidentRecord
 	outbox          map[string]dynamodbrecord.TransitionOutboxRecord
+	deliveries      []notifications.DeliveryRecord
+	mu              sync.Mutex
+	completeErr     error
 }
 
 type fakeScheduler struct {
@@ -39,6 +44,9 @@ func (f *fakeScheduler) ScheduleNextStep(_ context.Context, event scheduledInvoc
 
 type fakeSender struct {
 	notifications []notifications.Notification
+	outcome       notifications.SendOutcome
+	err           error
+	mu            sync.Mutex
 }
 
 var testEscalationNow = time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
@@ -64,7 +72,12 @@ func (e *capturingEscalationExecutor) Execute(_ context.Context, request outboun
 }
 
 func (f *fakeSender) Send(_ context.Context, notification notifications.Notification) (notifications.SendOutcome, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.notifications = append(f.notifications, notification)
+	if f.outcome.Class != "" || f.err != nil {
+		return f.outcome, f.err
+	}
 	return notifications.SendOutcome{Class: notifications.OutcomeAccepted}, nil
 }
 
@@ -138,12 +151,165 @@ func (f *fakeEscalationRepository) GetEscalationPlan(context.Context, string, st
 	return nil, nil
 }
 
-func (f *fakeEscalationRepository) CreateDelivery(context.Context, notifications.DeliveryRecord) error {
+func (f *fakeEscalationRepository) CreateDelivery(_ context.Context, delivery notifications.DeliveryRecord) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, existing := range f.deliveries {
+		if existing.DeliveryID == delivery.DeliveryID {
+			return nil
+		}
+	}
+	f.deliveries = append(f.deliveries, delivery)
 	return nil
 }
 
 func (f *fakeEscalationRepository) ListIncidentDeliveries(context.Context, string, string) ([]notifications.DeliveryRecord, error) {
-	return nil, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	deliveries := make([]notifications.DeliveryRecord, len(f.deliveries))
+	copy(deliveries, f.deliveries)
+	return deliveries, nil
+}
+
+func (f *fakeEscalationRepository) ClaimDelivery(_ context.Context, _ string, _ string, deliveryID string, now time.Time, _ time.Duration) (*notifications.DeliveryRecord, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.deliveries {
+		delivery := &f.deliveries[i]
+		if delivery.DeliveryID != deliveryID {
+			continue
+		}
+		if delivery.State.IsTerminal() || delivery.State == notifications.DeliveryInFlight {
+			copy := *delivery
+			return &copy, "", nil
+		}
+		delivery.State = notifications.DeliveryInFlight
+		delivery.FencingToken = "claim-" + deliveryID
+		delivery.AttemptCount++
+		delivery.LastAttemptAt = now.UTC().Format(time.RFC3339)
+		copy := *delivery
+		return &copy, copy.FencingToken, nil
+	}
+	return nil, "", nil
+}
+
+func (f *fakeEscalationRepository) CompleteDelivery(_ context.Context, delivery notifications.DeliveryRecord, outcome notifications.SendOutcome, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.completeErr != nil {
+		return f.completeErr
+	}
+	for i := range f.deliveries {
+		stored := &f.deliveries[i]
+		if stored.DeliveryID != delivery.DeliveryID || stored.FencingToken != delivery.FencingToken || stored.State != notifications.DeliveryInFlight {
+			continue
+		}
+		stored.LastOutcomeClass = outcome.Class
+		if outcome.Class == notifications.OutcomeAccepted {
+			stored.State = notifications.DeliveryDelivered
+		} else if outcome.Retryable {
+			stored.State = notifications.DeliveryRetryable
+		} else {
+			stored.State = notifications.DeliveryTerminalFailed
+		}
+		return nil
+	}
+	return nil
+}
+
+func (f *fakeEscalationRepository) MarkDeliveryAmbiguous(_ context.Context, delivery notifications.DeliveryRecord, outcome notifications.SendOutcome) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.deliveries {
+		stored := &f.deliveries[i]
+		if stored.DeliveryID == delivery.DeliveryID && stored.FencingToken == delivery.FencingToken && stored.State == notifications.DeliveryInFlight {
+			stored.State = notifications.DeliveryAmbiguous
+			stored.LastOutcomeClass = outcome.Class
+		}
+	}
+	return nil
+}
+
+func TestDeliveryDispatchSkipsDeliveredRecordOnDuplicateSQSWork(t *testing.T) {
+	sender := &fakeSender{}
+	repo := &fakeEscalationRepository{service: &serviceRecord{TenantID: "DEFAULT", ServiceID: "SVC_1", EscalationPolicyID: "POL_1"}, policy: &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{Channels: []escalation.ChannelConfig{{Type: "fake", Target: "ops"}}}}}}}
+	handler := newTestEscalationHandlerWithDependencies(repo, nil, notifications.SenderRegistry{"fake": sender}, testEscalationNow)
+	event := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", ServiceID: "SVC_1", IncidentID: "INC_1", Timestamp: testEscalationNow}
+	if err := handler.handleIncidentDown(context.Background(), event); err != nil {
+		t.Fatalf("first delivery failed: %v", err)
+	}
+	if err := handler.handleIncidentDown(context.Background(), event); err != nil {
+		t.Fatalf("duplicate delivery failed: %v", err)
+	}
+	if len(sender.notifications) != 1 {
+		t.Fatalf("provider sends = %d, want 1", len(sender.notifications))
+	}
+}
+
+func TestDeliveryDispatchAllowsOnlyOneConcurrentClaim(t *testing.T) {
+	sender := &fakeSender{}
+	repo := &fakeEscalationRepository{}
+	handler := newTestEscalationHandlerWithDependencies(repo, nil, notifications.SenderRegistry{"fake": sender}, testEscalationNow)
+	event := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", IncidentID: "INC_1", Timestamp: testEscalationNow}
+	path := escalation.EscalationPath{Steps: []escalation.EscalationStep{{Channels: []escalation.ChannelConfig{{Type: "fake", Target: "ops"}}}}}
+	if err := handler.persistEscalationPlanAndDeliveries(context.Background(), "INC_1", event, escalation.EscalationPolicy{PolicyID: "POL_1"}, pathOffHours, path); err != nil {
+		t.Fatalf("persist deliveries: %v", err)
+	}
+	var workers sync.WaitGroup
+	for range 2 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			if err := handler.deliverStep(context.Background(), event, path.Steps[0], 1); err != nil {
+				t.Errorf("deliver step: %v", err)
+			}
+		}()
+	}
+	workers.Wait()
+	if len(sender.notifications) != 1 {
+		t.Fatalf("provider sends = %d, want 1", len(sender.notifications))
+	}
+}
+
+func TestDeliveryDispatchDoesNotResendDeliveredChannelAfterPartialFailure(t *testing.T) {
+	accepted := &fakeSender{}
+	retryable := &fakeSender{outcome: notifications.SendOutcome{Class: notifications.OutcomeTransport, Retryable: true}, err: errors.New("provider unavailable")}
+	repo := &fakeEscalationRepository{}
+	handler := newTestEscalationHandlerWithDependencies(repo, nil, notifications.SenderRegistry{"accepted": accepted, "retryable": retryable}, testEscalationNow)
+	event := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", IncidentID: "INC_1", Timestamp: testEscalationNow}
+	step := escalation.EscalationStep{Channels: []escalation.ChannelConfig{{Type: "accepted", Target: "one"}, {Type: "retryable", Target: "two"}}}
+	path := escalation.EscalationPath{Steps: []escalation.EscalationStep{step}}
+	if err := handler.persistEscalationPlanAndDeliveries(context.Background(), "INC_1", event, escalation.EscalationPolicy{PolicyID: "POL_1"}, pathOffHours, path); err != nil {
+		t.Fatalf("persist deliveries: %v", err)
+	}
+	if err := handler.deliverStep(context.Background(), event, step, 1); err == nil {
+		t.Fatal("expected retryable provider failure")
+	}
+	if err := handler.deliverStep(context.Background(), event, step, 1); err == nil {
+		t.Fatal("expected retryable provider failure")
+	}
+	if len(accepted.notifications) != 1 || len(retryable.notifications) != 2 {
+		t.Fatalf("accepted sends=%d retryable sends=%d, want 1 and 2", len(accepted.notifications), len(retryable.notifications))
+	}
+}
+
+func TestDeliveryDispatchMarksPostSendPersistenceFailureAmbiguous(t *testing.T) {
+	sender := &fakeSender{}
+	repo := &fakeEscalationRepository{completeErr: errors.New("dynamodb timeout")}
+	handler := newTestEscalationHandlerWithDependencies(repo, nil, notifications.SenderRegistry{"fake": sender}, testEscalationNow)
+	event := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: "DEFAULT", IncidentID: "INC_1", Timestamp: testEscalationNow}
+	step := escalation.EscalationStep{Channels: []escalation.ChannelConfig{{Type: "fake", Target: "ops"}}}
+	path := escalation.EscalationPath{Steps: []escalation.EscalationStep{step}}
+	if err := handler.persistEscalationPlanAndDeliveries(context.Background(), "INC_1", event, escalation.EscalationPolicy{PolicyID: "POL_1"}, pathOffHours, path); err != nil {
+		t.Fatalf("persist deliveries: %v", err)
+	}
+	if err := handler.deliverStep(context.Background(), event, step, 1); err == nil {
+		t.Fatal("expected completion failure")
+	}
+	deliveries, _ := repo.ListIncidentDeliveries(context.Background(), "DEFAULT", "INC_1")
+	if len(deliveries) != 1 || deliveries[0].State != notifications.DeliveryAmbiguous {
+		t.Fatalf("deliveries = %+v, want ambiguous record", deliveries)
+	}
 }
 
 func (f *fakeEscalationRepository) AdvanceStepOnce(context.Context, string, string, int, int, string) error {

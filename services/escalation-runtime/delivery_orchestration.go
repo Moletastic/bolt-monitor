@@ -33,7 +33,7 @@ type resolvedChannel struct {
 // persistEscalationPlanAndDeliveries records the immutable route plan and one
 // pending delivery per channel in the step, before any provider I/O. It does
 // not perform provider calls; the caller schedules the SQS work.
-func (h *escalationHandler) persistEscalationPlanAndDeliveries(ctx context.Context, transitionID string, event notifications.NotificationEvent, policy escalation.EscalationPolicy, selectedPath string, path escalation.EscalationPath, stepNumber int) error {
+func (h *escalationHandler) persistEscalationPlanAndDeliveries(ctx context.Context, transitionID string, event notifications.NotificationEvent, policy escalation.EscalationPolicy, selectedPath string, path escalation.EscalationPath) error {
 	plan, err := h.buildEscalationPlan(event, transitionID, policy, selectedPath, path)
 	if err != nil {
 		return err
@@ -41,30 +41,22 @@ func (h *escalationHandler) persistEscalationPlanAndDeliveries(ctx context.Conte
 	if err := h.repo.CreateEscalationPlan(ctx, plan); err != nil {
 		return fmt.Errorf("persist escalation plan: %w", err)
 	}
-	stepIndex := stepNumber - 1
-	if stepIndex < 0 || stepIndex >= len(path.Steps) {
-		return fmt.Errorf("step %d out of bounds", stepNumber)
-	}
-	channels, err := h.channelsForStep(ctx, event, path.Steps[stepIndex])
-	if err != nil {
-		return err
-	}
 	now := h.now().UTC().Format(time.RFC3339)
-	for _, channel := range channels {
-		delivery := notifications.DeliveryRecord{
-			TenantID:     event.TenantID,
-			IncidentID:   event.IncidentID,
-			TransitionID: transitionID,
-			DeliveryID:   notifications.DeliveryIdentity(event.TenantID, transitionID, stepNumber, channel.Key),
-			ChannelID:    channel.Key,
-			ChannelType:  string(channel.Channel.Type),
-			StepNumber:   stepNumber,
-			State:        notifications.DeliveryPending,
-			CreatedAt:    now,
-			UpdatedAt:    now,
+	for stepIndex, step := range path.Steps {
+		channels, err := h.channelsForStep(ctx, event, step)
+		if err != nil {
+			return err
 		}
-		if err := h.repo.CreateDelivery(ctx, delivery); err != nil {
-			return fmt.Errorf("create pending delivery: %w", err)
+		for _, channel := range channels {
+			delivery := notifications.DeliveryRecord{
+				TenantID: event.TenantID, IncidentID: event.IncidentID, TransitionID: transitionID,
+				DeliveryID: notifications.DeliveryIdentity(event.TenantID, transitionID, stepIndex+1, channel.Key),
+				ChannelID:  channel.Key, ChannelType: string(channel.Channel.Type), StepNumber: stepIndex + 1,
+				State: notifications.DeliveryPending, CreatedAt: now, UpdatedAt: now,
+			}
+			if err := h.repo.CreateDelivery(ctx, delivery); err != nil {
+				return fmt.Errorf("create pending delivery: %w", err)
+			}
 		}
 	}
 	return nil

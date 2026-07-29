@@ -101,7 +101,7 @@ func TestPersistEscalationPlanAndDeliveriesWritesImmutableShape(t *testing.T) {
 	handler := newTestEscalationHandler(repo, &fakeScheduler{})
 	policy := escalation.EscalationPolicy{PolicyID: "POL_1"}
 	path := escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1"}}}
-	if err := handler.persistEscalationPlanAndDeliveries(context.Background(), "TRN_1", notifications.NotificationEvent{TenantID: "DEFAULT", IncidentID: "INC_1"}, policy, pathBusinessHours, path, 1); err != nil {
+	if err := handler.persistEscalationPlanAndDeliveries(context.Background(), "TRN_1", notifications.NotificationEvent{TenantID: "DEFAULT", IncidentID: "INC_1"}, policy, pathBusinessHours, path); err != nil {
 		t.Fatalf("persist failed: %v", err)
 	}
 	delivery := notifications.DeliveryIdentity("DEFAULT", "TRN_1", 1, "CH_1")

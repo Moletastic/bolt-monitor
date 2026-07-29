@@ -15,7 +15,6 @@ import (
 
 type transitionDispatchRepository interface {
 	LoadTransitionOutbox(context.Context, string, string) (*dynamodbrecord.TransitionOutboxRecord, error)
-	AcknowledgeDispatch(context.Context, string, string) error
 }
 
 type streamDispatcher struct {
@@ -96,9 +95,6 @@ func (d *streamDispatcher) dispatchOutbox(ctx context.Context, outbox *dynamodbr
 		return err
 	}
 	if _, err := d.queue.SendMessage(ctx, &sharedaws.SQSSendMessageInput{QueueUrl: sharedaws.String(d.queueURL), MessageBody: sharedaws.String(string(body))}); err != nil {
-		return err
-	}
-	if err := d.repo.AcknowledgeDispatch(ctx, outbox.TenantID, outbox.EventID); err != nil {
 		return err
 	}
 	logDeliveryDispatched(outbox.TenantID, outbox.EventID, 1)

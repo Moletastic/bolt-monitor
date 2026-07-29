@@ -33,6 +33,9 @@ type escalationRepository interface {
 	GetEscalationPlan(context.Context, string, string, string) (*notifications.EscalationPlan, error)
 	CreateDelivery(context.Context, notifications.DeliveryRecord) error
 	ListIncidentDeliveries(context.Context, string, string) ([]notifications.DeliveryRecord, error)
+	ClaimDelivery(context.Context, string, string, string, time.Time, time.Duration) (*notifications.DeliveryRecord, string, error)
+	CompleteDelivery(context.Context, notifications.DeliveryRecord, notifications.SendOutcome, string) error
+	MarkDeliveryAmbiguous(context.Context, notifications.DeliveryRecord, notifications.SendOutcome) error
 	AdvanceStepOnce(context.Context, string, string, int, int, string) error
 	SuppressEscalation(context.Context, string, string, string) error
 }
@@ -88,7 +91,16 @@ func (h *escalationHandler) handleScheduledInvocation(ctx context.Context, event
 	}
 	step := path.Steps[stepIndex]
 	notifEvent := notifications.NotificationEvent{EventType: notifications.EventTypeIncidentDown, TenantID: state.TenantID, ServiceID: state.ServiceID, MonitorID: state.MonitorID, IncidentID: state.IncidentID, Timestamp: h.now().UTC(), Message: "Escalation step fired"}
-	if err := h.fireStep(ctx, notifEvent, step); err != nil {
+	deliveries, err := h.repo.ListIncidentDeliveries(ctx, state.TenantID, state.IncidentID)
+	if err != nil {
+		return err
+	}
+	if len(deliveries) == 0 {
+		if err := h.persistEscalationPlanAndDeliveries(ctx, state.IncidentID, notifEvent, *policy, state.SelectedPath, path); err != nil {
+			return err
+		}
+	}
+	if err := h.deliverStep(ctx, notifEvent, step, state.CurrentStep); err != nil {
 		return err
 	}
 	state.StepsFired = append(state.StepsFired, state.CurrentStep)
@@ -190,14 +202,14 @@ func (h *escalationHandler) handleScheduledStepEnvelope(ctx context.Context, bod
 
 func (h *escalationHandler) handleTransitionEnvelope(ctx context.Context, body string) (bool, error) {
 	var envelope struct {
-		TenantID string `json:"tenantId"`
-		RunID    string `json:"runId"`
-		Kind     string `json:"kind"`
+		TenantID     string `json:"tenantId"`
+		TransitionID string `json:"transitionId"`
+		Kind         string `json:"kind"`
 	}
 	if err := json.Unmarshal([]byte(body), &envelope); err != nil || envelope.Kind != "transition" {
 		return false, nil
 	}
-	canonical, err := h.repo.LoadTransitionOutbox(ctx, envelope.TenantID, envelope.RunID)
+	canonical, err := h.repo.LoadTransitionOutbox(ctx, envelope.TenantID, envelope.TransitionID)
 	if err != nil {
 		return true, err
 	}
@@ -268,7 +280,16 @@ func (h *escalationHandler) handleIncidentDown(ctx context.Context, event notifi
 		log.Printf("policy %s has no steps for selected path %s", policy.PolicyID, selectedPath)
 		return nil
 	}
-	if err := h.fireStep(ctx, event, path.Steps[0]); err != nil {
+	transitionID := event.IncidentID
+	if h.transitionLookup != nil {
+		transitionID = h.transitionLookup(event)
+	}
+	if transitionID != "" {
+		if err := h.persistEscalationPlanAndDeliveries(ctx, transitionID, event, *policy, selectedPath, path); err != nil {
+			return err
+		}
+	}
+	if err := h.deliverStep(ctx, event, path.Steps[0], 1); err != nil {
 		return err
 	}
 	now := event.Timestamp.UTC().Format(time.RFC3339)
@@ -285,19 +306,89 @@ func (h *escalationHandler) handleIncidentDown(ctx context.Context, event notifi
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	transitionID := event.IncidentID
-	if h.transitionLookup != nil {
-		transitionID = h.transitionLookup(event)
-	}
-	if transitionID != "" {
-		if err := h.persistEscalationPlanAndDeliveries(ctx, transitionID, event, *policy, selectedPath, path, 1); err != nil {
-			log.Printf("could not persist delivery plan: %v", err)
-		}
-	}
 	if err := h.scheduleNextIfNeeded(ctx, &state, path); err != nil {
 		return err
 	}
 	return h.repo.PutEscalationState(ctx, state)
+}
+
+const deliveryClaimLease = time.Minute
+
+// deliverStep fences every provider request with its durable channel delivery.
+func (h *escalationHandler) deliverStep(ctx context.Context, event notifications.NotificationEvent, step escalation.EscalationStep, stepNumber int) error {
+	channels, err := h.channelsForStep(ctx, event, step)
+	if err != nil {
+		return err
+	}
+	deliveries, err := h.repo.ListIncidentDeliveries(ctx, event.TenantID, event.IncidentID)
+	if err != nil {
+		return err
+	}
+	for _, channel := range channels {
+		var deliveryID string
+		for _, delivery := range deliveries {
+			if delivery.StepNumber == stepNumber && delivery.ChannelID == channel.Key {
+				deliveryID = delivery.DeliveryID
+				break
+			}
+		}
+		if deliveryID == "" {
+			return fmt.Errorf("delivery record missing for step %d channel %s", stepNumber, channel.Key)
+		}
+		claimed, token, err := h.repo.ClaimDelivery(ctx, event.TenantID, event.IncidentID, deliveryID, h.now(), deliveryClaimLease)
+		if err != nil {
+			return err
+		}
+		if claimed == nil || token == "" {
+			continue
+		}
+		if err := h.sendClaimedDelivery(ctx, event, channel.Channel, *claimed); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *escalationHandler) sendClaimedDelivery(ctx context.Context, event notifications.NotificationEvent, channel escalation.ChannelConfig, delivery notifications.DeliveryRecord) error {
+	sender, ok := h.senders.Get(string(channel.Type))
+	if !ok {
+		return h.completeClaimedDelivery(ctx, delivery, notifications.SendOutcome{Class: notifications.OutcomeUnsupported})
+	}
+	config, err := mergeChannelTarget(channel)
+	if err != nil {
+		return h.completeClaimedDelivery(ctx, delivery, notifications.SendOutcome{Class: notifications.OutcomeInvalidConfig})
+	}
+	notification := notifications.Notification{EventType: event.EventType, MonitorID: event.MonitorID, ServiceID: event.ServiceID, TenantID: event.TenantID, MonitorName: event.MonitorName, ServiceName: event.ServiceName, Timestamp: event.Timestamp, Message: event.Message, IncidentID: event.IncidentID, Config: config}
+	outcome, sendErr := sender.Send(ctx, notification)
+	if outcome.Class == "" {
+		outcome = notifications.SendOutcome{Class: notifications.OutcomeTransport, Retryable: true}
+	}
+	if sendErr != nil && outcome.Class == notifications.OutcomeAccepted {
+		if err := h.repo.MarkDeliveryAmbiguous(ctx, delivery, outcome); err != nil {
+			return fmt.Errorf("mark accepted delivery ambiguous: %w", err)
+		}
+		return fmt.Errorf("send %s notification: %w", channel.Type, sendErr)
+	}
+	if err := h.completeClaimedDelivery(ctx, delivery, outcome); err != nil {
+		return err
+	}
+	if sendErr != nil {
+		return fmt.Errorf("send %s notification: %w", channel.Type, sendErr)
+	}
+	return nil
+}
+
+func (h *escalationHandler) completeClaimedDelivery(ctx context.Context, delivery notifications.DeliveryRecord, outcome notifications.SendOutcome) error {
+	if err := h.repo.CompleteDelivery(ctx, delivery, outcome, ""); err != nil {
+		// A timeout after provider acceptance is not proof that the state write failed.
+		// The conditional update cannot overwrite a completed delivery, but records an
+		// ambiguous result when the original write did not take effect.
+		if ambiguousErr := h.repo.MarkDeliveryAmbiguous(ctx, delivery, outcome); ambiguousErr != nil {
+			return fmt.Errorf("complete delivery: %w; mark ambiguous: %v", err, ambiguousErr)
+		}
+		return fmt.Errorf("complete delivery: %w", err)
+	}
+	return nil
 }
 
 func (h *escalationHandler) scheduleNextIfNeeded(ctx context.Context, state *escalation.EscalationState, path escalation.EscalationPath) error {

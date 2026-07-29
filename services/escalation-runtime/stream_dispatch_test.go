@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
 	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/dynamodbrecord"
+	"bolt-monitor/shared/escalation"
+	"bolt-monitor/shared/notifications"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -59,8 +63,54 @@ func TestStreamDispatcherDispatchesOnlyCanonicalInserts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handle returned error: %v", err)
 	}
-	if len(response.BatchItemFailures) != 0 || len(queue.bodies) != 1 || len(repo.acked) != 1 {
+	if len(response.BatchItemFailures) != 0 || len(queue.bodies) != 1 || len(repo.acked) != 0 {
 		t.Fatalf("response=%+v bodies=%d acked=%d", response, len(queue.bodies), len(repo.acked))
+	}
+}
+
+func TestStreamDispatchLeavesCanonicalOutboxPendingUntilTransitionHandlingSucceeds(t *testing.T) {
+	const (
+		tenantID = "DEFAULT"
+		eventID  = "TRN_1"
+		runID    = "RUN_1"
+	)
+	repo := &fakeEscalationRepository{
+		service: &serviceRecord{TenantID: tenantID, ServiceID: "SVC_1", EscalationPolicyID: "POL_1"},
+		policy:  &escalation.EscalationPolicy{TenantID: tenantID, PolicyID: "POL_1", OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{Channels: []escalation.ChannelConfig{{Type: "fake"}}}}}},
+		outbox: map[string]dynamodbrecord.TransitionOutboxRecord{
+			tenantID + "|" + eventID: {
+				TenantID: tenantID, EventID: eventID, TransitionID: eventID, RunID: runID, ServiceID: "SVC_1", MonitorID: "MON_1", IncidentID: "INC_1",
+				TransitionType: string(notifications.EventTypeIncidentDown), DispatchStatus: dynamodbrecord.DispatchPending, CreatedAt: testEscalationNow.Format(time.RFC3339),
+			},
+		},
+	}
+	queue := &fakeDispatchSQS{}
+	dispatcher := newStreamDispatcher(repo, queue, "queue-url")
+	_, err := dispatcher.handle(context.Background(), events.DynamoDBEvent{Records: []events.DynamoDBEventRecord{{
+		EventName: "INSERT", Change: events.DynamoDBStreamRecord{NewImage: map[string]events.DynamoDBAttributeValue{
+			"EntityType": events.NewStringAttribute(dynamodbrecordEntityTransitionOutbox), "TenantID": events.NewStringAttribute(tenantID), "EventID": events.NewStringAttribute(eventID),
+		}},
+	}}})
+	if err != nil {
+		t.Fatalf("stream dispatch returned error: %v", err)
+	}
+	if got := repo.outbox[tenantID+"|"+eventID].DispatchStatus; got != dynamodbrecord.DispatchPending {
+		t.Fatalf("outbox status after dispatch = %q, want pending", got)
+	}
+	var envelope notifications.CanonicalEnvelope
+	if err := json.Unmarshal([]byte(queue.bodies[0]), &envelope); err != nil {
+		t.Fatalf("unmarshal queue envelope: %v", err)
+	}
+	if envelope.TransitionID != eventID || envelope.RunID != runID {
+		t.Fatalf("envelope transitionID=%q runID=%q, want %q and %q", envelope.TransitionID, envelope.RunID, eventID, runID)
+	}
+	handler := newTestEscalationHandlerWithDependencies(repo, nil, notifications.SenderRegistry{"fake": &fakeSender{}}, testEscalationNow)
+	response, err := handler.handleSQSEventResponse(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{MessageId: "message-1", Body: queue.bodies[0]}}})
+	if err != nil || len(response.BatchItemFailures) != 0 {
+		t.Fatalf("transition handling response=%+v err=%v", response, err)
+	}
+	if got := repo.outbox[tenantID+"|"+eventID].DispatchStatus; got != "acknowledged" {
+		t.Fatalf("outbox status after handling = %q, want acknowledged", got)
 	}
 }
 
