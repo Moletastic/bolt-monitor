@@ -161,14 +161,14 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 		return h.getEscalationState(ctx, incidentID)
 	case method == http.MethodGet && strings.HasSuffix(path, "/activities") && incidentID != "":
 		return h.getIncidentActivities(ctx, incidentID)
+	case method == http.MethodGet && strings.HasSuffix(path, "/deliveries") && incidentID != "" && deliveryID == "":
+		return h.listIncidentDeliveries(ctx, incidentID, request)
 	case method == http.MethodGet && incidentID != "":
 		return h.getIncident(ctx, incidentID)
 	case method == http.MethodPost && strings.HasSuffix(path, "/ack") && incidentID != "":
 		return h.acknowledgeIncident(ctx, incidentID)
 	case method == http.MethodPost && strings.HasSuffix(path, "/resolve") && incidentID != "":
 		return h.resolveIncident(ctx, incidentID)
-	case method == http.MethodGet && strings.HasSuffix(path, "/deliveries") && incidentID != "" && deliveryID == "":
-		return h.listIncidentDeliveries(ctx, incidentID, request)
 	case method == http.MethodPost && strings.HasSuffix(path, "/replay") && incidentID != "" && deliveryID != "":
 		return h.replayIncidentDelivery(ctx, incidentID, deliveryID, request)
 	case method == http.MethodGet && path == "/api/v1/admin/scheduler-config":

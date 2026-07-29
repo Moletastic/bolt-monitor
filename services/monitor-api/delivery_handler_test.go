@@ -40,6 +40,30 @@ func TestListIncidentDeliveriesReturnsAllSixStates(t *testing.T) {
 	}
 }
 
+func TestHandleRequestRoutesIncidentDeliveriesBeforeIncidentDetail(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.incidents["INC_1"] = dynamodbrecordIncident(t)
+	repo.deliveries["dlv_1"] = makeDelivery("INC_1", "dlv_1", notifications.DeliveryDelivered)
+	handler := newAuthorizedHandler(repo)
+
+	response, err := handler.handleRequest(context.Background(), events.APIGatewayV2HTTPRequest{
+		RawPath:        "/api/v1/incidents/INC_1/deliveries",
+		PathParameters: map[string]string{"incidentId": "INC_1"},
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet},
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle request: %v", err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode, response.Body)
+	}
+	if !strings.Contains(response.Body, "dlv_1") {
+		t.Fatalf("expected delivery response, got body=%s", response.Body)
+	}
+}
+
 func TestListIncidentDeliveriesReturnsNotFoundForUnknownIncident(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	handler := newAuthorizedHandler(repo)
