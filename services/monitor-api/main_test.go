@@ -28,23 +28,24 @@ import (
 )
 
 type fakeMonitorRepositoryState struct {
-	services          map[string]monitorconfig.Service
-	monitors          map[string]monitorconfig.Monitor
-	statuses          map[string]resultstatus.MonitorStatus
-	runs              map[string][]resultstatus.CheckRun
-	results           map[string][]checkexecution.ExecutionResult
-	idempotency       map[string]manualIdempotencyRecord
-	manual            map[string]manualRunRequestRecord
-	policies          map[string]escalation.EscalationPolicy
-	channels          map[string]escalation.NotificationChannel
-	escalationStates  map[string]escalation.EscalationState
-	incidents         map[string]dynamodbrecord.IncidentRecord
-	activities        map[string][]dynamodbrecord.IncidentActivityRecord
-	audit             map[string][]auditEventView
-	scheduler         dynamodbrecord.SchedulerConfigRecord
-	channelTestAudit  []channelTestAuditRecord
-	deliveries        map[string]notifications.DeliveryRecord
-	replayIdempotency map[string]notifications.ReplayIdempotencyRecord
+	services           map[string]monitorconfig.Service
+	monitors           map[string]monitorconfig.Monitor
+	statuses           map[string]resultstatus.MonitorStatus
+	runs               map[string][]resultstatus.CheckRun
+	results            map[string][]checkexecution.ExecutionResult
+	idempotency        map[string]manualIdempotencyRecord
+	commandIdempotency map[string]commandIdempotencyRecord
+	manual             map[string]manualRunRequestRecord
+	policies           map[string]escalation.EscalationPolicy
+	channels           map[string]escalation.NotificationChannel
+	escalationStates   map[string]escalation.EscalationState
+	incidents          map[string]dynamodbrecord.IncidentRecord
+	activities         map[string][]dynamodbrecord.IncidentActivityRecord
+	audit              map[string][]auditEventView
+	scheduler          dynamodbrecord.SchedulerConfigRecord
+	channelTestAudit   []channelTestAuditRecord
+	deliveries         map[string]notifications.DeliveryRecord
+	replayIdempotency  map[string]notifications.ReplayIdempotencyRecord
 }
 
 // fakeMonitorRepository is a test-only composition root. Mutable maps live
@@ -141,7 +142,7 @@ func newMonitorHandler(repo *fakeMonitorRepository, options ...any) monitorHandl
 	services := newServiceOperations(servicesStore, servicesStore, servicesStore, servicesStore, servicesStore, servicesStore, servicesStore, servicesStore, now, ids)
 	monitors := newMonitorOperations(servicesStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, monitorStore, now, ids, executor, func(context.Context, monitorconfig.Monitor) error { return nil })
 	incidents := newIncidentOperations(incidentStore, incidentStore, incidentStore, incidentStore, monitorStore, servicesStore, incidentStore, incidentStore, incidentStore, incidentStore, now)
-	channels := newNotificationChannelOperations(escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, senders, now, ids)
+	channels := newNotificationChannelOperations(escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, monitorStore, senders, now, ids)
 	policies := newEscalationPolicyOperations(escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, escalationStore, servicesStore, servicesStore, now, ids)
 	return newAuthorizedMonitorHandlerWithDependencies(
 		newMonitorAPIOperations(services, monitors, incidents, newSchedulerOperations(schedulerStore, schedulerStore, now), policies, channels, searchResourcesQuery{store: fakeSearchStore{state: repo.fakeMonitorRepositoryState}}),
@@ -294,19 +295,20 @@ func (f *fakeDynamoClient) Scan(_ context.Context, input *sharedaws.DynamoDBScan
 
 func newFakeMonitorRepository() *fakeMonitorRepository {
 	return &fakeMonitorRepository{fakeMonitorRepositoryState: &fakeMonitorRepositoryState{
-		services:          map[string]monitorconfig.Service{},
-		monitors:          map[string]monitorconfig.Monitor{},
-		statuses:          map[string]resultstatus.MonitorStatus{},
-		runs:              map[string][]resultstatus.CheckRun{},
-		manual:            map[string]manualRunRequestRecord{},
-		policies:          map[string]escalation.EscalationPolicy{},
-		channels:          map[string]escalation.NotificationChannel{},
-		escalationStates:  map[string]escalation.EscalationState{},
-		incidents:         map[string]dynamodbrecord.IncidentRecord{},
-		activities:        map[string][]dynamodbrecord.IncidentActivityRecord{},
-		audit:             map[string][]auditEventView{},
-		deliveries:        map[string]notifications.DeliveryRecord{},
-		replayIdempotency: map[string]notifications.ReplayIdempotencyRecord{},
+		services:           map[string]monitorconfig.Service{},
+		monitors:           map[string]monitorconfig.Monitor{},
+		statuses:           map[string]resultstatus.MonitorStatus{},
+		runs:               map[string][]resultstatus.CheckRun{},
+		manual:             map[string]manualRunRequestRecord{},
+		commandIdempotency: map[string]commandIdempotencyRecord{},
+		policies:           map[string]escalation.EscalationPolicy{},
+		channels:           map[string]escalation.NotificationChannel{},
+		escalationStates:   map[string]escalation.EscalationState{},
+		incidents:          map[string]dynamodbrecord.IncidentRecord{},
+		activities:         map[string][]dynamodbrecord.IncidentActivityRecord{},
+		audit:              map[string][]auditEventView{},
+		deliveries:         map[string]notifications.DeliveryRecord{},
+		replayIdempotency:  map[string]notifications.ReplayIdempotencyRecord{},
 	}}
 }
 
@@ -597,6 +599,34 @@ func (r *fakeMonitorRepositoryState) LoadManualIdempotency(_ context.Context, te
 	return record, ok, nil
 }
 
+func (r *fakeMonitorRepositoryState) CompleteManualIdempotency(_ context.Context, record manualIdempotencyRecord, publicResponse string) error {
+	address := manualIdempotencyAddress(record.TenantID, record.ServiceID, record.MonitorID, record.Key)
+	stored := r.idempotency[address]
+	stored.Outcome = manualIdempotencyOutcomeCompleted
+	stored.Response = publicResponse
+	r.idempotency[address] = stored
+	return nil
+}
+
+func (r *fakeMonitorRepositoryState) ReserveCommandIdempotency(_ context.Context, record commandIdempotencyRecord) (commandIdempotencyRecord, error) {
+	if r.idempotency == nil {
+		r.idempotency = map[string]manualIdempotencyRecord{}
+	}
+	address := commandIdempotencyAddress(record.TenantID, record.Operation, record.ResourceID, record.Key)
+	if existing, ok := r.idempotency[address]; ok {
+		return commandIdempotencyRecord{TenantID: existing.TenantID, Operation: record.Operation, ResourceID: record.ResourceID, Key: existing.Key, Fingerprint: existing.Fingerprint, Response: existing.Response, CreatedAt: existing.CreatedAt}, nil
+	}
+	r.idempotency[address] = manualIdempotencyRecord{TenantID: record.TenantID, Key: record.Key, Fingerprint: record.Fingerprint, Response: record.Response, CreatedAt: record.CreatedAt}
+	return record, nil
+}
+func (r *fakeMonitorRepositoryState) CompleteCommandIdempotency(_ context.Context, record commandIdempotencyRecord, response string) error {
+	address := commandIdempotencyAddress(record.TenantID, record.Operation, record.ResourceID, record.Key)
+	stored := r.idempotency[address]
+	stored.Response = response
+	r.idempotency[address] = stored
+	return nil
+}
+
 func (r *fakeMonitorRepositoryState) RecordExecutionResultLegacy(_ context.Context, monitor monitorconfig.Monitor, runID string, result checkexecution.ExecutionResult) error {
 	key := monitorKey(monitor.ServiceID, monitor.MonitorID)
 	status := resultstatus.NewMonitorStatus(result)
@@ -666,34 +696,42 @@ func (r *fakeMonitorRepositoryState) ListServiceIncidents(_ context.Context, ten
 	return incidents, nil
 }
 
-func (r *fakeMonitorRepositoryState) AcknowledgeIncident(_ context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
-	incident, ok := r.incidents[incidentID]
-	if !ok || incident.TenantID != tenantID {
-		return dynamodbrecord.IncidentRecord{}, false, nil
+func (r *fakeMonitorRepositoryState) ExecuteIncidentCommand(_ context.Context, record commandIdempotencyRecord, now time.Time) (commandIdempotencyRecord, bool, error) {
+	address := commandIdempotencyAddress(record.TenantID, record.Operation, record.ResourceID, record.Key)
+	if existing, ok := r.commandIdempotency[address]; ok {
+		return existing, true, nil
 	}
-	if incident.Status != incidentStatusOpen {
-		return dynamodbrecord.IncidentRecord{}, true, errIncidentNotActionable
+	incident, ok := r.incidents[record.ResourceID]
+	if !ok || incident.TenantID != record.TenantID {
+		return commandIdempotencyRecord{}, false, nil
 	}
-	incident.Status = incidentStatusAcknowledged
-	incident.AcknowledgedAt = now.UTC().Format(time.RFC3339)
-	incident.UpdatedAt = incident.AcknowledgedAt
-	r.incidents[incidentID] = incident
-	return incident, true, nil
-}
-
-func (r *fakeMonitorRepositoryState) ResolveIncident(_ context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
-	incident, ok := r.incidents[incidentID]
-	if !ok || incident.TenantID != tenantID {
-		return dynamodbrecord.IncidentRecord{}, false, nil
+	switch record.Operation {
+	case "incident-acknowledge":
+		if incident.Status != incidentStatusOpen {
+			return commandIdempotencyRecord{}, true, errIncidentNotActionable
+		}
+		incident.Status = incidentStatusAcknowledged
+		incident.AcknowledgedAt = now.UTC().Format(time.RFC3339)
+		incident.UpdatedAt = incident.AcknowledgedAt
+	case "incident-resolve":
+		if incident.Status == incidentStatusResolved {
+			return commandIdempotencyRecord{}, true, errIncidentNotActionable
+		}
+		incident.Status = incidentStatusResolved
+		incident.ResolvedAt = now.UTC().Format(time.RFC3339)
+		incident.UpdatedAt = incident.ResolvedAt
+	default:
+		return commandIdempotencyRecord{}, true, fmt.Errorf("unsupported incident command operation %q", record.Operation)
 	}
-	if incident.Status == incidentStatusResolved {
-		return dynamodbrecord.IncidentRecord{}, true, errIncidentNotActionable
+	encoded, err := json.Marshal(toIncidentResponse(incident))
+	if err != nil {
+		return commandIdempotencyRecord{}, true, err
 	}
-	incident.Status = incidentStatusResolved
-	incident.ResolvedAt = now.UTC().Format(time.RFC3339)
-	incident.UpdatedAt = incident.ResolvedAt
-	r.incidents[incidentID] = incident
-	return incident, true, nil
+	record.State = commandIdempotencyCompleted
+	record.Response = string(encoded)
+	r.commandIdempotency[address] = record
+	r.incidents[incident.IncidentID] = incident
+	return record, true, nil
 }
 
 func (r *fakeMonitorRepositoryState) GetSchedulerConfig(_ context.Context, _ string) (dynamodbrecord.SchedulerConfigRecord, error) {
@@ -1452,7 +1490,7 @@ func TestNotificationChannelTestSendSucceedsForReferencedChannel(t *testing.T) {
 		senders: notifications.SenderRegistry{"telegram": sender},
 	})
 
-	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1/test", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+	request := events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "channel-test-1"}, RawPath: "/api/v1/notification-channels/CH_1/test", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
 	response, err := handler.handleRequest(context.Background(), request)
 	if err != nil {
 		t.Fatalf("handleRequest returned error: %v", err)
@@ -1472,6 +1510,9 @@ func TestNotificationChannelTestSendSucceedsForReferencedChannel(t *testing.T) {
 	}
 	if len(sender.notifications) != 1 {
 		t.Fatalf("notifications sent = %d, want 1", len(sender.notifications))
+	}
+	if response, err := handler.handleRequest(context.Background(), request); err != nil || response.StatusCode != http.StatusOK || len(sender.notifications) != 1 {
+		t.Fatalf("retry response = %d, sends = %d, err = %v", response.StatusCode, len(sender.notifications), err)
 	}
 	if !strings.Contains(sender.notifications[0].Message, "No incident was created") {
 		t.Fatalf("test message = %q", sender.notifications[0].Message)
@@ -1493,7 +1534,7 @@ func TestNotificationChannelTestSendSucceedsForReferencedChannel(t *testing.T) {
 
 func TestNotificationChannelTestSendNotFound(t *testing.T) {
 	handler := newMonitorHandler(newFakeMonitorRepository(), defaultProbeLocationCatalog(), defaultTenantID)
-	request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/MISSING/test", PathParameters: map[string]string{"channelId": "MISSING"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+	request := events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "channel-test-1"}, RawPath: "/api/v1/notification-channels/MISSING/test", PathParameters: map[string]string{"channelId": "MISSING"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
 
 	response, err := handler.handleRequest(context.Background(), request)
 	if err != nil {
@@ -1521,7 +1562,7 @@ func TestNotificationChannelTestSendFailuresAreTypedAndAudited(t *testing.T) {
 			repo := newFakeMonitorRepository()
 			repo.channels["CH_1"] = tt.channel
 			handler := newMonitorHandler(repo, monitorHandlerTestDependencies{senders: tt.senders})
-			request := events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1/test", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+			request := events.APIGatewayV2HTTPRequest{Headers: map[string]string{"Idempotency-Key": "channel-test-1"}, RawPath: "/api/v1/notification-channels/CH_1/test", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
 
 			response, err := handler.handleRequest(context.Background(), request)
 			if err != nil {

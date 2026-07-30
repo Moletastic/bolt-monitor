@@ -3,8 +3,8 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
-	"time"
 )
 
 // manualRequestFingerprint canonicalizes the scoped command into one stable
@@ -26,15 +26,17 @@ func manualRequestFingerprint(tenantID, serviceID, monitorID, idempotencyKey str
 // stored idempotency record. The current design returns the reserved run
 // identity plus the bounded TTL and replay state; full canonical result
 // replay is a follow-up and depends on durable CheckRun storage.
-func manualRunResponseFromRecord(record manualIdempotencyRecord) map[string]any {
-	return map[string]any{
-		"runId":       record.RunID,
-		"serviceId":   record.ServiceID,
-		"monitorId":   record.MonitorID,
-		"tenantId":    record.TenantID,
-		"trigger":     "manual",
-		"acceptedAt":  record.CreatedAt.Format(time.RFC3339),
-		"expiresAt":   record.ExpiresAt.Format(time.RFC3339),
-		"idempotency": map[string]any{"key": record.Key, "fingerprint": record.Fingerprint, "outcome": string(record.Outcome)},
+func manualRunResponseFromRecord(record manualIdempotencyRecord) manualRunResponse {
+	if record.Response != "" {
+		var response manualRunResponse
+		if json.Unmarshal([]byte(record.Response), &response) == nil {
+			return response
+		}
+	}
+	return manualRunResponse{
+		RunID:     record.RunID,
+		ServiceID: record.ServiceID,
+		MonitorID: record.MonitorID,
+		Trigger:   "manual",
 	}
 }

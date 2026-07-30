@@ -35,7 +35,7 @@ func newProductionMonitorHandler(dynamoClient aws.DynamoDBAPI, config monitorAPI
 	})
 	incidents := newIncidentOperations(repository, repository, repository, repository, repository, repository, repository, repository, repository, repository, now)
 	scheduler := newSchedulerOperations(repository, repository, now)
-	channels := newNotificationChannelOperations(repository, repository, repository, repository, repository, repository, notifications.NewSenderRegistry(), now, ids)
+	channels := newNotificationChannelOperations(repository, repository, repository, repository, repository, repository, repository, notifications.NewSenderRegistry(), now, ids)
 	policies := newEscalationPolicyOperations(repository, repository, repository, repository, repository, repository, repository, repository, now, ids)
 	return newAuthorizedMonitorHandlerWithDependencies(
 		newMonitorAPIOperations(services, monitors, incidents, scheduler, policies, channels, searchResourcesQuery{store: repository}),

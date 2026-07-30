@@ -23,6 +23,7 @@ type manualIdempotencyRecord struct {
 	Fingerprint string
 	Outcome     manualIdempotencyOutcome
 	RunID       string
+	Response    string
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
 	TTL         int64

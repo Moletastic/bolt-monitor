@@ -83,7 +83,7 @@ type deliveryReplayResponse struct {
 }
 
 func (h monitorHandler) replayIncidentDelivery(ctx context.Context, incidentID, deliveryID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	idempotencyKey := strings.TrimSpace(request.Headers["Idempotency-Key"])
+	idempotencyKey := strings.TrimSpace(requestHeader(request.Headers, "Idempotency-Key"))
 	if idempotencyKey == "" {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "idempotencyKey", "reason": "required"}))
 	}
@@ -105,7 +105,7 @@ func (h monitorHandler) replayIncidentDelivery(ctx context.Context, incidentID, 
 
 func fingerprintOfRequest(request events.APIGatewayV2HTTPRequest) string {
 	h := sha256.New()
-	h.Write([]byte(request.Headers["Idempotency-Key"]))
+	h.Write([]byte(requestHeader(request.Headers, "Idempotency-Key")))
 	h.Write([]byte{0})
 	h.Write([]byte(strings.TrimSpace(request.Body)))
 	return hex.EncodeToString(h.Sum(nil))[:16]

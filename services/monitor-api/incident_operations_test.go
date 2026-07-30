@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -13,15 +14,20 @@ type recordingAcknowledgeIncidentStore struct {
 	receivedAt time.Time
 }
 
-func (s *recordingAcknowledgeIncidentStore) AcknowledgeIncident(_ context.Context, _, _ string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
+func (s *recordingAcknowledgeIncidentStore) ExecuteIncidentCommand(_ context.Context, record commandIdempotencyRecord, now time.Time) (commandIdempotencyRecord, bool, error) {
 	s.receivedAt = now
-	return dynamodbrecord.IncidentRecord{IncidentID: "inc-1", Status: incidentStatusAcknowledged}, true, nil
+	encoded, err := json.Marshal(incidentResponse{IncidentID: "inc-1", Status: incidentStatusAcknowledged})
+	if err != nil {
+		return commandIdempotencyRecord{}, false, err
+	}
+	record.Response = string(encoded)
+	return record, true, nil
 }
 
 func TestAcknowledgeIncidentCommandUsesInjectedClockAndNarrowStore(t *testing.T) {
 	now := time.Date(2026, time.July, 22, 10, 0, 0, 0, time.UTC)
 	store := &recordingAcknowledgeIncidentStore{}
-	incident, found, err := (acknowledgeIncidentCommand{store: store, now: func() time.Time { return now }}).Execute(context.Background(), defaultTenantID, "inc-1")
+	incident, found, err := (acknowledgeIncidentCommand{store: store, now: func() time.Time { return now }}).Execute(context.Background(), defaultTenantID, "inc-1", "idempotent-123", "")
 	if err != nil || !found || incident.Status != incidentStatusAcknowledged {
 		t.Fatalf("incident = %+v, found = %v, err = %v", incident, found, err)
 	}

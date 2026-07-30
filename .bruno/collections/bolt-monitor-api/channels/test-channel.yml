@@ -8,7 +8,11 @@ info:
 http:
   method: POST
   url: "{{apiUrl}}/api/v1/notification-channels/{{channelId}}/test"
+  headers:
+    - name: Idempotency-Key
+      value: bruno-channel-test-1
+      enabled: true
 docs: |-
   Purpose: Send a test notification.
-  Setup: Set `channelId` to a configured channel.
+  Setup: Set `channelId` to a configured channel and use a unique `Idempotency-Key`.
   Expected result: Returns test delivery details.

@@ -32,7 +32,7 @@ paths:
     get: {operationId: getNotificationChannel, responses: {'200': {$ref: '#/components/responses/Success'}}}
     put: {operationId: updateNotificationChannel, responses: {'200': {$ref: '#/components/responses/Success'}}}
     delete: {operationId: deleteNotificationChannel, responses: {'204': {description: Deleted}}}
-  /api/v1/notification-channels/{channelId}/test: {post: {operationId: testNotificationChannel, responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/notification-channels/{channelId}/test: {post: {operationId: testNotificationChannel, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
   /api/v1/escalation-policies:
     post: {operationId: createEscalationPolicy, responses: {'201': {$ref: '#/components/responses/Success'}}}
     get: {operationId: listEscalationPolicies, responses: {'200': {$ref: '#/components/responses/Success'}}}
@@ -60,7 +60,7 @@ paths:
     delete: {operationId: deleteMonitor, responses: {'204': {description: Deleted}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}/status: {get: {operationId: getMonitorStatus, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}/runs: {get: {operationId: listMonitorRuns, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/services/{serviceId}/monitors/{monitorId}/run: {post: {operationId: runMonitor, responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/services/{serviceId}/monitors/{monitorId}/run: {post: {operationId: runMonitor, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}/incidents: {get: {operationId: listMonitorIncidents, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/incidents: {get: {operationId: listServiceIncidents, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}/audit: {get: {operationId: getMonitorAudit, responses: {'200': {$ref: '#/components/responses/Success'}}}}
@@ -77,18 +77,26 @@ paths:
     post:
       operationId: replayIncidentDelivery
       parameters:
-        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
         - {name: deliveryId, in: path, required: true, schema: {type: string}}
       responses:
         '200': {$ref: '#/components/responses/Success'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
-  /api/v1/incidents/{incidentId}/ack: {post: {operationId: acknowledgeIncident, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/incidents/{incidentId}/resolve: {post: {operationId: resolveIncident, responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/incidents/{incidentId}/ack: {post: {operationId: acknowledgeIncident, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
+  /api/v1/incidents/{incidentId}/resolve: {post: {operationId: resolveIncident, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
   /api/v1/admin/scheduler-config:
     get: {operationId: getSchedulerConfig, responses: {'200': {$ref: '#/components/responses/Success'}}}
     patch: {operationId: updateSchedulerConfig, responses: {'200': {$ref: '#/components/responses/Success'}}}
 components:
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 8, maxLength: 128}
+      description: Bounded retry key. Reusing it with a different request returns `IDEMPOTENCY_CONFLICT`.
   securitySchemes:
     CognitoBearer:
       type: http

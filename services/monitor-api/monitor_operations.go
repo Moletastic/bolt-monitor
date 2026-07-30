@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	sharedaws "bolt-monitor/shared/aws"
@@ -59,6 +60,7 @@ type manualRunStore interface {
 	monitorLookup
 	RecordExecutionResult(context.Context, monitorconfig.Monitor, string, checkexecution.ExecutionResult) error
 	ReserveManualIdempotency(context.Context, manualIdempotencyRecord) (manualIdempotencyRecord, error)
+	CompleteManualIdempotency(context.Context, manualIdempotencyRecord, string) error
 }
 
 type createMonitorCommand struct {
@@ -295,7 +297,7 @@ func (c manualRunCommand) Execute(ctx context.Context, tenantID, serviceID, moni
 		return manualRunResult{}, err
 	}
 	if existing.Fingerprint != fingerprint {
-		return manualRunResult{}, sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "idempotencyKey", "reason": "idempotency key reused with different request"})
+		return manualRunResult{}, sharederrors.New(sharederrors.CodeIdempotencyConflict, map[string]any{"field": "idempotencyKey"})
 	}
 	if existing.RunID != reserved.RunID {
 		return manualRunResult{Existing: &existing}, nil
@@ -314,5 +316,13 @@ func (c manualRunCommand) Execute(ctx context.Context, tenantID, serviceID, moni
 	if err := c.store.RecordExecutionResult(ctx, monitor, reserved.RunID, result); err != nil {
 		return manualRunResult{}, err
 	}
-	return manualRunResult{Record: manualRunRequestRecord{RunID: reserved.RunID, ServiceID: monitor.ServiceID, MonitorID: monitor.MonitorID, TenantID: monitor.TenantID, Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now.UTC().Format(time.RFC3339)}, Execution: &result}, nil
+	run := manualRunRequestRecord{RunID: reserved.RunID, ServiceID: monitor.ServiceID, MonitorID: monitor.MonitorID, TenantID: monitor.TenantID, Trigger: checkexecution.TriggerTypeManual, AcceptedAt: now.UTC().Format(time.RFC3339)}
+	publicResponse, err := json.Marshal(toManualRunResponseWithResult(run, result))
+	if err != nil {
+		return manualRunResult{}, err
+	}
+	if err := c.store.CompleteManualIdempotency(ctx, reserved, string(publicResponse)); err != nil {
+		return manualRunResult{}, err
+	}
+	return manualRunResult{Record: run, Execution: &result}, nil
 }

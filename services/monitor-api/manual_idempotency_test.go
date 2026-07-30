@@ -70,6 +70,17 @@ func TestRunMonitorReplaysIdempotentRunWithoutReExecuting(t *testing.T) {
 	if len(repo.idempotency) != 1 {
 		t.Fatalf("expected single idempotency record, got %d", len(repo.idempotency))
 	}
+	if !strings.Contains(second.Body, "RUN_TEST_1") || !strings.Contains(second.Body, `"outcome":"success"`) {
+		t.Fatalf("replay did not return canonical result: %s", second.Body)
+	}
+}
+
+func TestRunMonitorAcceptsLowercaseIdempotencyHeader(t *testing.T) {
+	handler, _, _ := newRunMonitorFixture()
+	response, err := handler.runMonitor(context.Background(), "auth", "public-http", events.APIGatewayV2HTTPRequest{Headers: map[string]string{"idempotency-key": "test-key-1"}})
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("response = %d %s, err = %v", response.StatusCode, response.Body, err)
+	}
 }
 
 func TestRunMonitorRejectsSameKeyAcrossScopes(t *testing.T) {

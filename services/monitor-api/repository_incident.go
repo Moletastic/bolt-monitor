@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -88,49 +90,82 @@ func (r *dynamoMonitorRepository) ListIncidentActivities(ctx context.Context, te
 	return activities, nil
 }
 
-func (r *dynamoMonitorRepository) AcknowledgeIncident(ctx context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
-	incident, found, err := r.GetIncident(ctx, tenantID, incidentID)
+func (r *dynamoMonitorRepository) ExecuteIncidentCommand(ctx context.Context, record commandIdempotencyRecord, now time.Time) (commandIdempotencyRecord, bool, error) {
+	incident, found, err := r.GetIncident(ctx, record.TenantID, record.ResourceID)
 	if err != nil || !found {
-		return incident, found, err
+		return commandIdempotencyRecord{}, found, err
 	}
-	if incident.Status != incidentStatusOpen {
-		return dynamodbrecord.IncidentRecord{}, true, errIncidentNotActionable
+	action, changeValue := "", ""
+	switch record.Operation {
+	case "incident-acknowledge":
+		if incident.Status != incidentStatusOpen {
+			return commandIdempotencyRecord{}, true, errIncidentNotActionable
+		}
+		incident.Status = incidentStatusAcknowledged
+		incident.AcknowledgedAt = now.UTC().Format(time.RFC3339)
+		incident.UpdatedAt = incident.AcknowledgedAt
+		action, changeValue = "INCIDENT_ACKNOWLEDGED", incident.AcknowledgedAt
+	case "incident-resolve":
+		if incident.Status == incidentStatusResolved {
+			return commandIdempotencyRecord{}, true, errIncidentNotActionable
+		}
+		incident.Status = incidentStatusResolved
+		incident.ResolvedAt = now.UTC().Format(time.RFC3339)
+		incident.UpdatedAt = incident.ResolvedAt
+		action, changeValue = "INCIDENT_RESOLVED", incident.ResolvedAt
+	default:
+		return commandIdempotencyRecord{}, true, fmt.Errorf("unsupported incident command operation %q", record.Operation)
 	}
-	incident.Status = incidentStatusAcknowledged
-	incident.AcknowledgedAt = now.UTC().Format(time.RFC3339)
-	incident.UpdatedAt = incident.AcknowledgedAt
-	if err := r.writeIncident(ctx, incident, "INCIDENT_ACKNOWLEDGED", now, incident.AcknowledgedAt); err != nil {
-		return dynamodbrecord.IncidentRecord{}, true, err
+	encoded, err := json.Marshal(toIncidentResponse(incident))
+	if err != nil {
+		return commandIdempotencyRecord{}, true, err
 	}
-	return incident, true, nil
-}
-
-func (r *dynamoMonitorRepository) ResolveIncident(ctx context.Context, tenantID, incidentID string, now time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
-	incident, found, err := r.GetIncident(ctx, tenantID, incidentID)
-	if err != nil || !found {
-		return incident, found, err
+	record.State = commandIdempotencyCompleted
+	record.Response = string(encoded)
+	items, err := r.incidentWriteItems(incident, action, now, changeValue)
+	if err != nil {
+		return commandIdempotencyRecord{}, true, err
 	}
-	if incident.Status == incidentStatusResolved {
-		return dynamodbrecord.IncidentRecord{}, true, errIncidentNotActionable
+	key := sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(record.TenantID), commandIdempotencyAddress(record.TenantID, record.Operation, record.ResourceID, record.Key))
+	idempotencyItem := key.AttributeMap()
+	for name, value := range map[string]string{"Operation": record.Operation, "ResourceID": record.ResourceID, "Key": record.Key, "Fingerprint": record.Fingerprint, "ReservationToken": record.ReservationToken, "Response": record.Response, "State": string(record.State), "CreatedAt": record.CreatedAt.Format(time.RFC3339)} {
+		idempotencyItem[name] = &sharedaws.AttributeValueMemberS{Value: value}
 	}
-	incident.Status = incidentStatusResolved
-	incident.ResolvedAt = now.UTC().Format(time.RFC3339)
-	incident.UpdatedAt = incident.ResolvedAt
-	if err := r.writeIncident(ctx, incident, "INCIDENT_RESOLVED", now, incident.ResolvedAt); err != nil {
-		return dynamodbrecord.IncidentRecord{}, true, err
+	idempotencyItem["TTL"] = &sharedaws.AttributeValueMemberN{Value: fmt.Sprintf("%d", record.TTL)}
+	items = append(items, sharedaws.TransactWriteItem{Put: &sharedaws.Put{
+		TableName:                 sharedaws.String(r.tableName),
+		Item:                      idempotencyItem,
+		ConditionExpression:       sharedaws.String("attribute_not_exists(PK) OR TTL <= :now"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{":now": &sharedaws.AttributeValueMemberN{Value: fmt.Sprintf("%d", record.CreatedAt.Unix())}},
+	}})
+	if err := r.writeTransaction(ctx, items); err == nil {
+		return record, true, nil
+	} else if existing, exists, loadErr := r.loadCommandIdempotency(ctx, record); loadErr != nil {
+		return commandIdempotencyRecord{}, true, loadErr
+	} else if exists {
+		return existing, true, nil
+	} else {
+		return commandIdempotencyRecord{}, true, err
 	}
-	return incident, true, nil
 }
 
 // writeIncident is shared with the monitor vertical slice. It persists an
 // incident state change along with its audit event, audit change row, and
 // incident activity record.
 func (r *dynamoMonitorRepository) writeIncident(ctx context.Context, incident dynamodbrecord.IncidentRecord, action string, now time.Time, changeValue string) error {
+	items, err := r.incidentWriteItems(incident, action, now, changeValue)
+	if err != nil {
+		return err
+	}
+	return r.writeTransaction(ctx, items)
+}
+
+func (r *dynamoMonitorRepository) incidentWriteItems(incident dynamodbrecord.IncidentRecord, action string, now time.Time, changeValue string) ([]sharedaws.TransactWriteItem, error) {
 	auditID := newAuditID(now)
 	auditEvent := dynamodbrecord.NewAuditEventRecord(now, auditID, incident.TenantID, action, incident.ServiceID, incident.MonitorID)
 	change := dynamodbrecord.NewAuditChangeRecord(auditEvent.AuditID, "incident", "", changeValue)
 	activity := dynamodbrecord.NewIncidentActivityRecord(incident.TenantID, incident.IncidentID, newActivityID(now), action, now)
-	items, err := marshalPutItems(
+	return marshalPutItems(
 		r.tableName,
 		dynamodbrecord.NewIncidentMonitorItemRecord(incident),
 		dynamodbrecord.NewIncidentRefItemRecord(incident),
@@ -139,8 +174,4 @@ func (r *dynamoMonitorRepository) writeIncident(ctx context.Context, incident dy
 		auditEvent,
 		change,
 	)
-	if err != nil {
-		return err
-	}
-	return r.writeTransaction(ctx, items)
 }

@@ -122,6 +122,12 @@ func (s *recordingManualRunStore) RecordExecutionResult(context.Context, monitor
 	return nil
 }
 
+func (s *recordingManualRunStore) CompleteManualIdempotency(_ context.Context, record manualIdempotencyRecord, publicResponse string) error {
+	s.reserved = record
+	s.reserved.Response = publicResponse
+	return nil
+}
+
 func TestManualRunCommandReservesThenRecordsExecution(t *testing.T) {
 	store := &recordingManualRunStore{monitor: monitorconfig.Monitor{
 		TenantID: defaultTenantID, ServiceID: "payments", MonitorID: "api", Name: "API", Type: monitorconfig.MonitorTypeHTTP,

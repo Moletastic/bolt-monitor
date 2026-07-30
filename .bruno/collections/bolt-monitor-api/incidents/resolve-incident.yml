@@ -8,7 +8,11 @@ info:
 http:
   method: POST
   url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}/resolve"
+  headers:
+    - name: Idempotency-Key
+      value: bruno-incident-resolve-1
+      enabled: true
 docs: |-
   Purpose: Resolve an actionable incident.
-  Setup: Set `incidentId` to an acknowledged or open incident.
-  Expected result: Returns the resolved incident.
+  Setup: Set `incidentId` to an acknowledged or open incident and provide a unique Idempotency-Key.
+  Expected result: Returns the resolved incident; retrying the same request returns that canonical result.

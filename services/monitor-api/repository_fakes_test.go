@@ -110,6 +110,15 @@ func (f fakeMonitorStore) ReserveManualIdempotency(c context.Context, r manualId
 func (f fakeMonitorStore) LoadManualIdempotency(c context.Context, t, s, id, k string) (manualIdempotencyRecord, bool, error) {
 	return f.state.LoadManualIdempotency(c, t, s, id, k)
 }
+func (f fakeMonitorStore) CompleteManualIdempotency(c context.Context, r manualIdempotencyRecord, response string) error {
+	return f.state.CompleteManualIdempotency(c, r, response)
+}
+func (f fakeMonitorStore) ReserveCommandIdempotency(c context.Context, r commandIdempotencyRecord) (commandIdempotencyRecord, error) {
+	return f.state.ReserveCommandIdempotency(c, r)
+}
+func (f fakeMonitorStore) CompleteCommandIdempotency(c context.Context, r commandIdempotencyRecord, response string) error {
+	return f.state.CompleteCommandIdempotency(c, r, response)
+}
 func (f fakeMonitorStore) ListMonitorIncidents(c context.Context, t, s, id string) ([]dynamodbrecord.IncidentRecord, error) {
 	return f.state.ListMonitorIncidents(c, t, s, id)
 }
@@ -134,11 +143,8 @@ func (f fakeIncidentStore) GetIncident(c context.Context, t, id string) (dynamod
 func (f fakeIncidentStore) ListIncidentActivities(c context.Context, t, id string) ([]dynamodbrecord.IncidentActivityRecord, error) {
 	return f.state.ListIncidentActivities(c, t, id)
 }
-func (f fakeIncidentStore) AcknowledgeIncident(c context.Context, t, id string, n time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
-	return f.state.AcknowledgeIncident(c, t, id, n)
-}
-func (f fakeIncidentStore) ResolveIncident(c context.Context, t, id string, n time.Time) (dynamodbrecord.IncidentRecord, bool, error) {
-	return f.state.ResolveIncident(c, t, id, n)
+func (f fakeIncidentStore) ExecuteIncidentCommand(c context.Context, record commandIdempotencyRecord, n time.Time) (commandIdempotencyRecord, bool, error) {
+	return f.state.ExecuteIncidentCommand(c, record, n)
 }
 func (f fakeIncidentStore) GetEscalationState(c context.Context, t, id string) (*escalation.EscalationState, error) {
 	return f.state.GetEscalationState(c, t, id)

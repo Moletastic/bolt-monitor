@@ -27,6 +27,9 @@ func (r *dynamoMonitorRepository) ReserveManualIdempotency(ctx context.Context, 
 	itemMap["Fingerprint"] = &sharedaws.AttributeValueMemberS{Value: record.Fingerprint}
 	itemMap["Outcome"] = &sharedaws.AttributeValueMemberS{Value: string(record.Outcome)}
 	itemMap["RunID"] = &sharedaws.AttributeValueMemberS{Value: record.RunID}
+	if record.Response != "" {
+		itemMap["Response"] = &sharedaws.AttributeValueMemberS{Value: record.Response}
+	}
 	itemMap["ServiceID"] = &sharedaws.AttributeValueMemberS{Value: record.ServiceID}
 	itemMap["MonitorID"] = &sharedaws.AttributeValueMemberS{Value: record.MonitorID}
 	itemMap["Key"] = &sharedaws.AttributeValueMemberS{Value: record.Key}
@@ -66,6 +69,7 @@ func (r *dynamoMonitorRepository) LoadManualIdempotency(ctx context.Context, ten
 	fingerprint := attrString(item, "Fingerprint")
 	outcome := attrString(item, "Outcome")
 	runID := attrString(item, "RunID")
+	storedResponse := attrString(item, "Response")
 	serviceIDValue := attrString(item, "ServiceID")
 	monitorIDValue := attrString(item, "MonitorID")
 	rawKey := attrString(item, "Key")
@@ -79,11 +83,32 @@ func (r *dynamoMonitorRepository) LoadManualIdempotency(ctx context.Context, ten
 		Fingerprint: fingerprint,
 		Outcome:     manualIdempotencyOutcome(outcome),
 		RunID:       runID,
+		Response:    storedResponse,
 		CreatedAt:   parseTimeOrZero(createdAt),
 		ExpiresAt:   time.Unix(ttl, 0).UTC(),
 		TTL:         ttl,
 	}
 	return record, true, nil
+}
+
+// CompleteManualIdempotency stores only the sanitized public response after
+// durable execution succeeds. Retried requests can then return this exact result.
+func (r *dynamoMonitorRepository) CompleteManualIdempotency(ctx context.Context, record manualIdempotencyRecord, publicResponse string) error {
+	if err := r.requireTableName(); err != nil {
+		return err
+	}
+	_, err := r.client.UpdateItem(ctx, &sharedaws.DynamoDBUpdateItemInput{
+		TableName:           sharedaws.String(r.tableName),
+		Key:                 sharedaws.NewPrimaryKey(dynamodbschema.TenantPK(record.TenantID), manualIdempotencyAddress(record.TenantID, record.ServiceID, record.MonitorID, record.Key)).AttributeMap(),
+		UpdateExpression:    sharedaws.String("SET Outcome = :outcome, Response = :response"),
+		ConditionExpression: sharedaws.String("Fingerprint = :fingerprint"),
+		ExpressionAttributeValues: map[string]sharedaws.AttributeValue{
+			":outcome":     &sharedaws.AttributeValueMemberS{Value: string(manualIdempotencyOutcomeCompleted)},
+			":response":    &sharedaws.AttributeValueMemberS{Value: publicResponse},
+			":fingerprint": &sharedaws.AttributeValueMemberS{Value: record.Fingerprint},
+		},
+	})
+	return err
 }
 
 func attrString(item map[string]sharedaws.AttributeValue, key string) string {

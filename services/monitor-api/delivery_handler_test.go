@@ -112,6 +112,18 @@ func TestReplayIncidentDeliverySameKeySameRequestIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestReplayIncidentDeliveryAcceptsLowercaseIdempotencyHeader(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.incidents["INC_1"] = dynamodbrecordIncident(t)
+	repo.deliveries["dlv_terminal"] = makeDelivery("INC_1", "dlv_terminal", notifications.DeliveryTerminalFailed)
+	handler := newAuthorizedHandler(repo)
+	request := events.APIGatewayV2HTTPRequest{Headers: map[string]string{"idempotency-key": "key-1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodPost}}}
+	response, err := handler.replayIncidentDelivery(context.Background(), "INC_1", "dlv_terminal", request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("response = %d %s, err = %v", response.StatusCode, response.Body, err)
+	}
+}
+
 func TestReplayIncidentDeliverySameKeyDifferentRequestConflicts(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.incidents["INC_1"] = dynamodbrecordIncident(t)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -41,12 +42,8 @@ type serviceIncidentsStore interface {
 	ListServiceIncidents(context.Context, string, string, int32) ([]dynamodbrecord.IncidentRecord, error)
 }
 
-type acknowledgeIncidentStore interface {
-	AcknowledgeIncident(context.Context, string, string, time.Time) (dynamodbrecord.IncidentRecord, bool, error)
-}
-
-type resolveIncidentStore interface {
-	ResolveIncident(context.Context, string, string, time.Time) (dynamodbrecord.IncidentRecord, bool, error)
+type incidentCommandStore interface {
+	ExecuteIncidentCommand(context.Context, commandIdempotencyRecord, time.Time) (commandIdempotencyRecord, bool, error)
 }
 
 type listIncidentDeliveriesStore interface {
@@ -66,11 +63,11 @@ type incidentEscalationStateQuery struct{ store incidentEscalationStateStore }
 type monitorIncidentsQuery struct{ store monitorIncidentsStore }
 type serviceIncidentsQuery struct{ store serviceIncidentsStore }
 type acknowledgeIncidentCommand struct {
-	store acknowledgeIncidentStore
+	store incidentCommandStore
 	now   commandClock
 }
 type resolveIncidentCommand struct {
-	store resolveIncidentStore
+	store incidentCommandStore
 	now   commandClock
 }
 type listIncidentDeliveriesQuery struct {
@@ -96,7 +93,7 @@ type incidentOperations struct {
 	replayDelivery   replayIncidentDeliveryCommand
 }
 
-func newIncidentOperations(list listIncidentsStore, get incidentLookup, activities incidentActivitiesStore, escalationState incidentEscalationStateStore, monitorIncidents monitorIncidentsStore, serviceIncidents serviceIncidentsStore, acknowledge acknowledgeIncidentStore, resolve resolveIncidentStore, deliveries listIncidentDeliveriesStore, replay replayIncidentDeliveryStore, now commandClock) incidentOperations {
+func newIncidentOperations(list listIncidentsStore, get incidentLookup, activities incidentActivitiesStore, escalationState incidentEscalationStateStore, monitorIncidents monitorIncidentsStore, serviceIncidents serviceIncidentsStore, acknowledge incidentCommandStore, resolve incidentCommandStore, deliveries listIncidentDeliveriesStore, replay replayIncidentDeliveryStore, now commandClock) incidentOperations {
 	return incidentOperations{
 		list: listIncidentsQuery{store: list}, get: getIncidentQuery{store: get},
 		activities: incidentActivitiesQuery{store: activities}, escalationState: incidentEscalationStateQuery{store: escalationState},
@@ -146,12 +143,29 @@ func (q serviceIncidentsQuery) Execute(ctx context.Context, tenantID, serviceID 
 	return incidents, true, err
 }
 
-func (c acknowledgeIncidentCommand) Execute(ctx context.Context, tenantID, incidentID string) (dynamodbrecord.IncidentRecord, bool, error) {
-	return c.store.AcknowledgeIncident(ctx, tenantID, incidentID, c.now())
+func (c acknowledgeIncidentCommand) Execute(ctx context.Context, tenantID, incidentID, idempotencyKey, requestBody string) (incidentResponse, bool, error) {
+	return executeIncidentCommand(ctx, c.store, tenantID, "incident-acknowledge", incidentID, idempotencyKey, requestBody, c.now())
 }
 
-func (c resolveIncidentCommand) Execute(ctx context.Context, tenantID, incidentID string) (dynamodbrecord.IncidentRecord, bool, error) {
-	return c.store.ResolveIncident(ctx, tenantID, incidentID, c.now())
+func (c resolveIncidentCommand) Execute(ctx context.Context, tenantID, incidentID, idempotencyKey, requestBody string) (incidentResponse, bool, error) {
+	return executeIncidentCommand(ctx, c.store, tenantID, "incident-resolve", incidentID, idempotencyKey, requestBody, c.now())
+}
+
+func executeIncidentCommand(ctx context.Context, store incidentCommandStore, tenantID, operation, incidentID, idempotencyKey, requestBody string, now time.Time) (incidentResponse, bool, error) {
+	fingerprint := commandRequestFingerprint(tenantID, operation, incidentID, requestBody)
+	reserved := newCommandIdempotencyRecord(tenantID, operation, incidentID, idempotencyKey, fingerprint, now, commandIdempotencyRetention*time.Second)
+	record, found, err := store.ExecuteIncidentCommand(ctx, reserved, now)
+	if err != nil || !found {
+		return incidentResponse{}, found, err
+	}
+	if record.Fingerprint != fingerprint {
+		return incidentResponse{}, true, sharederrors.New(sharederrors.CodeIdempotencyConflict, map[string]any{"field": "idempotencyKey"})
+	}
+	var incident incidentResponse
+	if err := json.Unmarshal([]byte(record.Response), &incident); err != nil {
+		return incidentResponse{}, true, err
+	}
+	return incident, true, nil
 }
 
 func (q listIncidentDeliveriesQuery) Execute(ctx context.Context, tenantID, incidentID string) ([]notifications.DeliveryRecord, bool, error) {

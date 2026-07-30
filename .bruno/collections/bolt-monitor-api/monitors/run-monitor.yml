@@ -8,7 +8,11 @@ info:
 http:
   method: POST
   url: "{{apiUrl}}/api/v1/services/{{serviceId}}/monitors/{{monitorId}}/run"
+  headers:
+    - name: Idempotency-Key
+      value: bruno-manual-run-1
+      enabled: true
 docs: |-
   Purpose: Start a manual monitor run.
-  Setup: Set `serviceId` and `monitorId` from existing resources.
+  Setup: Set `serviceId` and `monitorId` from existing resources and use a unique `Idempotency-Key`.
   Expected result: Returns the accepted manual run and `runId`.

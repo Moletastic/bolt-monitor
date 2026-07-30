@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -238,10 +239,11 @@ type deleteNotificationChannelCommand struct {
 type listNotificationChannelsQuery struct{ store listNotificationChannelsStore }
 type getNotificationChannelQuery struct{ store getNotificationChannelStore }
 type notificationChannelTestCommand struct {
-	channels getNotificationChannelStore
-	audit    notificationChannelAuditStore
-	senders  notifications.SenderRegistry
-	now      commandClock
+	channels    getNotificationChannelStore
+	audit       notificationChannelAuditStore
+	idempotency commandIdempotencyStore
+	senders     notifications.SenderRegistry
+	now         commandClock
 }
 
 type notificationChannelOperations struct {
@@ -253,8 +255,8 @@ type notificationChannelOperations struct {
 	test   notificationChannelTestCommand
 }
 
-func newNotificationChannelOperations(create createNotificationChannelStore, update updateNotificationChannelStore, delete deleteNotificationChannelStore, list listNotificationChannelsStore, get getNotificationChannelStore, audit notificationChannelAuditStore, senders notifications.SenderRegistry, now commandClock, ids identifierGenerator) notificationChannelOperations {
-	return notificationChannelOperations{create: createNotificationChannelCommand{store: create, now: now, ids: ids}, update: updateNotificationChannelCommand{store: update}, delete: deleteNotificationChannelCommand{channels: get, store: delete}, list: listNotificationChannelsQuery{store: list}, get: getNotificationChannelQuery{store: get}, test: notificationChannelTestCommand{channels: get, audit: audit, senders: senders, now: now}}
+func newNotificationChannelOperations(create createNotificationChannelStore, update updateNotificationChannelStore, delete deleteNotificationChannelStore, list listNotificationChannelsStore, get getNotificationChannelStore, audit notificationChannelAuditStore, idempotency commandIdempotencyStore, senders notifications.SenderRegistry, now commandClock, ids identifierGenerator) notificationChannelOperations {
+	return notificationChannelOperations{create: createNotificationChannelCommand{store: create, now: now, ids: ids}, update: updateNotificationChannelCommand{store: update}, delete: deleteNotificationChannelCommand{channels: get, store: delete}, list: listNotificationChannelsQuery{store: list}, get: getNotificationChannelQuery{store: get}, test: notificationChannelTestCommand{channels: get, audit: audit, idempotency: idempotency, senders: senders, now: now}}
 }
 
 func (c createNotificationChannelCommand) Execute(ctx context.Context, channel escalation.NotificationChannel) (escalation.NotificationChannel, error) {
@@ -290,7 +292,24 @@ type notificationChannelTestResult struct {
 	SentAt    time.Time
 }
 
-func (c notificationChannelTestCommand) Execute(ctx context.Context, tenantID, channelID string) (notificationChannelTestResult, error) {
+func (c notificationChannelTestCommand) Execute(ctx context.Context, tenantID, channelID, idempotencyKey string) (notificationChannelTestResult, error) {
+	now := c.now().UTC()
+	fingerprint := commandRequestFingerprint(tenantID, "notification-channel-test", channelID, "")
+	reserved := newCommandIdempotencyRecord(tenantID, "notification-channel-test", channelID, idempotencyKey, fingerprint, now, commandIdempotencyRetention*time.Second)
+	existing, err := c.idempotency.ReserveCommandIdempotency(ctx, reserved)
+	if err != nil {
+		return notificationChannelTestResult{}, err
+	}
+	if existing.Fingerprint != fingerprint {
+		return notificationChannelTestResult{}, sharederrors.New(sharederrors.CodeIdempotencyConflict, map[string]any{"field": "idempotencyKey"})
+	}
+	if existing.ReservationToken != reserved.ReservationToken {
+		result := notificationChannelTestResult{ChannelID: channelID, SentAt: existing.CreatedAt}
+		if existing.Response != "" {
+			_ = json.Unmarshal([]byte(existing.Response), &result)
+		}
+		return result, nil
+	}
 	channel, err := c.channels.GetNotificationChannel(ctx, tenantID, channelID)
 	if err != nil {
 		return notificationChannelTestResult{}, err
@@ -298,7 +317,6 @@ func (c notificationChannelTestCommand) Execute(ctx context.Context, tenantID, c
 	if channel == nil {
 		return notificationChannelTestResult{}, sharederrors.New(sharederrors.CodeChannelNotFound, nil)
 	}
-	now := c.now().UTC()
 	record := func(outcome, reason string) error {
 		return c.audit.RecordNotificationChannelTestAudit(ctx, tenantID, channel.ChannelID, string(channel.Type), outcome, reason, now)
 	}
@@ -326,5 +344,13 @@ func (c notificationChannelTestCommand) Execute(ctx context.Context, tenantID, c
 	if err := record("success", ""); err != nil {
 		return notificationChannelTestResult{}, err
 	}
-	return notificationChannelTestResult{ChannelID: channel.ChannelID, SentAt: now}, nil
+	result := notificationChannelTestResult{ChannelID: channel.ChannelID, SentAt: now}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return notificationChannelTestResult{}, err
+	}
+	if err := c.idempotency.CompleteCommandIdempotency(ctx, reserved, string(encoded)); err != nil {
+		return notificationChannelTestResult{}, err
+	}
+	return result, nil
 }

@@ -144,7 +144,7 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	case method == http.MethodDelete && channelID != "" && path == "/api/v1/notification-channels/"+channelID:
 		return h.deleteNotificationChannel(ctx, channelID)
 	case method == http.MethodPost && channelID != "" && path == "/api/v1/notification-channels/"+channelID+"/test":
-		return h.testNotificationChannel(ctx, channelID)
+		return h.testNotificationChannel(ctx, channelID, request)
 	case method == http.MethodPost && path == "/api/v1/escalation-policies":
 		return h.createEscalationPolicy(ctx, request)
 	case method == http.MethodGet && path == "/api/v1/escalation-policies":
@@ -166,9 +166,9 @@ func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGat
 	case method == http.MethodGet && incidentID != "":
 		return h.getIncident(ctx, incidentID)
 	case method == http.MethodPost && strings.HasSuffix(path, "/ack") && incidentID != "":
-		return h.acknowledgeIncident(ctx, incidentID)
+		return h.acknowledgeIncident(ctx, incidentID, request)
 	case method == http.MethodPost && strings.HasSuffix(path, "/resolve") && incidentID != "":
-		return h.resolveIncident(ctx, incidentID)
+		return h.resolveIncident(ctx, incidentID, request)
 	case method == http.MethodPost && strings.HasSuffix(path, "/replay") && incidentID != "" && deliveryID != "":
 		return h.replayIncidentDelivery(ctx, incidentID, deliveryID, request)
 	case method == http.MethodGet && path == "/api/v1/admin/scheduler-config":
@@ -638,26 +638,34 @@ func (h monitorHandler) getServiceIncidents(ctx context.Context, serviceID strin
 	return envelopeResponse(http.StatusOK, response.Ok(payload))
 }
 
-func (h monitorHandler) acknowledgeIncident(ctx context.Context, incidentID string) (events.APIGatewayV2HTTPResponse, error) {
-	incident, found, err := h.operations.incidents.acknowledge.Execute(ctx, h.tenantID, incidentID)
+func (h monitorHandler) acknowledgeIncident(ctx context.Context, incidentID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	idempotencyKey, err := parseIdempotencyKey(requestHeader(request.Headers, "Idempotency-Key"))
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	incident, found, err := h.operations.incidents.acknowledge.Execute(ctx, h.tenantID, incidentID, idempotencyKey, request.Body)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeIncidentNotFound, nil))
 	}
-	return envelopeResponse(http.StatusOK, response.Ok(toIncidentResponse(incident)))
+	return envelopeResponse(http.StatusOK, response.Ok(incident))
 }
 
-func (h monitorHandler) resolveIncident(ctx context.Context, incidentID string) (events.APIGatewayV2HTTPResponse, error) {
-	incident, found, err := h.operations.incidents.resolve.Execute(ctx, h.tenantID, incidentID)
+func (h monitorHandler) resolveIncident(ctx context.Context, incidentID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	idempotencyKey, err := parseIdempotencyKey(requestHeader(request.Headers, "Idempotency-Key"))
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	incident, found, err := h.operations.incidents.resolve.Execute(ctx, h.tenantID, incidentID, idempotencyKey, request.Body)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeIncidentNotFound, nil))
 	}
-	return envelopeResponse(http.StatusOK, response.Ok(toIncidentResponse(incident)))
+	return envelopeResponse(http.StatusOK, response.Ok(incident))
 }
 
 func (h monitorHandler) getSchedulerConfig(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
@@ -809,11 +817,15 @@ func (h monitorHandler) deleteNotificationChannel(ctx context.Context, channelID
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
-func (h monitorHandler) testNotificationChannel(ctx context.Context, channelID string) (events.APIGatewayV2HTTPResponse, error) {
+func (h monitorHandler) testNotificationChannel(ctx context.Context, channelID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	idempotencyKey, err := parseIdempotencyKey(requestHeader(request.Headers, "Idempotency-Key"))
+	if err != nil {
+		return respondAPIGateway(err)
+	}
 	command := h.operations.channels.test
 	command.senders = h.senders
 	command.now = h.now
-	result, err := command.Execute(ctx, h.tenantID, channelID)
+	result, err := command.Execute(ctx, h.tenantID, channelID, idempotencyKey)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
