@@ -25,6 +25,7 @@ const (
 	CodePolicyNotFound         Code = "POLICY_NOT_FOUND"
 	CodePolicyReferenced       Code = "POLICY_REFERENCED"
 	CodeChannelNotFound        Code = "CHANNEL_NOT_FOUND"
+	CodeChannelInUse           Code = "CHANNEL_IN_USE"
 	CodeNotificationDelivery   Code = "NOTIFICATION_DELIVERY_FAILED"
 	CodeDeliveryNotFound       Code = "DELIVERY_NOT_FOUND"
 	CodeDeliveryNotReplayable  Code = "DELIVERY_NOT_REPLAYABLE"
@@ -59,6 +60,7 @@ var registry = map[Code]codeSpec{
 	CodePolicyNotFound:         {status: http.StatusNotFound},
 	CodePolicyReferenced:       {status: http.StatusConflict},
 	CodeChannelNotFound:        {status: http.StatusNotFound},
+	CodeChannelInUse:           {status: http.StatusConflict},
 	CodeNotificationDelivery:   {status: http.StatusBadGateway},
 	CodeDeliveryNotFound:       {status: http.StatusNotFound},
 	CodeDeliveryNotReplayable:  {status: http.StatusConflict},

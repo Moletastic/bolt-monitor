@@ -1470,6 +1470,17 @@ func TestCreateNotificationChannelValidation(t *testing.T) {
 	}
 }
 
+func TestDeleteReferencedNotificationChannelReturnsErrorEnvelope(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.channels["CH_1"] = escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1"}
+	repo.policies["POL_1"] = escalation.EscalationPolicy{TenantID: defaultTenantID, PolicyID: "POL_1", Name: "Primary", BusinessHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{ChannelID: "CH_1"}}}}
+	handler := newMonitorHandler(repo, defaultProbeLocationCatalog(), defaultTenantID)
+	response, err := handler.handleRequest(context.Background(), events.APIGatewayV2HTTPRequest{RawPath: "/api/v1/notification-channels/CH_1", PathParameters: map[string]string{"channelId": "CH_1"}, RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodDelete}}})
+	if err != nil || response.StatusCode != http.StatusConflict || !strings.Contains(response.Body, `"status":"error"`) || !strings.Contains(response.Body, "CHANNEL_IN_USE") || !strings.Contains(response.Body, "referencingRoutes") {
+		t.Fatalf("response = %d %s, err = %v", response.StatusCode, response.Body, err)
+	}
+}
+
 func TestDeleteNotificationChannelBlockedWhenReferenced(t *testing.T) {
 	repo := newFakeMonitorRepository()
 	repo.channels["CH_1"] = escalation.NotificationChannel{TenantID: defaultTenantID, ChannelID: "CH_1", Name: "Primary", Type: escalation.ChannelTypeTelegram, Target: "chat-1", Config: json.RawMessage(`{"botToken":"secret"}`)}

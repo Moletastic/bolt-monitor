@@ -809,7 +809,7 @@ func (h monitorHandler) deleteNotificationChannel(ctx context.Context, channelID
 		return respondAPIGateway(err)
 	}
 	if len(references) > 0 {
-		return envelopeResponse(http.StatusConflict, response.Ok[channelInUseResponse](channelInUseResponse{Error: "channel in use", ReferencingRoutes: references}))
+		return respondAPIGateway(sharederrors.New(sharederrors.CodeChannelInUse, map[string]any{"referencingRoutes": references}))
 	}
 	if err != nil {
 		return respondAPIGateway(err)
