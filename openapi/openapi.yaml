@@ -114,10 +114,10 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}
     NotFound:
       description: Resource not found. Code `INCIDENT_NOT_FOUND` or `DELIVERY_NOT_FOUND`.
-      content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
     Conflict:
-      description: Replay eligibility or idempotency conflict. Codes `DELIVERY_NOT_REPLAYABLE` or `IDEMPOTENCY_CONFLICT`.
-      content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}
+      description: Conflict. Codes include `CHANNEL_IN_USE`, `DELIVERY_NOT_REPLAYABLE`, and `IDEMPOTENCY_CONFLICT`.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
   schemas:
     SuccessEnvelope:
       type: object
@@ -127,6 +127,17 @@ components:
         data: {}
         message: {type: string}
         pagination: {type: object}
+    ErrorEnvelope:
+      type: object
+      required: [status, reason]
+      properties:
+        status: {type: string, const: error}
+        reason:
+          type: object
+          required: [code, details]
+          properties:
+            code: {type: string}
+            details: {type: object, additionalProperties: true}
     HealthEnvelope:
       type: object
       required: [status, data]
