@@ -26,7 +26,7 @@ paths:
       responses: {'200': {description: Healthy service, content: {application/json: {schema: {$ref: '#/components/schemas/HealthEnvelope'}}}}}
   /api/v1/search: {get: {operationId: searchResources, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/notification-channels:
-    post: {operationId: createNotificationChannel, responses: {'201': {$ref: '#/components/responses/Success'}}}
+    post: {operationId: createNotificationChannel, requestBody: {required: true, content: {application/json: {schema: {type: object}}}}, responses: {'201': {$ref: '#/components/responses/Created'}, '400': {$ref: '#/components/responses/Error'}}}
     get: {operationId: listNotificationChannels, responses: {'200': {$ref: '#/components/responses/Success'}}}
   /api/v1/notification-channels/{channelId}:
     get: {operationId: getNotificationChannel, responses: {'200': {$ref: '#/components/responses/Success'}}}
@@ -41,7 +41,7 @@ paths:
     put: {operationId: updateEscalationPolicy, responses: {'200': {$ref: '#/components/responses/Success'}}}
     delete: {operationId: deleteEscalationPolicy, responses: {'204': {description: Deleted}}}
   /api/v1/services:
-    post: {operationId: createService, responses: {'201': {$ref: '#/components/responses/Success'}}}
+    post: {operationId: createService, requestBody: {required: true, content: {application/json: {schema: {type: object}}}}, responses: {'201': {$ref: '#/components/responses/Created'}, '400': {$ref: '#/components/responses/Error'}}}
     get: {operationId: listServices, responses: {'200': {$ref: '#/components/responses/Success'}}}
   /api/v1/services/{serviceId}:
     get: {operationId: getService, responses: {'200': {$ref: '#/components/responses/Success'}}}
@@ -52,7 +52,7 @@ paths:
   /api/v1/services/{serviceId}/escalation-policy: {get: {operationId: getServiceEscalationPolicy, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/audit: {get: {operationId: getServiceAudit, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/monitors:
-    post: {operationId: createMonitor, responses: {'201': {$ref: '#/components/responses/Success'}}}
+    post: {operationId: createMonitor, requestBody: {required: true, content: {application/json: {schema: {type: object}}}}, responses: {'201': {$ref: '#/components/responses/Created'}, '400': {$ref: '#/components/responses/Error'}}}
     get: {operationId: listMonitors, responses: {'200': {$ref: '#/components/responses/Success'}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}:
     get: {operationId: getMonitor, responses: {'200': {$ref: '#/components/responses/Success'}}}
@@ -112,6 +112,14 @@ components:
     Success:
       description: Standard API success envelope
       content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}
+    Created:
+      description: Resource created.
+      headers:
+        Location: {description: Canonical resource URI, schema: {type: string, format: uri-reference}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/SuccessEnvelope'}}}
+    Error:
+      description: Standard API error envelope
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
     NotFound:
       description: Resource not found. Code `INCIDENT_NOT_FOUND` or `DELIVERY_NOT_FOUND`.
       content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}

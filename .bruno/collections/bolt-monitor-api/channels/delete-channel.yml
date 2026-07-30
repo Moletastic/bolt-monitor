@@ -11,4 +11,4 @@ http:
 docs: |-
   Purpose: Delete an unused notification channel.
   Setup: Set `channelId`; verify no policy references it.
-  Expected result: Returns successful deletion.
+  Expected result: Returns `204 No Content`; referenced channels return `409` error envelope with `CHANNEL_IN_USE` and `referencingRoutes`.

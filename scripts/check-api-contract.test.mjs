@@ -7,6 +7,14 @@ test('rejects error responses using success envelopes', () => {
   assert.deepEqual(validateOpenAPISemantics("responses:\n  '409': {$ref: '#/components/schemas/ErrorEnvelope'}"), []);
 });
 
+test('rejects idempotent operations without header metadata', () => {
+  assert.deepEqual(validateOpenAPISemantics('operationId: runMonitor'), ['OpenAPI operation runMonitor lacks required Idempotency-Key metadata']);
+});
+
+test('rejects create operations without location metadata', () => {
+  assert.deepEqual(validateOpenAPISemantics('operationId: createService'), ['OpenAPI operation createService lacks required Location response metadata']);
+});
+
 test('extracts block and inline OpenAPI operations', () => {
   assert.deepEqual(extractOpenAPIRoutes('paths:\n  /api/health:\n    get:\n  /api/v1/things: {post: {}}'), [
     { method: 'GET', path: '/api/health', source: 'openapi/openapi.yaml:3' },

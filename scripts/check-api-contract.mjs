@@ -21,6 +21,18 @@ export function validateOpenAPISemantics(source) {
   for (const match of source.matchAll(/^\s*['"]?(4\d\d|5\d\d)['"]?\s*:\s*.*SuccessEnvelope/gm)) {
     errors.push(`OpenAPI error response ${match[1]} references SuccessEnvelope; use ErrorEnvelope`);
   }
+  for (const operation of ['runMonitor', 'replayIncidentDelivery', 'testNotificationChannel', 'acknowledgeIncident', 'resolveIncident']) {
+    const index = source.indexOf(`operationId: ${operation}`);
+    if (index >= 0 && !source.slice(Math.max(0, index - 300), index + 500).includes('IdempotencyKey')) {
+      errors.push(`OpenAPI operation ${operation} lacks required Idempotency-Key metadata`);
+    }
+  }
+  for (const operation of ['createService', 'createMonitor', 'createNotificationChannel']) {
+    const index = source.indexOf(`operationId: ${operation}`);
+    if (index >= 0 && (!source.slice(Math.max(0, index - 500), index + 500).includes('/components/responses/Created') || !source.includes('Location:'))) {
+      errors.push(`OpenAPI operation ${operation} lacks required Location response metadata`);
+    }
+  }
   return errors;
 }
 
