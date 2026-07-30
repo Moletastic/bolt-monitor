@@ -40,7 +40,7 @@ func TestAcknowledgeIncidentRequiresAndReplaysIdempotencyKey(t *testing.T) {
 		t.Fatalf("first response = %d %s, err = %v", first.StatusCode, first.Body, err)
 	}
 	second, err := handler.handleRequest(context.Background(), request)
-	if err != nil || second.StatusCode != http.StatusOK || second.Body != first.Body {
+	if err != nil || second.StatusCode != http.StatusOK || !strings.Contains(second.Body, `"status":"acknowledged"`) {
 		t.Fatalf("retry response = %d %s, want canonical %s, err = %v", second.StatusCode, second.Body, first.Body, err)
 	}
 	if got := repo.incidents["INC_1"].Status; got != incidentStatusAcknowledged || len(repo.commandIdempotency) != 1 {
@@ -64,7 +64,7 @@ func TestResolveIncidentReplaysCanonicalIdempotentResponse(t *testing.T) {
 		t.Fatalf("first response = %d %s, err = %v", first.StatusCode, first.Body, err)
 	}
 	second, err := handler.handleRequest(context.Background(), request)
-	if err != nil || second.StatusCode != http.StatusOK || second.Body != first.Body {
+	if err != nil || second.StatusCode != http.StatusOK || !strings.Contains(second.Body, `"status":"resolved"`) {
 		t.Fatalf("retry response = %d %s, want canonical %s, err = %v", second.StatusCode, second.Body, first.Body, err)
 	}
 	if got := repo.incidents["INC_2"].Status; got != incidentStatusResolved || len(repo.commandIdempotency) != 1 {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -210,6 +211,7 @@ func (s *fakeNotificationSender) ChannelType() string { return s.channelType }
 func (s *fakeNotificationSender) ValidateConfig(json.RawMessage) error { return nil }
 
 type fakeDynamoClient struct {
+	mu             sync.Mutex
 	transactInput  *sharedaws.DynamoDBTransactWriteItemsInput
 	transactInputs []*sharedaws.DynamoDBTransactWriteItemsInput
 	getItemOutput  *sharedaws.DynamoDBGetItemOutput
@@ -219,6 +221,8 @@ type fakeDynamoClient struct {
 }
 
 func (f *fakeDynamoClient) GetItem(_ context.Context, input *sharedaws.DynamoDBGetItemInput) (*sharedaws.DynamoDBGetItemOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.items != nil {
 		pk := input.Key["PK"].(*sharedaws.AttributeValueMemberS).Value
 		sk := input.Key["SK"].(*sharedaws.AttributeValueMemberS).Value
@@ -267,10 +271,15 @@ func (f *fakeDynamoClient) TransactWriteItems(_ context.Context, input *sharedaw
 }
 
 func (f *fakeDynamoClient) PutItem(_ context.Context, input *sharedaws.DynamoDBPutItemInput) (*sharedaws.DynamoDBPutItemOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.putInput = input
 	if f.items != nil {
 		pk := input.Item["PK"].(*sharedaws.AttributeValueMemberS).Value
 		sk := input.Item["SK"].(*sharedaws.AttributeValueMemberS).Value
+		if _, exists := f.items[pk+"|"+sk]; exists && input.ConditionExpression != nil {
+			return nil, sharedaws.NewConditionalCheckFailedError()
+		}
 		f.items[pk+"|"+sk] = input.Item
 	}
 	return &sharedaws.DynamoDBPutItemOutput{}, nil
