@@ -54,10 +54,10 @@ The system SHALL provide an incident-scoped replay operation for a specific deli
 - **AND** no notification work is enqueued
 
 ### Requirement: Delivery replay requests are idempotent for bounded retention
-Replay idempotency SHALL be scoped to tenant, incident, delivery, operation, and `Idempotency-Key`. The system SHALL persist a canonical request fingerprint and replay result identity for a named bounded retention duration longer than the maximum dispatch and retry window. Repeating the same key and request during retention SHALL return the original result without creating another replay. Reusing the key with a different request fingerprint SHALL return a typed conflict.
+Replay idempotency SHALL be scoped to tenant, incident, delivery, operation, and `Idempotency-Key`, read case-insensitively from the HTTP request. The system SHALL persist a canonical request fingerprint and replay result identity for a named bounded retention duration longer than the maximum dispatch and retry window. Repeating the same key and request during retention SHALL return the original result without creating another replay. Reusing the key with a different request fingerprint SHALL return a typed conflict.
 
 #### Scenario: Client retries the same replay request
-- **WHEN** the same `Idempotency-Key`, path identity, and request payload are submitted during retention
+- **WHEN** the same `Idempotency-Key`, regardless of HTTP header casing, path identity, and request payload are submitted during retention
 - **THEN** the API returns the original replay result
 - **AND** replay count, state reset, audit record, and dispatch record occur only once
 
