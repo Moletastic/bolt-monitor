@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractOpenAPIRoutes, validateContract } from './check-api-contract.mjs';
+import { extractOpenAPIRoutes, validateContract, validateOpenAPISemantics } from './check-api-contract.mjs';
+
+test('rejects error responses using success envelopes', () => {
+  assert.deepEqual(validateOpenAPISemantics("responses:\n  '409': {$ref: '#/components/schemas/SuccessEnvelope'}"), ['OpenAPI error response 409 references SuccessEnvelope; use ErrorEnvelope']);
+  assert.deepEqual(validateOpenAPISemantics("responses:\n  '409': {$ref: '#/components/schemas/ErrorEnvelope'}"), []);
+});
 
 test('extracts block and inline OpenAPI operations', () => {
   assert.deepEqual(extractOpenAPIRoutes('paths:\n  /api/health:\n    get:\n  /api/v1/things: {post: {}}'), [

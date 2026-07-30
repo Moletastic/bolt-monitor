@@ -16,6 +16,14 @@ export function extractHandlerRoutes(source, filePath = 'services/monitor-api/ro
   return extractHandlerRouteInventory(source, filePath).routes;
 }
 
+export function validateOpenAPISemantics(source) {
+  const errors = [];
+  for (const match of source.matchAll(/^\s*['"]?(4\d\d|5\d\d)['"]?\s*:\s*.*SuccessEnvelope/gm)) {
+    errors.push(`OpenAPI error response ${match[1]} references SuccessEnvelope; use ErrorEnvelope`);
+  }
+  return errors;
+}
+
 function keys(routes) { return new Map(routes.map((route) => [routeKey(route), route])); }
 function compare(expected, actual, expectedName, actualName) {
   const errors = [];
@@ -49,7 +57,7 @@ export function validateContract({ bootstrapSource, brunoRequests, openapiSource
   const extractedHandler = extractHandlerRouteInventory(handlerSource);
   const handler = extractedHandler.routes;
   const sstMap = keys(sst);
-  return { errors: [...extractedSst.diagnostics, ...extractedHandler.diagnostics, ...compare(sstMap, keys(bruno), 'SST', 'Bruno'), ...compare(sstMap, keys(openapi), 'SST', 'OpenAPI'), ...compareAuth(sst, bruno, 'Bruno'), ...compareAuth(sst, openapi, 'OpenAPI'), ...compare(keys(sst.filter((route) => route.target === '../services/monitor-api')), keys(handler), 'SST monitor routes', 'handler inventory'), ...requireRoutes(keys(openSpecRoutes), sstMap, 'merged OpenSpec', 'SST')], counts: { sst: sst.length, bruno: bruno.length, openapi: openapi.length, handler: handler.length, openSpec: openSpecRoutes.length } };
+  return { errors: [...extractedSst.diagnostics, ...extractedHandler.diagnostics, ...validateOpenAPISemantics(openapiSource), ...compare(sstMap, keys(bruno), 'SST', 'Bruno'), ...compare(sstMap, keys(openapi), 'SST', 'OpenAPI'), ...compareAuth(sst, bruno, 'Bruno'), ...compareAuth(sst, openapi, 'OpenAPI'), ...compare(keys(sst.filter((route) => route.target === '../services/monitor-api')), keys(handler), 'SST monitor routes', 'handler inventory'), ...requireRoutes(keys(openSpecRoutes), sstMap, 'merged OpenSpec', 'SST')], counts: { sst: sst.length, bruno: bruno.length, openapi: openapi.length, handler: handler.length, openSpec: openSpecRoutes.length } };
 }
 
 function main() {
