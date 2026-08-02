@@ -29,6 +29,7 @@ paths:
     post: {operationId: createNotificationChannel, requestBody: {required: true, content: {application/json: {schema: {type: object}}}}, responses: {'201': {$ref: '#/components/responses/Created'}, '400': {$ref: '#/components/responses/Error'}}}
     get: {operationId: listNotificationChannels, responses: {'200': {$ref: '#/components/responses/Success'}}}
   /api/v1/notification-channels/{channelId}:
+    parameters: [{$ref: '#/components/parameters/ChannelID'}]
     get: {operationId: getNotificationChannel, responses: {'200': {$ref: '#/components/responses/Success'}}}
     put: {operationId: updateNotificationChannel, responses: {'200': {$ref: '#/components/responses/Success'}}}
     delete: {operationId: deleteNotificationChannel, responses: {'204': {description: Deleted}}}
@@ -44,6 +45,7 @@ paths:
     post: {operationId: createService, requestBody: {required: true, content: {application/json: {schema: {type: object}}}}, responses: {'201': {$ref: '#/components/responses/Created'}, '400': {$ref: '#/components/responses/Error'}}}
     get: {operationId: listServices, responses: {'200': {$ref: '#/components/responses/Success'}}}
   /api/v1/services/{serviceId}:
+    parameters: [{$ref: '#/components/parameters/ServiceID'}]
     get: {operationId: getService, responses: {'200': {$ref: '#/components/responses/Success'}}}
     patch: {operationId: updateService, responses: {'200': {$ref: '#/components/responses/Success'}}}
     delete: {operationId: deleteService, responses: {'204': {description: Deleted}}}
@@ -52,45 +54,74 @@ paths:
   /api/v1/services/{serviceId}/escalation-policy: {get: {operationId: getServiceEscalationPolicy, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/audit: {get: {operationId: getServiceAudit, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/monitors:
+    parameters: [{$ref: '#/components/parameters/ServiceID'}]
     post: {operationId: createMonitor, requestBody: {required: true, content: {application/json: {schema: {type: object}}}}, responses: {'201': {$ref: '#/components/responses/Created'}, '400': {$ref: '#/components/responses/Error'}}}
     get: {operationId: listMonitors, responses: {'200': {$ref: '#/components/responses/Success'}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}:
+    parameters: [{$ref: '#/components/parameters/ServiceID'}, {$ref: '#/components/parameters/MonitorID'}]
     get: {operationId: getMonitor, responses: {'200': {$ref: '#/components/responses/Success'}}}
     patch: {operationId: updateMonitor, responses: {'200': {$ref: '#/components/responses/Success'}}}
     delete: {operationId: deleteMonitor, responses: {'204': {description: Deleted}}}
-  /api/v1/services/{serviceId}/monitors/{monitorId}/status: {get: {operationId: getMonitorStatus, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/services/{serviceId}/monitors/{monitorId}/runs: {get: {operationId: listMonitorRuns, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/services/{serviceId}/monitors/{monitorId}/run: {post: {operationId: runMonitor, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
-  /api/v1/services/{serviceId}/monitors/{monitorId}/incidents: {get: {operationId: listMonitorIncidents, responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/services/{serviceId}/monitors/{monitorId}/status: {get: {operationId: getMonitorStatus, parameters: [{$ref: '#/components/parameters/ServiceID'}, {$ref: '#/components/parameters/MonitorID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/services/{serviceId}/monitors/{monitorId}/runs: {get: {operationId: listMonitorRuns, parameters: [{$ref: '#/components/parameters/ServiceID'}, {$ref: '#/components/parameters/MonitorID'}, {$ref: '#/components/parameters/Cursor'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/services/{serviceId}/monitors/{monitorId}/run: {post: {operationId: runMonitor, parameters: [{$ref: '#/components/parameters/ServiceID'}, {$ref: '#/components/parameters/MonitorID'}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
+  /api/v1/services/{serviceId}/monitors/{monitorId}/incidents: {get: {operationId: listMonitorIncidents, parameters: [{$ref: '#/components/parameters/Cursor'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/incidents: {get: {operationId: listServiceIncidents, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/services/{serviceId}/monitors/{monitorId}/audit: {get: {operationId: getMonitorAudit, responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/services/{serviceId}/monitors/{monitorId}/audit: {get: {operationId: getMonitorAudit, parameters: [{$ref: '#/components/parameters/Cursor'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}/enable: {post: {operationId: enableMonitor, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}/disable: {post: {operationId: disableMonitor, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}/maintenance/enable: {post: {operationId: enableMonitorMaintenance, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/services/{serviceId}/monitors/{monitorId}/maintenance/disable: {post: {operationId: disableMonitorMaintenance, responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/incidents: {get: {operationId: listIncidents, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/incidents/{incidentId}: {get: {operationId: getIncident, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/incidents/{incidentId}/escalation-state: {get: {operationId: getEscalationState, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/incidents/{incidentId}/activities: {get: {operationId: getIncidentActivities, responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/incidents/{incidentId}/deliveries: {get: {operationId: listIncidentDeliveries, responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/incidents/{incidentId}: {get: {operationId: getIncident, parameters: [{$ref: '#/components/parameters/IncidentID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/incidents/{incidentId}/escalation-state: {get: {operationId: getEscalationState, parameters: [{$ref: '#/components/parameters/IncidentID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/incidents/{incidentId}/activities: {get: {operationId: getIncidentActivities, parameters: [{$ref: '#/components/parameters/IncidentID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/incidents/{incidentId}/deliveries: {get: {operationId: listIncidentDeliveries, parameters: [{$ref: '#/components/parameters/IncidentID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/incidents/{incidentId}/deliveries/{deliveryId}/replay:
     post:
       operationId: replayIncidentDelivery
       parameters:
+        - {$ref: '#/components/parameters/IncidentID'}
         - {$ref: '#/components/parameters/IdempotencyKey'}
         - {name: deliveryId, in: path, required: true, schema: {type: string}}
       responses:
         '200': {$ref: '#/components/responses/Success'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
-  /api/v1/incidents/{incidentId}/ack: {post: {operationId: acknowledgeIncident, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
-  /api/v1/incidents/{incidentId}/resolve: {post: {operationId: resolveIncident, parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
+  /api/v1/incidents/{incidentId}/ack: {post: {operationId: acknowledgeIncident, parameters: [{$ref: '#/components/parameters/IncidentID'}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
+  /api/v1/incidents/{incidentId}/resolve: {post: {operationId: resolveIncident, parameters: [{$ref: '#/components/parameters/IncidentID'}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {'200': {$ref: '#/components/responses/Success'}, '409': {$ref: '#/components/responses/Conflict'}}}}
   /api/v1/admin/scheduler-config:
     get: {operationId: getSchedulerConfig, responses: {'200': {$ref: '#/components/responses/Success'}}}
     patch: {operationId: updateSchedulerConfig, responses: {'200': {$ref: '#/components/responses/Success'}}}
 components:
 
   parameters:
+    ServiceID:
+      name: serviceId
+      in: path
+      required: true
+      schema: {type: string}
+    MonitorID:
+      name: monitorId
+      in: path
+      required: true
+      schema: {type: string}
+    IncidentID:
+      name: incidentId
+      in: path
+      required: true
+      schema: {type: string}
+    ChannelID:
+      name: channelId
+      in: path
+      required: true
+      schema: {type: string}
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: {type: string}
+      description: Opaque cursor returned by a prior paginated response.
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -146,6 +177,12 @@ components:
           properties:
             code: {type: string}
             details: {type: object, additionalProperties: true}
+    CursorPagination:
+      type: object
+      required: [size]
+      properties:
+        size: {type: integer, minimum: 0}
+        nextCursor: {type: string}
     HealthEnvelope:
       type: object
       required: [status, data]
