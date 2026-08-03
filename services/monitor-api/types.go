@@ -121,11 +121,6 @@ type routeReference struct {
 	Name     string `json:"name"`
 }
 
-type channelInUseResponse struct {
-	Error             string           `json:"error"`
-	ReferencingRoutes []routeReference `json:"referencingRoutes"`
-}
-
 type notificationChannelTestResponse struct {
 	ChannelID string `json:"channelId"`
 	SentAt    string `json:"sentAt"`

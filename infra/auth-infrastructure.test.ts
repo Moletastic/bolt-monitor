@@ -128,7 +128,7 @@ test('Gateway rejects protected-route requests before Lambda and keeps health pu
   assert.match(protectedRoutes, /scopes: \['aws\.cognito\.signin\.user\.admin'\]/)
   assert.match(
     stackSource,
-    /audiences: \[dashboardUserPoolClient\.id, directOperatorUserPoolClient\.id, readinessUserPoolClient\.id\]/
+    /audiences: \[\s*dashboardUserPoolClient\.id,\s*directOperatorUserPoolClient\.id,\s*readinessUserPoolClient\.id,?\s*\]/
   )
 })
 
