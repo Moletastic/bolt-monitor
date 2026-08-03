@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,7 +17,8 @@ import (
 
 const (
 	deliveryReplayRetention = 24 * time.Hour
-	maxDeliveryResults      = 200
+	defaultDeliveryPageSize = int32(50)
+	maxDeliveryPageSize     = int32(200)
 )
 
 type deliveryView struct {
@@ -57,22 +59,36 @@ func toDeliveryView(d notifications.DeliveryRecord) deliveryView {
 	}
 }
 
-func (h monitorHandler) listIncidentDeliveries(ctx context.Context, incidentID string, _ events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	records, found, err := h.operations.incidents.deliveries.Execute(ctx, h.tenantID, incidentID)
+func (h monitorHandler) listIncidentDeliveries(ctx context.Context, incidentID string, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	limit := defaultDeliveryPageSize
+	if raw := strings.TrimSpace(request.QueryStringParameters["limit"]); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil || parsed < 1 || parsed > int64(maxDeliveryPageSize) {
+			return respondAPIGateway(sharederrors.New(sharederrors.CodeValidationFailed, map[string]any{"field": "limit", "reason": "must be between 1 and 200"}))
+		}
+		limit = int32(parsed)
+	}
+	resource := "incident-deliveries#" + incidentID
+	startKey, err := historyStartKey(request, resource, "PK")
+	if err != nil {
+		return respondAPIGateway(err)
+	}
+	records, found, err := h.operations.incidents.deliveries.Execute(ctx, h.tenantID, incidentID, limit, startKey)
 	if err != nil {
 		return respondAPIGateway(err)
 	}
 	if !found {
 		return respondAPIGateway(sharederrors.New(sharederrors.CodeIncidentNotFound, map[string]any{"incidentId": incidentID}))
 	}
-	views := make([]deliveryView, 0, len(records))
-	for _, record := range records {
+	views := make([]deliveryView, 0, len(records.Items))
+	for _, record := range records.Items {
 		views = append(views, toDeliveryView(record))
 	}
-	if len(views) > maxDeliveryResults {
-		views = views[:maxDeliveryResults]
+	nextCursor, err := encodeHistoryCursor(resource, records.NextKey)
+	if err != nil {
+		return respondAPIGateway(err)
 	}
-	return envelopeResponse(http.StatusOK, response.Ok(map[string]any{"incidentId": incidentID, "deliveries": views}, "incident deliveries listed"))
+	return envelopeResponse(http.StatusOK, response.OkCursorPaginated(map[string]any{"incidentId": incidentID, "deliveries": views}, len(views), nextCursor))
 }
 
 type deliveryReplayResponse struct {

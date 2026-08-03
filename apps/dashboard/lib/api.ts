@@ -192,10 +192,18 @@ export async function getIncidentActivities(incidentId: string) {
 }
 
 export async function listIncidentDeliveries(incidentId: string) {
-  const response = await apiRequest<IncidentDeliveryListResponse>(
-    `/api/v1/incidents/${incidentId}/deliveries`
-  )
-  return response.deliveries
+  const deliveries = [] as IncidentDeliveryListResponse['deliveries']
+  let cursor: string | undefined
+  do {
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+    const page = await cursorPageRequest<
+      IncidentDeliveryListResponse,
+      IncidentDeliveryListResponse['deliveries'][number]
+    >(`/api/v1/incidents/${incidentId}/deliveries${query}`, (response) => response.deliveries)
+    deliveries.push(...page.items)
+    cursor = page.nextCursor
+  } while (cursor)
+  return deliveries
 }
 
 export async function replayIncidentDelivery(

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	sharedaws "bolt-monitor/shared/aws"
 	"bolt-monitor/shared/dynamodbrecord"
 	"bolt-monitor/shared/notifications"
 )
@@ -69,6 +70,9 @@ func (s *recordingIncidentDeliveryStore) GetIncident(context.Context, string, st
 
 func (s *recordingIncidentDeliveryStore) ListIncidentDeliveries(context.Context, string, string) ([]notifications.DeliveryRecord, error) {
 	return s.deliveries, nil
+}
+func (s *recordingIncidentDeliveryStore) ListIncidentDeliveriesPage(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) (historyPage[notifications.DeliveryRecord], error) {
+	return historyPage[notifications.DeliveryRecord]{Items: s.deliveries}, nil
 }
 
 func (s *recordingIncidentDeliveryStore) LookupReplayIdempotency(context.Context, string, string, string, string) (*notifications.ReplayIdempotencyRecord, error) {

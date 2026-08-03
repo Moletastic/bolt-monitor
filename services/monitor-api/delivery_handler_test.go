@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -70,6 +71,67 @@ func TestListIncidentDeliveriesReturnsNotFoundForUnknownIncident(t *testing.T) {
 	response, _ := handler.listIncidentDeliveries(context.Background(), "INC_MISSING", events.APIGatewayV2HTTPRequest{RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: http.MethodGet}}})
 	if response.StatusCode != http.StatusNotFound || !strings.Contains(response.Body, "INCIDENT_NOT_FOUND") {
 		t.Fatalf("expected 404 INCIDENT_NOT_FOUND, got status=%d body=%s", response.StatusCode, response.Body)
+	}
+}
+
+func TestListIncidentDeliveriesValidatesLimitAndReturnsEmptyPage(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.incidents["INC_1"] = dynamodbrecordIncident(t)
+	handler := newAuthorizedHandler(repo)
+	invalid, _ := handler.listIncidentDeliveries(context.Background(), "INC_1", events.APIGatewayV2HTTPRequest{QueryStringParameters: map[string]string{"limit": "201"}})
+	if invalid.StatusCode != http.StatusBadRequest || !strings.Contains(invalid.Body, "VALIDATION_FAILED") {
+		t.Fatalf("invalid limit response = %d %s", invalid.StatusCode, invalid.Body)
+	}
+	empty, _ := handler.listIncidentDeliveries(context.Background(), "INC_1", events.APIGatewayV2HTTPRequest{})
+	if empty.StatusCode != http.StatusOK || !strings.Contains(empty.Body, `"deliveries":[]`) || !strings.Contains(empty.Body, `"pagination"`) {
+		t.Fatalf("empty page response = %d %s", empty.StatusCode, empty.Body)
+	}
+}
+
+func TestListIncidentDeliveriesTraverses201RecordsWithoutDuplicates(t *testing.T) {
+	repo := newFakeMonitorRepository()
+	repo.incidents["INC_1"] = dynamodbrecordIncident(t)
+	for i := 0; i < 201; i++ {
+		id := fmt.Sprintf("delivery-%03d", i)
+		repo.deliveries[id] = makeDelivery("INC_1", id, notifications.DeliveryDelivered)
+	}
+	handler := newAuthorizedHandler(repo)
+	cursor := ""
+	seen := map[string]struct{}{}
+	for cursor != "done" {
+		query := map[string]string{"limit": "200"}
+		if cursor != "" {
+			query["cursor"] = cursor
+		}
+		response, err := handler.listIncidentDeliveries(context.Background(), "INC_1", events.APIGatewayV2HTTPRequest{QueryStringParameters: query})
+		if err != nil || response.StatusCode != http.StatusOK {
+			t.Fatalf("response = %d %s, err = %v", response.StatusCode, response.Body, err)
+		}
+		var page struct {
+			Data struct {
+				Deliveries []deliveryView `json:"deliveries"`
+			} `json:"data"`
+			Pagination struct {
+				NextCursor string `json:"nextCursor"`
+			} `json:"pagination"`
+		}
+		if err := json.Unmarshal([]byte(response.Body), &page); err != nil {
+			t.Fatal(err)
+		}
+		for _, delivery := range page.Data.Deliveries {
+			if _, ok := seen[delivery.DeliveryID]; ok {
+				t.Fatalf("duplicate %s", delivery.DeliveryID)
+			}
+			seen[delivery.DeliveryID] = struct{}{}
+		}
+		if page.Pagination.NextCursor == "" {
+			cursor = "done"
+		} else {
+			cursor = page.Pagination.NextCursor
+		}
+	}
+	if len(seen) != 201 {
+		t.Fatalf("seen = %d, want 201", len(seen))
 	}
 }
 

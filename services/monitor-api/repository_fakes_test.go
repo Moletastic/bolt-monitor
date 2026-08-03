@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"sort"
+	"strconv"
 	"time"
 
 	sharedaws "bolt-monitor/shared/aws"
@@ -151,6 +153,27 @@ func (f fakeIncidentStore) GetEscalationState(c context.Context, t, id string) (
 }
 func (f fakeIncidentStore) ListIncidentDeliveries(c context.Context, t, id string) ([]notifications.DeliveryRecord, error) {
 	return f.state.ListIncidentDeliveries(c, t, id)
+}
+func (f fakeIncidentStore) ListIncidentDeliveriesPage(c context.Context, t, id string, limit int32, startKey map[string]sharedaws.AttributeValue) (historyPage[notifications.DeliveryRecord], error) {
+	items, err := f.state.ListIncidentDeliveries(c, t, id)
+	if err != nil {
+		return historyPage[notifications.DeliveryRecord]{}, err
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].DeliveryID < items[j].DeliveryID })
+	offset := 0
+	if raw, ok := startKey["OFFSET"].(*sharedaws.AttributeValueMemberS); ok {
+		offset, _ = strconv.Atoi(raw.Value)
+	}
+	end := offset + int(limit)
+	if end > len(items) {
+		end = len(items)
+	}
+	page := items[offset:end]
+	var next map[string]sharedaws.AttributeValue
+	if end < len(items) {
+		next = map[string]sharedaws.AttributeValue{"PK": &sharedaws.AttributeValueMemberS{Value: "incident-deliveries#" + id}, "OFFSET": &sharedaws.AttributeValueMemberS{Value: strconv.Itoa(end)}}
+	}
+	return historyPage[notifications.DeliveryRecord]{Items: page, NextKey: next}, nil
 }
 func (f fakeIncidentStore) PrepareDeliveryReplay(c context.Context, command notifications.ReplayCommand, fingerprint string, now time.Time, retention time.Duration) (string, error) {
 	return f.state.PrepareDeliveryReplay(c, command, fingerprint, now, retention)

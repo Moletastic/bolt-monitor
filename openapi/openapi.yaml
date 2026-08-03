@@ -76,7 +76,7 @@ paths:
   /api/v1/incidents/{incidentId}: {get: {operationId: getIncident, parameters: [{$ref: '#/components/parameters/IncidentID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/incidents/{incidentId}/escalation-state: {get: {operationId: getEscalationState, parameters: [{$ref: '#/components/parameters/IncidentID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/incidents/{incidentId}/activities: {get: {operationId: getIncidentActivities, parameters: [{$ref: '#/components/parameters/IncidentID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
-  /api/v1/incidents/{incidentId}/deliveries: {get: {operationId: listIncidentDeliveries, parameters: [{$ref: '#/components/parameters/IncidentID'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
+  /api/v1/incidents/{incidentId}/deliveries: {get: {operationId: listIncidentDeliveries, parameters: [{$ref: '#/components/parameters/IncidentID'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/DeliveryLimit'}], responses: {'200': {$ref: '#/components/responses/Success'}}}}
   /api/v1/incidents/{incidentId}/deliveries/{deliveryId}/replay:
     post:
       operationId: replayIncidentDelivery
@@ -122,6 +122,12 @@ components:
       required: false
       schema: {type: string}
       description: Opaque cursor returned by a prior paginated response.
+    DeliveryLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+      description: Maximum number of deliveries returned in one cursor page.
     IdempotencyKey:
       name: Idempotency-Key
       in: header

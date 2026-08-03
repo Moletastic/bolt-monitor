@@ -14,6 +14,12 @@ import (
 )
 
 func (r *dynamoMonitorRepository) ListIncidentDeliveries(ctx context.Context, tenantID, incidentID string) ([]notifications.DeliveryRecord, error) {
+	page, err := r.ListIncidentDeliveriesPage(ctx, tenantID, incidentID, 200, nil)
+	return page.Items, err
+}
+
+// ListIncidentDeliveriesPage reads one bounded, chronologically ordered page.
+func (r *dynamoMonitorRepository) ListIncidentDeliveriesPage(ctx context.Context, tenantID, incidentID string, limit int32, startKey map[string]sharedaws.AttributeValue) (historyPage[notifications.DeliveryRecord], error) {
 	out, err := r.client.Query(ctx, &sharedaws.DynamoDBQueryInput{
 		TableName:              sharedaws.String(r.tableName),
 		KeyConditionExpression: sharedaws.String("PK = :pk AND begins_with(SK, :prefix)"),
@@ -21,23 +27,25 @@ func (r *dynamoMonitorRepository) ListIncidentDeliveries(ctx context.Context, te
 			":pk":     &sharedaws.AttributeValueMemberS{Value: dynamodbschema.IncidentPK(incidentID)},
 			":prefix": &sharedaws.AttributeValueMemberS{Value: "DELIVERY#"},
 		},
-		ScanIndexForward: sharedaws.Bool(true),
+		ScanIndexForward:  sharedaws.Bool(true),
+		Limit:             &limit,
+		ExclusiveStartKey: startKey,
 	})
 	if err != nil {
-		return nil, err
+		return historyPage[notifications.DeliveryRecord]{}, err
 	}
 	out2 := make([]notifications.DeliveryRecord, 0, len(out.Items))
 	for _, item := range out.Items {
 		var record dynamodbrecord.DeliveryItemRecord
 		if err := sharedaws.UnmarshalMap(item, &record); err != nil {
-			return nil, err
+			return historyPage[notifications.DeliveryRecord]{}, err
 		}
 		if !record.BelongsToTenant(tenantID, incidentID) {
 			continue
 		}
 		out2 = append(out2, record.ToDelivery())
 	}
-	return out2, nil
+	return historyPage[notifications.DeliveryRecord]{Items: out2, NextKey: out.LastEvaluatedKey}, nil
 }
 
 func (r *dynamoMonitorRepository) PrepareDeliveryReplay(ctx context.Context, command notifications.ReplayCommand, fingerprint string, now time.Time, retention time.Duration) (string, error) {

@@ -48,6 +48,7 @@ type incidentCommandStore interface {
 
 type listIncidentDeliveriesStore interface {
 	ListIncidentDeliveries(context.Context, string, string) ([]notifications.DeliveryRecord, error)
+	ListIncidentDeliveriesPage(context.Context, string, string, int32, map[string]sharedaws.AttributeValue) (historyPage[notifications.DeliveryRecord], error)
 }
 
 type replayIncidentDeliveryStore interface {
@@ -168,11 +169,11 @@ func executeIncidentCommand(ctx context.Context, store incidentCommandStore, ten
 	return incident, true, nil
 }
 
-func (q listIncidentDeliveriesQuery) Execute(ctx context.Context, tenantID, incidentID string) ([]notifications.DeliveryRecord, bool, error) {
+func (q listIncidentDeliveriesQuery) Execute(ctx context.Context, tenantID, incidentID string, limit int32, startKey map[string]sharedaws.AttributeValue) (historyPage[notifications.DeliveryRecord], bool, error) {
 	if _, found, err := q.incidents.GetIncident(ctx, tenantID, incidentID); err != nil || !found {
-		return nil, found, err
+		return historyPage[notifications.DeliveryRecord]{}, found, err
 	}
-	deliveries, err := q.store.ListIncidentDeliveries(ctx, tenantID, incidentID)
+	deliveries, err := q.store.ListIncidentDeliveriesPage(ctx, tenantID, incidentID, limit, startKey)
 	return deliveries, true, err
 }
 

@@ -6,8 +6,8 @@ info:
     - operation:read
 http:
   method: GET
-  url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}/deliveries"
+  url: "{{apiUrl}}/api/v1/incidents/{{incidentId}}/deliveries?limit=50"
 docs: |-
   Purpose: list incident delivery state.
   Setup: operator with default tenant access.
-  Expected result: 200 OK with deliveries array.
+  Expected result: 200 OK with a delivery cursor page; use `pagination.nextCursor` for continuation.
