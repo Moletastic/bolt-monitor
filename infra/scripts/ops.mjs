@@ -358,6 +358,117 @@ export async function rotateAuthKey({ run = runCommand, preflight: pre = preflig
   console.log(`Wrote SecureString parameter ${parameterName}`)
 }
 
+export async function setupReadiness(
+  email,
+  { rotate = false, run = runCommand, preflight: pre = preflight, outputs = outputsPath } = {}
+) {
+  const target = resolveTarget('setup-readiness')
+  const env = targetEnvironment(target, 'setup-readiness')
+  const { accountId } = pre(target, env, { run })
+  const data = outputs(target.stage)
+  if (!data?.operatorUserPoolId || !data?.authTableName)
+    throw new Error('setup-readiness requires deploy outputs; run make deploy-infra first')
+  const parameterName = `/${target.service}/${target.stage}/readiness/password`
+  const username =
+    typeof email === 'string' && email.trim() !== ''
+      ? email.trim()
+      : `synthetic-readiness+${target.stage}@example.invalid`
+  console.log(
+    `Readiness setup target:\n${targetSummary(target, accountId)}\n  user: ${username}\n  parameter: ${parameterName}`
+  )
+  try {
+    run(
+      'aws',
+      [
+        'ssm',
+        'get-parameter',
+        '--name',
+        parameterName,
+        '--query',
+        'Parameter.Name',
+        '--output',
+        'text',
+      ],
+      env
+    )
+    if (!rotate) {
+      console.log('Readiness credentials already configured; use ROTATE=yes to rotate')
+      return
+    }
+  } catch {
+    // Missing parameter is expected on initial setup.
+  }
+  const { randomBytes } = await import('node:crypto')
+  const password = `${randomBytes(18).toString('base64url')}!Aa1`
+  run(
+    'go',
+    [
+      'run',
+      './tools/admin-bootstrap',
+      '--email',
+      username,
+      '--user-pool-id',
+      data.operatorUserPoolId,
+      '--auth-table',
+      data.authTableName,
+      '--stage',
+      target.stage,
+    ],
+    { ...env, SYNTHETIC_PASSWORD: password },
+    { inherit: true }
+  )
+  run(
+    'aws',
+    [
+      'ssm',
+      'put-parameter',
+      '--name',
+      parameterName,
+      '--type',
+      'SecureString',
+      '--value',
+      password,
+      '--overwrite',
+    ],
+    env
+  )
+  console.log('Readiness credentials configured')
+}
+
+export async function readinessAPI(
+  email,
+  { run = runCommand, preflight: pre = preflight, outputs = outputsPath } = {}
+) {
+  const target = resolveTarget('readiness-api')
+  const env = targetEnvironment(target, 'readiness-api')
+  pre(target, env, { run })
+  const data = outputs(target.stage)
+  if (!data?.apiUrl || !data?.readinessUserPoolClientId)
+    throw new Error('readiness-api requires deploy outputs; run make deploy-infra first')
+  const parameterName = `/${target.service}/${target.stage}/readiness/password`
+  const username =
+    typeof email === 'string' && email.trim() !== ''
+      ? email.trim()
+      : `synthetic-readiness+${target.stage}@example.invalid`
+  run(
+    'go',
+    [
+      'run',
+      './tools/readiness-probe',
+      '--api-url',
+      data.apiUrl,
+      '--client-id',
+      data.readinessUserPoolClientId,
+      '--username',
+      username,
+      '--password-parameter',
+      parameterName,
+    ],
+    env,
+    { inherit: true }
+  )
+}
+
 export function parseOperationInputs(argv) {
   const flags = {}
   for (const arg of argv) {
@@ -365,7 +476,7 @@ export function parseOperationInputs(argv) {
     if (eq === -1) continue
     const key = arg.slice(0, eq).replace(/^--/, '')
     const value = arg.slice(eq + 1)
-    if (key === 'DESTROY' || key === 'EMAIL') flags[key] = value
+    if (key === 'DESTROY' || key === 'EMAIL' || key === 'ROTATE') flags[key] = value
   }
   return flags
 }
@@ -378,7 +489,16 @@ export async function dispatch(
   command,
   inputs,
   rest = [],
-  operations = { status, deploy, dev, remove, inviteAdmin, rotateAuthKey }
+  operations = {
+    status,
+    deploy,
+    dev,
+    remove,
+    inviteAdmin,
+    rotateAuthKey,
+    setupReadiness,
+    readinessAPI,
+  }
 ) {
   if (command === 'status') return operations.status()
   if (command === 'deploy') return operations.deploy()
@@ -386,6 +506,9 @@ export async function dispatch(
   if (command === 'remove') return operations.remove({ destroy: inputs.DESTROY === 'yes' })
   if (command === 'invite-admin') return operations.inviteAdmin(inputs.EMAIL ?? rest[0])
   if (command === 'rotate-auth-key') return operations.rotateAuthKey()
+  if (command === 'setup-readiness')
+    return operations.setupReadiness(inputs.EMAIL ?? rest[0], { rotate: inputs.ROTATE === 'yes' })
+  if (command === 'readiness-api') return operations.readinessAPI(inputs.EMAIL ?? rest[0])
   throw new Error(`unknown command: ${command}`)
 }
 

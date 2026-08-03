@@ -17,12 +17,13 @@ import (
 )
 
 type bootstrapper struct {
-	cognito      sharedaws.CognitoIdentityProviderAPI
-	dynamo       sharedaws.DynamoDBAPI
-	userPoolID   string
-	authTable    string
-	now          func() time.Time
-	membershipID func() (auth.MembershipID, error)
+	cognito            sharedaws.CognitoIdentityProviderAPI
+	dynamo             sharedaws.DynamoDBAPI
+	userPoolID         string
+	authTable          string
+	now                func() time.Time
+	membershipID       func() (auth.MembershipID, error)
+	suppressInvitation bool
 }
 
 type membershipRecord struct {
@@ -95,7 +96,7 @@ func (b bootstrapper) bootstrapWithEvents(ctx context.Context, email string, emi
 		emit(auth.EventMembershipStatusChanged, subject)
 		emit(auth.EventAuthValidAfterAdvanced, subject)
 	}
-	if membership.InvitationPending && user.UserStatus == sharedaws.CognitoUserStatusForceChangePassword {
+	if !b.suppressInvitation && membership.InvitationPending && user.UserStatus == sharedaws.CognitoUserStatusForceChangePassword {
 		leaseID, claimed, err := b.claimPendingInvitation(ctx, subject)
 		if err != nil {
 			return subject, err

@@ -23,7 +23,7 @@ func TestMonitorRoutesMatchHandleRequestDispatch(t *testing.T) {
 	dispatchHandlers := make(map[string]struct{})
 	ast.Inspect(file, func(node ast.Node) bool {
 		function, ok := node.(*ast.FuncDecl)
-		if !ok || function.Name.Name != "handleRequest" {
+		if !ok || function.Name.Name != "handleRequestInner" {
 			return true
 		}
 		ast.Inspect(function.Body, func(node ast.Node) bool {
@@ -59,12 +59,12 @@ func TestMonitorRoutesMatchHandleRequestDispatch(t *testing.T) {
 		}
 		inventoryHandlers[route.Handler] = struct{}{}
 		if _, ok := dispatchHandlers[route.Handler]; !ok {
-			t.Errorf("inventory route %s %s expects h.%s in handleRequest", route.Method, route.Path, route.Handler)
+			t.Errorf("inventory route %s %s expects h.%s in handleRequestInner", route.Method, route.Path, route.Handler)
 		}
 	}
 	for handler := range dispatchHandlers {
 		if _, ok := inventoryHandlers[handler]; !ok {
-			t.Errorf("handleRequest dispatch h.%s is absent from monitorRoutes inventory", handler)
+			t.Errorf("handleRequestInner dispatch h.%s is absent from monitorRoutes inventory", handler)
 		}
 	}
 }

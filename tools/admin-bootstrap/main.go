@@ -70,6 +70,7 @@ func main() {
 	userPoolID := flag.String("user-pool-id", "", "Cognito user pool ID")
 	authTable := flag.String("auth-table", "", "AuthTable name")
 	stage := flag.String("stage", os.Getenv("SST_STAGE"), "deployment stage")
+	syntheticPassword := os.Getenv("SYNTHETIC_PASSWORD")
 	flag.Parse()
 	if *email == "" || *userPoolID == "" || *authTable == "" {
 		log.Fatal("email, user-pool-id, and auth-table are required")
@@ -96,13 +97,18 @@ func main() {
 		emitOutcomeOrFatal(os.Stdout, newBootstrapOutcome(resolvedStage, actingPrincipal, "", correlationID, err))
 		log.Fatal("bootstrap administrator failed while creating DynamoDB client")
 	}
-	bootstrap := bootstrapper{cognito: cognito, dynamo: dynamo, userPoolID: *userPoolID, authTable: *authTable, now: time.Now, membershipID: newMembershipID}
+	bootstrap := bootstrapper{cognito: cognito, dynamo: dynamo, userPoolID: *userPoolID, authTable: *authTable, now: time.Now, membershipID: newMembershipID, suppressInvitation: syntheticPassword != ""}
 	subject, err := bootstrap.bootstrapWithEvents(ctx, *email, func(event auth.SecurityEvent, subject auth.Subject) {
 		emitOutcomeOrFatal(os.Stdout, newSecurityOutcome(event, resolvedStage, actingPrincipal, subject, correlationID, nil))
 	})
 	if err != nil {
 		emitOutcomeOrFatal(os.Stdout, newBootstrapOutcome(resolvedStage, actingPrincipal, subject, correlationID, err))
 		log.Fatal("bootstrap administrator failed")
+	}
+	if syntheticPassword != "" {
+		if _, err := cognito.AdminSetUserPassword(ctx, &sharedaws.CognitoAdminSetUserPasswordInput{UserPoolId: userPoolID, Username: sharedaws.String(*email), Password: &syntheticPassword, Permanent: true}); err != nil {
+			log.Fatal("set synthetic user password failed")
+		}
 	}
 	emitOutcomeOrFatal(os.Stdout, newBootstrapOutcome(resolvedStage, actingPrincipal, subject, correlationID, nil))
 }

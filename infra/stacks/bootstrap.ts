@@ -78,6 +78,15 @@ export function createBootstrapStack(target: DeploymentTarget) {
     },
     durableOptions
   )
+  const readinessUserPoolClient = new aws.cognito.UserPoolClient(
+    'ReadinessUserPoolClient',
+    {
+      name: `${target.service}-${target.stage}-readiness`,
+      generateSecret: false,
+      ...userPoolClientArgs,
+    },
+    durableOptions
+  )
 
   const authTable = new aws.dynamodb.Table(
     'AuthTable',
@@ -400,7 +409,11 @@ export function createBootstrapStack(target: DeploymentTarget) {
     name: 'OperatorJwt',
     jwt: {
       issuer: $interpolate`https://cognito-idp.${aws.getRegionOutput().region}.amazonaws.com/${operatorUserPool.id}`,
-      audiences: [dashboardUserPoolClient.id, directOperatorUserPoolClient.id],
+      audiences: [
+        dashboardUserPoolClient.id,
+        directOperatorUserPoolClient.id,
+        readinessUserPoolClient.id,
+      ],
     },
   })
 
@@ -418,7 +431,7 @@ export function createBootstrapStack(target: DeploymentTarget) {
     environment: {
       TABLE_NAME: table.name,
       AUTH_TABLE_NAME: authTable.name,
-      COGNITO_CLIENT_IDS: $interpolate`${dashboardUserPoolClient.id},${directOperatorUserPoolClient.id}`,
+      COGNITO_CLIENT_IDS: $interpolate`${dashboardUserPoolClient.id},${directOperatorUserPoolClient.id},${readinessUserPoolClient.id}`,
     },
   }
 
@@ -608,6 +621,7 @@ export function createBootstrapStack(target: DeploymentTarget) {
     authTableName: authTable.name,
     operatorUserPoolId: operatorUserPool.id,
     directOperatorUserPoolClientId: directOperatorUserPoolClient.id,
+    readinessUserPoolClientId: readinessUserPoolClient.id,
     authEncryptionKeyParameterName: authEncryptionKey.name,
     bootstrapBucket: bootstrapBucket.name,
     notificationQueueUrl: notificationQueue.url,

@@ -21,7 +21,8 @@ paths:
   /api/health:
     get:
       operationId: getHealth
-      summary: Check service health
+      summary: Check public service liveness
+      description: Public liveness only. Does not verify DynamoDB, authorization, or protected monitor API readiness.
       security: []
       responses: {'200': {description: Healthy service, content: {application/json: {schema: {$ref: '#/components/schemas/HealthEnvelope'}}}}}
   /api/v1/search: {get: {operationId: searchResources, responses: {'200': {$ref: '#/components/responses/Success'}}}}

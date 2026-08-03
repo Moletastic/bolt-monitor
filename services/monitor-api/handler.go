@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -89,6 +92,28 @@ func newAuthorizedMonitorHandlerWithDependencies(operations monitorAPIOperations
 }
 
 func (h monitorHandler) handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	requestID := strings.TrimSpace(request.RequestContext.RequestID)
+	if requestID == "" {
+		requestID = fallbackRequestID()
+	}
+	response, err := h.handleRequestInner(ctx, request)
+	if response.Headers == nil {
+		response.Headers = map[string]string{}
+	}
+	response.Headers["X-Request-Id"] = requestID
+	log.Printf(`{"event":"api.request","requestId":%q,"method":%q,"route":%q,"status":%d,"tenantId":%q,"correlationId":%q}`, requestID, request.RequestContext.HTTP.Method, request.RawPath, response.StatusCode, h.tenantID, requestHeader(request.Headers, "X-Correlation-ID"))
+	return response, err
+}
+
+func fallbackRequestID() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "generated-request-id"
+	}
+	return hex.EncodeToString(value[:])
+}
+
+func (h monitorHandler) handleRequestInner(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	if h.principalResolver == nil || h.membershipResolver == nil {
 		return respondAPIGateway(authenticationRequired())
 	}

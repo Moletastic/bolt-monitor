@@ -13,6 +13,7 @@ type CognitoIdentityProviderAPI interface {
 	AdminGetUser(ctx context.Context, params *CognitoAdminGetUserInput) (*CognitoAdminGetUserOutput, error)
 	AdminCreateUser(ctx context.Context, params *CognitoAdminCreateUserInput) (*CognitoAdminCreateUserOutput, error)
 	AdminResetUserPassword(ctx context.Context, params *CognitoAdminResetUserPasswordInput) (*CognitoAdminResetUserPasswordOutput, error)
+	AdminSetUserPassword(ctx context.Context, params *CognitoAdminSetUserPasswordInput) (*CognitoAdminSetUserPasswordOutput, error)
 }
 
 type CognitoListUsersInput = cognitoidentityprovider.ListUsersInput
@@ -23,6 +24,8 @@ type CognitoAdminCreateUserInput = cognitoidentityprovider.AdminCreateUserInput
 type CognitoAdminCreateUserOutput = cognitoidentityprovider.AdminCreateUserOutput
 type CognitoAdminResetUserPasswordInput = cognitoidentityprovider.AdminResetUserPasswordInput
 type CognitoAdminResetUserPasswordOutput = cognitoidentityprovider.AdminResetUserPasswordOutput
+type CognitoAdminSetUserPasswordInput = cognitoidentityprovider.AdminSetUserPasswordInput
+type CognitoAdminSetUserPasswordOutput = cognitoidentityprovider.AdminSetUserPasswordOutput
 type CognitoUser = types.UserType
 type CognitoAttribute = types.AttributeType
 type CognitoUserStatus = types.UserStatusType
@@ -58,4 +61,8 @@ func (c *cognitoIdentityProvider) AdminCreateUser(ctx context.Context, params *C
 
 func (c *cognitoIdentityProvider) AdminResetUserPassword(ctx context.Context, params *CognitoAdminResetUserPasswordInput) (*CognitoAdminResetUserPasswordOutput, error) {
 	return c.client.AdminResetUserPassword(ctx, params)
+}
+
+func (c *cognitoIdentityProvider) AdminSetUserPassword(ctx context.Context, params *CognitoAdminSetUserPasswordInput) (*CognitoAdminSetUserPasswordOutput, error) {
+	return c.client.AdminSetUserPassword(ctx, params)
 }

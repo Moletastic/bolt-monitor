@@ -15,10 +15,10 @@ SHELL := /bin/bash
 	format-dashboard format-dashboard-check format-dashboard-files format-infra format-infra-check format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
-	infra-status deploy-infra dev-infra remove-infra invite-admin rotate-auth-key clean
+	infra-status deploy-infra dev-infra remove-infra invite-admin setup-readiness readiness-api rotate-auth-key clean
 
 GO_SERVICES := api-health check-runtime escalation-runtime monitor-api
-GO_TOOLS := admin-bootstrap
+GO_TOOLS := admin-bootstrap readiness-probe
 GO_SHARED := api/response auth aws checkexecution dynamodb dynamodbrecord dynamodbschema errors escalation monitorconfig notifications resultstatus rules
 GO_MODULE_DIRS := $(addprefix ./services/,$(GO_SERVICES)) $(addprefix ./tools/,$(GO_TOOLS)) $(addprefix ./shared/,$(GO_SHARED))
 
@@ -173,6 +173,12 @@ invite-admin: ## Invite administrator with EMAIL=operator@example.com
 		exit 1; \
 	fi
 	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) invite-admin EMAIL=$(EMAIL)
+
+setup-readiness: ## Configure synthetic readiness user; use ROTATE=yes to rotate
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) setup-readiness EMAIL=$(EMAIL) ROTATE=$(ROTATE)
+
+readiness-api: ## Verify protected API readiness; optional EMAIL=operator@example.com
+	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) readiness-api EMAIL=$(EMAIL)
 
 rotate-auth-key: ## Rotate selected target authentication encryption key
 	node $(OPS_NODE_FLAGS) $(OPS_SCRIPT) rotate-auth-key

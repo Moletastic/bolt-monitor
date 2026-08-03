@@ -77,7 +77,7 @@ test('auth configuration and permissions are scoped to monitor API and dashboard
   assert.match(monitorHandler, /AUTH_TABLE_NAME: authTable\.name/)
   assert.match(
     monitorHandler,
-    /COGNITO_CLIENT_IDS: \$interpolate`\$\{dashboardUserPoolClient\.id\},\$\{directOperatorUserPoolClient\.id\}`/
+    /COGNITO_CLIENT_IDS: \$interpolate`\$\{dashboardUserPoolClient\.id\},\$\{directOperatorUserPoolClient\.id\},\$\{readinessUserPoolClient\.id\}`/
   )
   assert.match(monitorHandler, /actions: \['dynamodb:GetItem'\]/)
   assert.match(monitorHandler, /resources: \[authTable\.arn\]/)
@@ -97,6 +97,7 @@ test('auth configuration and permissions are scoped to monitor API and dashboard
   assert.match(outputs, /authTableName: authTable\.name/)
   assert.match(outputs, /operatorUserPoolId: operatorUserPool\.id/)
   assert.match(outputs, /directOperatorUserPoolClientId: directOperatorUserPoolClient\.id/)
+  assert.match(outputs, /readinessUserPoolClientId: readinessUserPoolClient\.id/)
   assert.match(outputs, /authEncryptionKeyParameterName: authEncryptionKey\.name/)
   assert.match(
     outputs,
@@ -127,7 +128,7 @@ test('Gateway rejects protected-route requests before Lambda and keeps health pu
   assert.match(protectedRoutes, /scopes: \['aws\.cognito\.signin\.user\.admin'\]/)
   assert.match(
     stackSource,
-    /audiences: \[dashboardUserPoolClient\.id, directOperatorUserPoolClient\.id\]/
+    /audiences: \[dashboardUserPoolClient\.id, directOperatorUserPoolClient\.id, readinessUserPoolClient\.id\]/
   )
 })
 
