@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -29,15 +30,28 @@ type Notification struct {
 }
 
 type NotificationEvent struct {
-	EventType   EventType `json:"eventType"`
-	TenantID    string    `json:"tenantId"`
-	ServiceID   string    `json:"serviceId"`
-	MonitorID   string    `json:"monitorId"`
-	MonitorName string    `json:"monitorName"`
-	ServiceName string    `json:"serviceName"`
-	IncidentID  string    `json:"incidentId"`
-	Timestamp   time.Time `json:"timestamp"`
-	Message     string    `json:"message"`
+	TransitionID string    `json:"transitionId,omitempty"`
+	EventType    EventType `json:"eventType"`
+	TenantID     string    `json:"tenantId"`
+	ServiceID    string    `json:"serviceId"`
+	MonitorID    string    `json:"monitorId"`
+	MonitorName  string    `json:"monitorName"`
+	ServiceName  string    `json:"serviceName"`
+	IncidentID   string    `json:"incidentId"`
+	Timestamp    time.Time `json:"timestamp"`
+	Message      string    `json:"message"`
+}
+
+// DeliveryTransitionID uses the canonical transition ID when available. Legacy
+// recovery events use a separate identity to avoid colliding with outage work.
+func (e NotificationEvent) DeliveryTransitionID() string {
+	if transitionID := strings.TrimSpace(e.TransitionID); transitionID != "" {
+		return transitionID
+	}
+	if e.EventType == EventTypeIncidentUp {
+		return e.IncidentID + "#recovery"
+	}
+	return e.IncidentID
 }
 
 func (e NotificationEvent) ToJSON() (string, error) {

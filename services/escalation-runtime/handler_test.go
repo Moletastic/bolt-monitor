@@ -456,6 +456,70 @@ func TestHandleIncidentUpSuppressesEscalationState(t *testing.T) {
 	}
 }
 
+func TestHandleIncidentUpDeliversRecoveryToUniqueFiredStepChannels(t *testing.T) {
+	sender := &fakeSender{}
+	repo := &fakeEscalationRepository{
+		policy: &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{
+			{Channels: []escalation.ChannelConfig{{Type: "fake", Target: "primary"}}},
+			{Channels: []escalation.ChannelConfig{{Type: "fake", Target: "primary"}, {Type: "fake", Target: "secondary"}}},
+			{Channels: []escalation.ChannelConfig{{Type: "fake", Target: "unfired"}}},
+		}}},
+		state: &escalation.EscalationState{TenantID: "DEFAULT", IncidentID: "INC_1", PolicyID: "POL_1", ServiceID: "auth", MonitorID: "public-http", StepsFired: []int{1, 2}, Status: escalation.EscalationStatusActive},
+		deliveries: []notifications.DeliveryRecord{{
+			TenantID: "DEFAULT", IncidentID: "INC_1", TransitionID: "TRN_DOWN",
+			DeliveryID: notifications.DeliveryIdentity("DEFAULT", "TRN_DOWN", 1, "primary#0"), ChannelID: "primary#0", ChannelType: "fake", StepNumber: 1, State: notifications.DeliveryDelivered,
+		}},
+	}
+	handler := newTestEscalationHandlerWithDependencies(repo, &fakeScheduler{}, notifications.SenderRegistry{"fake": sender}, testEscalationNow)
+	event := notifications.NotificationEvent{TransitionID: "TRN_UP", EventType: notifications.EventTypeIncidentUp, TenantID: "DEFAULT", ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", Timestamp: testEscalationNow}
+
+	if err := handler.handleIncidentUp(context.Background(), event); err != nil {
+		t.Fatalf("handleIncidentUp returned error: %v", err)
+	}
+	if len(sender.notifications) != 2 {
+		t.Fatalf("recovery sends = %d, want 2", len(sender.notifications))
+	}
+	if sender.notifications[0].Message == "" || sender.notifications[0].EventType != notifications.EventTypeIncidentUp {
+		t.Fatalf("first recovery notification = %+v", sender.notifications[0])
+	}
+	if repo.state.Status != escalation.EscalationStatusSuppressed {
+		t.Fatalf("status = %q, want %q", repo.state.Status, escalation.EscalationStatusSuppressed)
+	}
+	if len(repo.deliveries) != 3 {
+		t.Fatalf("deliveries = %d, want existing outage plus two recovery deliveries", len(repo.deliveries))
+	}
+	for _, delivery := range repo.deliveries[1:] {
+		if delivery.TransitionID != "TRN_UP" {
+			t.Fatalf("recovery transitionID = %q, want TRN_UP", delivery.TransitionID)
+		}
+	}
+
+	if err := handler.handleIncidentUp(context.Background(), event); err != nil {
+		t.Fatalf("duplicate handleIncidentUp returned error: %v", err)
+	}
+	if len(sender.notifications) != 2 {
+		t.Fatalf("duplicate recovery sends = %d, want 2", len(sender.notifications))
+	}
+}
+
+func TestTransitionEnvelopeUsesCanonicalRecoveryIdentity(t *testing.T) {
+	sender := &fakeSender{}
+	repo := &fakeEscalationRepository{
+		policy: &escalation.EscalationPolicy{TenantID: "DEFAULT", PolicyID: "POL_1", OffHoursPath: escalation.EscalationPath{Steps: []escalation.EscalationStep{{Channels: []escalation.ChannelConfig{{Type: "fake", Target: "ops"}}}}}},
+		state:  &escalation.EscalationState{TenantID: "DEFAULT", IncidentID: "INC_1", PolicyID: "POL_1", StepsFired: []int{1}, Status: escalation.EscalationStatusActive},
+		outbox: map[string]dynamodbrecord.TransitionOutboxRecord{"DEFAULT|TRN_UP": {TenantID: "DEFAULT", EventID: "TRN_UP", TransitionType: string(notifications.EventTypeIncidentUp), ServiceID: "auth", MonitorID: "public-http", IncidentID: "INC_1", CreatedAt: testEscalationNow.Format(time.RFC3339), DispatchStatus: "pending"}},
+	}
+	handler := newTestEscalationHandlerWithDependencies(repo, &fakeScheduler{}, notifications.SenderRegistry{"fake": sender}, testEscalationNow)
+
+	handled, err := handler.handleTransitionEnvelope(context.Background(), `{"kind":"transition","tenantId":"DEFAULT","transitionId":"TRN_UP"}`)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v", handled, err)
+	}
+	if len(repo.deliveries) != 1 || repo.deliveries[0].TransitionID != "TRN_UP" {
+		t.Fatalf("recovery deliveries = %+v", repo.deliveries)
+	}
+}
+
 func TestHandleIncidentDownSchedulesNextStep(t *testing.T) {
 	tgSender := &fakeSender{}
 	scheduler := &fakeScheduler{}

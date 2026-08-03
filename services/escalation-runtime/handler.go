@@ -41,11 +41,10 @@ type escalationRepository interface {
 }
 
 type escalationHandler struct {
-	repo             escalationRepository
-	scheduler        scheduleClient
-	senders          notifications.SenderRegistry
-	now              func() time.Time
-	transitionLookup func(notifications.NotificationEvent) string
+	repo      escalationRepository
+	scheduler scheduleClient
+	senders   notifications.SenderRegistry
+	now       func() time.Time
 }
 
 type escalationHandlerDependencies struct {
@@ -221,7 +220,8 @@ func (h *escalationHandler) handleTransitionEnvelope(ctx context.Context, body s
 		return true, err
 	}
 	event := notifications.NotificationEvent{
-		EventType: notifications.EventType(canonical.TransitionType), TenantID: canonical.TenantID,
+		TransitionID: canonical.EventID,
+		EventType:    notifications.EventType(canonical.TransitionType), TenantID: canonical.TenantID,
 		ServiceID: canonical.ServiceID, MonitorID: canonical.MonitorID, IncidentID: canonical.IncidentID,
 		Timestamp: timestamp,
 	}
@@ -247,6 +247,15 @@ func (h *escalationHandler) handleIncidentUp(ctx context.Context, event notifica
 	if state == nil {
 		log.Printf("no escalation state found for incident %s", event.IncidentID)
 		return nil
+	}
+	policy, err := h.repo.GetEscalationPolicy(ctx, state.TenantID, state.PolicyID)
+	if err != nil {
+		return err
+	}
+	if policy != nil {
+		if err := h.deliverRecovery(ctx, event, selectedPolicyPath(*policy, state.SelectedPath), *state); err != nil {
+			return err
+		}
 	}
 	state.Status = escalation.EscalationStatusSuppressed
 	state.UpdatedAt = event.Timestamp.UTC().Format(time.RFC3339)
@@ -280,10 +289,7 @@ func (h *escalationHandler) handleIncidentDown(ctx context.Context, event notifi
 		log.Printf("policy %s has no steps for selected path %s", policy.PolicyID, selectedPath)
 		return nil
 	}
-	transitionID := event.IncidentID
-	if h.transitionLookup != nil {
-		transitionID = h.transitionLookup(event)
-	}
+	transitionID := event.DeliveryTransitionID()
 	if transitionID != "" {
 		if err := h.persistEscalationPlanAndDeliveries(ctx, transitionID, event, *policy, selectedPath, path); err != nil {
 			return err
@@ -312,6 +318,61 @@ func (h *escalationHandler) handleIncidentDown(ctx context.Context, event notifi
 	return h.repo.PutEscalationState(ctx, state)
 }
 
+func recoveryMessage(event notifications.NotificationEvent) string {
+	return fmt.Sprintf("Incident Resolved\nService: %s\nMonitor: %s\nTime: %s", event.ServiceID, event.MonitorID, event.Timestamp.UTC().Format(time.RFC3339))
+}
+
+// deliverRecovery persists all recovery deliveries before provider I/O, then
+// sends each unique channel used by a fired escalation step.
+func (h *escalationHandler) deliverRecovery(ctx context.Context, event notifications.NotificationEvent, path escalation.EscalationPath, state escalation.EscalationState) error {
+	type recoveryDelivery struct {
+		channel    resolvedChannel
+		stepNumber int
+	}
+
+	selected := make([]recoveryDelivery, 0)
+	seen := make(map[string]struct{})
+	for _, stepNumber := range state.StepsFired {
+		stepIndex := stepNumber - 1
+		if stepIndex < 0 || stepIndex >= len(path.Steps) {
+			continue
+		}
+		channels, err := h.channelsForStep(ctx, event, path.Steps[stepIndex])
+		if err != nil {
+			return err
+		}
+		for _, channel := range channels {
+			if _, exists := seen[channel.Key]; exists {
+				continue
+			}
+			seen[channel.Key] = struct{}{}
+			selected = append(selected, recoveryDelivery{channel: channel, stepNumber: stepNumber})
+		}
+	}
+
+	transitionID := event.DeliveryTransitionID()
+	now := h.now().UTC().Format(time.RFC3339)
+	for _, selectedDelivery := range selected {
+		delivery := notifications.DeliveryRecord{
+			TenantID: event.TenantID, IncidentID: event.IncidentID, TransitionID: transitionID,
+			DeliveryID: notifications.DeliveryIdentity(event.TenantID, transitionID, selectedDelivery.stepNumber, selectedDelivery.channel.Key),
+			ChannelID:  selectedDelivery.channel.Key, ChannelType: string(selectedDelivery.channel.Channel.Type), StepNumber: selectedDelivery.stepNumber,
+			State: notifications.DeliveryPending, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := h.repo.CreateDelivery(ctx, delivery); err != nil {
+			return fmt.Errorf("create recovery delivery: %w", err)
+		}
+	}
+
+	event.Message = recoveryMessage(event)
+	for _, selectedDelivery := range selected {
+		if err := h.deliverResolvedChannel(ctx, event, selectedDelivery.channel, selectedDelivery.stepNumber); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 const deliveryClaimLease = time.Minute
 
 // deliverStep fences every provider request with its durable channel delivery.
@@ -320,33 +381,34 @@ func (h *escalationHandler) deliverStep(ctx context.Context, event notifications
 	if err != nil {
 		return err
 	}
+	for _, channel := range channels {
+		if err := h.deliverResolvedChannel(ctx, event, channel, stepNumber); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *escalationHandler) deliverResolvedChannel(ctx context.Context, event notifications.NotificationEvent, channel resolvedChannel, stepNumber int) error {
+	deliveryID := notifications.DeliveryIdentity(event.TenantID, event.DeliveryTransitionID(), stepNumber, channel.Key)
 	deliveries, err := h.repo.ListIncidentDeliveries(ctx, event.TenantID, event.IncidentID)
 	if err != nil {
 		return err
 	}
-	for _, channel := range channels {
-		var deliveryID string
-		for _, delivery := range deliveries {
-			if delivery.StepNumber == stepNumber && delivery.ChannelID == channel.Key {
-				deliveryID = delivery.DeliveryID
-				break
-			}
-		}
-		if deliveryID == "" {
-			return fmt.Errorf("delivery record missing for step %d channel %s", stepNumber, channel.Key)
+	for _, delivery := range deliveries {
+		if delivery.DeliveryID != deliveryID {
+			continue
 		}
 		claimed, token, err := h.repo.ClaimDelivery(ctx, event.TenantID, event.IncidentID, deliveryID, h.now(), deliveryClaimLease)
 		if err != nil {
 			return err
 		}
 		if claimed == nil || token == "" {
-			continue
+			return nil
 		}
-		if err := h.sendClaimedDelivery(ctx, event, channel.Channel, *claimed); err != nil {
-			return err
-		}
+		return h.sendClaimedDelivery(ctx, event, channel.Channel, *claimed)
 	}
-	return nil
+	return fmt.Errorf("delivery record missing for step %d channel %s", stepNumber, channel.Key)
 }
 
 func (h *escalationHandler) sendClaimedDelivery(ctx context.Context, event notifications.NotificationEvent, channel escalation.ChannelConfig, delivery notifications.DeliveryRecord) error {
