@@ -152,9 +152,10 @@ Bolt Monitor targets Node.js 22, pnpm 10, Go 1.26+, and SST 4.14.
 3. Run the local release gates.
 
    ```bash
-   make test-go-all
-   make check-infra
-   make lint-dashboard
+    make test-go-all
+    make check-infra
+    make test-infra
+    make lint-dashboard
    make check-bruno check-api-contract
    ```
 
@@ -209,7 +210,8 @@ For staging validation and operational mechanics, see [`docs/auth-operations.md`
 | Install repository dependencies and Go workspace | `make setup` |
 | Test Go services and shared modules | `make test-go-all` |
 | Lint, typecheck, test, and build dashboard | `make lint-dashboard check-dashboard test-dashboard build-dashboard` |
-| Typecheck infrastructure | `make check-infra test-infra` |
+| Typecheck infrastructure | `make check-infra` |
+| Test infrastructure and root validation scripts | `make test-infra` |
 | Validate API contract drift | `make check-bruno check-api-contract` |
 | Run the pre-cutover gate | `make check-pre-cutover-gate` |
 | Inspect a configured target | `make infra-status` |
@@ -234,13 +236,14 @@ The Make-driven orchestrator under `infra/scripts/ops.mjs` is the only supported
 | `services/monitor-api` | Go Lambda for monitor, incident, audit, admin, and authentication flows |
 | `services/check-runtime` | Go runtime operating as scheduler and worker based on `RUNTIME_MODE` |
 | `services/escalation-runtime` | Go runtime that resolves escalation policies and dispatches notification channels |
-| `shared/` | Canonical Go domain modules wired by `go.work` |
+| `shared/` | Canonical Go domain and backend-platform modules wired by `go.work` |
+| `tools/` | Go operator and developer binaries, including admin bootstrap and readiness probes |
 | `apps/dashboard` | Next.js 15 App Router operator console |
 | `openapi/` | Checked-in OpenAPI contract and local Swagger/Redoc tooling |
 | `openspec/` | Spec-driven change workflow and merged capability specs |
 | `.bruno/collections/` | Bruno API collection with domain-grouped requests and direct Cognito helpers |
 | `docs/` | Lifecycle, authentication, and persistent-resource operations runbooks |
-| `scripts/` | Repository-owned validators and operator helpers |
+| `scripts/` | Repository-owned validation automation |
 
 ## 📚 Documentation boundaries
 
