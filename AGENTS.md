@@ -118,7 +118,7 @@ Optional fields are omitted from the JSON when not applicable; they are never em
 - Server actions that still navigate with `redirect()` should call `runServerAction` at the API boundary, branch on `isErr`, and surface errors through `messageFor(error)` before redirecting.
 - `ApiErrorCode` must exactly mirror `shared/errors/code.go`; `apps/dashboard/lib/errors.test.ts` fails if the Go and TypeScript registries drift.
 - TypeScript `any` is a lint error. Use `unknown` and narrow with type guards, DOM `instanceof` checks, or schema validation before member access.
-- Dashboard time handling uses `date-fns`; do not call or construct native `Date` outside `apps/dashboard/lib/clock.ts` and test/setup files. Use `parseISO`, `formatISO`, `compareDesc`, `differenceInMilliseconds`, and the `now()` clock wrapper instead.
+- Dashboard time handling uses `date-fns` for parsing, formatting, comparison, arithmetic, and durations. `new Date(epochMilliseconds)` is allowed for known epoch values; parse external ISO strings with `parseISO`, not `new Date(string)`. Use `now()` from `apps/dashboard/lib/clock.ts` for current-time behavior; do not call `Date()` or native `Date` methods outside the clock wrapper and test/setup files.
 
 Adding a new endpoint? Return one of the three constructors above and the parser on the dashboard side does the rest. Handlers route every error through `errors.Respond` (from `bolt-monitor/shared/errors`); the `Code` constants and the registry there are the single source of truth for `reason.code` values and their HTTP status mapping.
 

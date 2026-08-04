@@ -2,10 +2,6 @@ const path = require('path')
 
 const noNativeDateRules = [
   {
-    selector: "NewExpression[callee.name='Date']",
-    message: 'Use date-fns instead of native Date',
-  },
-  {
     selector: "CallExpression[callee.name='Date']",
     message: 'Use date-fns instead of native Date',
   },
@@ -64,7 +60,7 @@ module.exports = {
       },
     },
     {
-      // Native Date is allowed only in the clock wrapper and test/setup files.
+      // Clock code and tests may read wall-clock time directly.
       files: ['lib/clock.ts', 'lib/**/*.test.ts', 'lib/io/**/*.test.ts'],
       rules: {
         'no-restricted-syntax': 'off',

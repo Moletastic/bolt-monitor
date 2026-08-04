@@ -31,7 +31,7 @@ Tag legend: `[G]` general · `[F]` frontend · `[B]` backend · `[A]` API contra
 ## Frontend
 
 21. **Server-side truth.** UI reads authoritative state via server fetch. Client never mirrors canonical data. `[F]`
-22. **No native `Date`.** Use an immutable date utility. Predictable, tree-shakeable, testable. Implemented by `openspec/changes/code-patterns-foundation` through `date-fns` and the dashboard clock wrapper. `[F]`
+22. **Date-fns time operations.** Use `date-fns` for parsing, formatting, comparison, arithmetic, and durations; construct `Date` only from known epoch values and read current time through the dashboard clock wrapper. `[F]`
 23. **No `any` in TypeScript.** Use `unknown` and narrow. Strict types at every boundary; dashboard ESLint enforces this. See `openspec/specs/ts-result-and-no-any/spec.md`. `[F]`
 
 ## Backend

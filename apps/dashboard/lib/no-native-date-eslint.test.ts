@@ -8,11 +8,11 @@ const eslintConfig = require('../.eslintrc.js') as {
 }
 
 describe('native Date lint rule', () => {
-  it('rejects native Date handling in dashboard source', async () => {
+  it('allows Date construction but rejects native time operations', async () => {
     const linter = new Linter()
     const messages = linter.verify(
       [
-        'var created = new Date()',
+        'var created = new Date(epochMilliseconds)',
         'var called = Date()',
         'var timestamp = Date.now()',
         'created.setHours(0)',
@@ -32,12 +32,12 @@ describe('native Date lint rule', () => {
 
     expect(messages).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ message: 'Use date-fns instead of native Date' }),
         expect.objectContaining({
           message: 'Use the clock wrapper or date-fns instead of native Date methods',
         }),
         expect.objectContaining({ message: 'Use date-fns instead of native Date methods' }),
       ])
     )
+    expect(messages).toHaveLength(5)
   })
 })
