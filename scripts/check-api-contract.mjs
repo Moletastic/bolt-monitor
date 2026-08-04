@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { readBrunoRequests } from './check-bruno.mjs';
@@ -7,6 +6,7 @@ import { extractOpenAPIRoutes as extractOperations } from './openapi-routes.mjs'
 import { extractSSTRoutes } from './sst-routes.mjs';
 import { extractMergedOpenSpecRoutes } from './openspec-routes.mjs';
 import { extractHandlerRouteInventory } from './handler-routes.mjs';
+import { readRepositoryFile, reportErrors } from './helpers.mjs';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 
@@ -74,15 +74,14 @@ export function validateContract({ bootstrapSource, brunoRequests, openapiSource
 
 function main() {
   const result = validateContract({
-    bootstrapSource: fs.readFileSync(path.join(root, 'infra/stacks/bootstrap.ts'), 'utf8'),
+    bootstrapSource: readRepositoryFile('infra/stacks/bootstrap.ts'),
     brunoRequests: readBrunoRequests(path.join(root, '.bruno/collections')),
-    openapiSource: fs.readFileSync(path.join(root, 'openapi/openapi.yaml'), 'utf8'),
-    handlerSource: fs.readFileSync(path.join(root, 'services/monitor-api/routes.go'), 'utf8'),
+    openapiSource: readRepositoryFile('openapi/openapi.yaml'),
+    handlerSource: readRepositoryFile('services/monitor-api/routes.go'),
     openSpecRoutes: extractMergedOpenSpecRoutes(path.join(root, 'openspec/specs')),
   });
   console.log(`API contract routes: SST ${result.counts.sst}, Bruno ${result.counts.bruno}, OpenAPI ${result.counts.openapi}, handler ${result.counts.handler}, OpenSpec ${result.counts.openSpec}`);
-  for (const error of result.errors) console.error(`ERROR ${error}`);
-  if (result.errors.length) process.exitCode = 1;
+  reportErrors(result.errors);
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) main();

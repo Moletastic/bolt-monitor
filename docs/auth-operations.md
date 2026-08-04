@@ -224,7 +224,7 @@ true:
 
 1. The target is explicitly classified and lifecycle protections, inventory,
    tags, and ephemeral cleanup verification are active. Run
-   `make check-auth-cutover-prerequisites` to prove this prerequisite before
+   `make test-infra` to prove this prerequisite before
    beginning the cutover checklist.
 2. Auth resources, least-privilege grants, canonical dashboard origin, alarms,
    finite log retention, and non-secret outputs are deployed.

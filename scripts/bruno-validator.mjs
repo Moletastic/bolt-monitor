@@ -1,13 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRoute, normalizeRoutePath, routeKey } from './route-record.mjs';
-
-function walk(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const fullPath = path.join(directory, entry.name);
-    return entry.isDirectory() ? walk(fullPath) : [fullPath];
-  });
-}
+import { walkFiles } from './helpers.mjs';
 
 function block(source, key) {
   const lines = source.split('\n');
@@ -54,8 +48,7 @@ function authMode(source) {
 }
 
 export function readBrunoRequests(collectionsDirectory) {
-  const files = walk(collectionsDirectory)
-    .filter((filePath) => filePath.endsWith('.yml'))
+  const files = walkFiles(collectionsDirectory, '.yml')
     .map((filePath) => ({ filePath, source: fs.readFileSync(filePath, 'utf8') }));
   const folderAuth = new Map(files.filter(({ filePath }) => path.basename(filePath) === 'folder.yml').map(({ filePath, source }) => [path.dirname(filePath), authMode(source)]));
 

@@ -40,7 +40,7 @@ Repository CI never deploys or receives AWS credentials. After deliberately depl
 
 ## Authentication Cutover Gate
 
-Before protected-route cutover, run `make check-auth-cutover-prerequisites`. This deterministic release gate proves the validated stage classification, persistent `AppTable` deletion and retain-on-delete protection, lifecycle-guarded ephemeral cleanup, the retained inventory including the auth key reference, and the destructive-intent gate for persistent removal. It does not deploy AWS resources or run credentialed smoke checks.
+Before protected-route cutover, run `make test-infra`. Infrastructure tests prove validated stage classification, persistent `AppTable` deletion and retain-on-delete protection, lifecycle-guarded ephemeral cleanup, the retained inventory including the auth key reference, and the destructive-intent gate for persistent removal. They do not deploy AWS resources or run credentialed smoke checks.
 
 ## Cost Posture
 

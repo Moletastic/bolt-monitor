@@ -1,10 +1,8 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import process from 'node:process';
 import { extractOpenAPIRoutes } from './openapi-routes.mjs';
 import { extractSSTRoutes } from './sst-routes.mjs';
+import { readRepositoryFile, reportErrors } from './helpers.mjs';
 
-const root = path.resolve(new URL('..', import.meta.url).pathname);
 const requiredScope = 'aws.cognito.signin.user.admin';
 
 export function validateOpenAPIAuth(source, bootstrapSource) {
@@ -47,9 +45,8 @@ export function validateOpenAPIAuth(source, bootstrapSource) {
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const errors = validateOpenAPIAuth(
-    fs.readFileSync(path.join(root, 'openapi/openapi.yaml'), 'utf8'),
-    fs.readFileSync(path.join(root, 'infra/stacks/bootstrap.ts'), 'utf8')
+    readRepositoryFile('openapi/openapi.yaml'),
+    readRepositoryFile('infra/stacks/bootstrap.ts')
   );
-  for (const error of errors) console.error(`ERROR ${error}`);
-  if (errors.length) process.exitCode = 1;
+  reportErrors(errors);
 }

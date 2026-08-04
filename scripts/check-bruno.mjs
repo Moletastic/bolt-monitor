@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { extractSSTRoutes } from './sst-routes.mjs';
 import { extractMergedOpenSpecRoutes } from './openspec-routes.mjs';
 import { normalizeRoutePath, parseBrunoRequest, readBrunoRequests, validateBruno } from './bruno-validator.mjs';
+import { readRepositoryFile, reportErrors } from './helpers.mjs';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 
@@ -49,15 +50,14 @@ function readTrackedBrunoFiles() {
 
 function main() {
   const result = validate({
-    bootstrapSource: fs.readFileSync(path.join(root, 'infra/stacks/bootstrap.ts'), 'utf8'),
+    bootstrapSource: readRepositoryFile('infra/stacks/bootstrap.ts'),
     requests: readBrunoRequests(path.join(root, '.bruno/collections')),
     specRoutes: new Set(extractMergedOpenSpecRoutes(path.join(root, 'openspec/specs')).map((route) => `${route.method} ${route.path}`)),
   });
   result.errors.push(...validateNoCommittedAuthSecrets(readTrackedBrunoFiles()));
   console.log(`Bruno route coverage: ${result.requestCount}/${result.routeCount}`);
   for (const route of result.specOnly) console.warn(`OpenSpec route not wired in bootstrap: ${route}`);
-  for (const error of result.errors) console.error(`ERROR ${error}`);
-  if (result.errors.length > 0) process.exitCode = 1;
+  reportErrors(result.errors);
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) main();

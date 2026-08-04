@@ -56,6 +56,16 @@ test('AuthTable has auth-specific lifecycle protection and required tags', () =>
   assert.doesNotMatch(stackSource, /authTable[^\n]*AppTable|AppTable[^\n]*authTable/)
 })
 
+test('AppTable and retained resource inventory follow the lifecycle policy', () => {
+  const appTable = stackSection('AppTable')
+  const outputs = stackSource.slice(stackSource.indexOf('\n  return {'))
+
+  assert.match(appTable, /deletionProtection: policy\.retainDurableResources/)
+  assert.match(appTable, /durableOptions/)
+  assert.match(outputs, /retainedResourceInventory: policy\.retainDurableResources/)
+  assert.match(outputs, /logicalName: 'AuthEncryptionKey', name: authEncryptionKey\.name/)
+})
+
 test('auth encryption uses only a non-secret reference and no customer-managed key', () => {
   assert.match(stackSource, /aws\.ssm\.Parameter\.get\('AuthEncryptionKey', authKeyParameterName\)/)
   assert.match(stackSource, /authEncryptionKeyParameterName: authEncryptionKey\.name/)

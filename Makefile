@@ -11,7 +11,7 @@ SHELL := /bin/bash
 	format-go-check vet-go ci-go \
 	lint-go lint-dashboard lint-infra lint-all \
 	check-dashboard check-infra test-infra \
-	check-bruno check-api-contract test-api-contract check-auth-routes check-auth-cutover-prerequisites check-pnpm-install-trust check-pre-cutover-gate \
+	check-bruno check-api-contract check-pnpm-install-trust check-pre-cutover-gate \
 	format-dashboard format-dashboard-check format-dashboard-files format-infra format-infra-check format-infra-files \
 	commitlint \
 	build-go build-dashboard build-all \
@@ -76,28 +76,18 @@ check-infra: ## Type-check infrastructure code
 
 test-infra: ## Run infrastructure and repository script tests
 	cd infra && pnpm run test
-	node --test scripts/check-auth-cutover-prerequisites.test.mjs scripts/check-pnpm-install-trust.test.mjs scripts/check-makefile-safety.test.mjs scripts/check-gitleaks-hook.test.mjs
+	node --test scripts/*.test.mjs
 
 check-bruno: ## Validate Bruno API collection coverage
 	node scripts/check-bruno.mjs
 
-check-auth-routes: ## Validate protected API route coverage
-	node scripts/check-auth-routes.mjs
-
-check-auth-cutover-prerequisites: ## Validate auth cutover lifecycle prerequisites
-	node scripts/check-auth-cutover-prerequisites.mjs
-
 check-pnpm-install-trust: ## Validate reviewed pnpm install-script allowlists
-	node --test scripts/check-pnpm-install-trust.test.mjs
 	node scripts/check-pnpm-install-trust.mjs
 
 # Local release gates required before protected-route cutover. The dashboard build runs here once.
-check-pre-cutover-gate: build-dashboard check-bruno check-api-contract check-auth-cutover-prerequisites ## Run local protected-route cutover gates
+check-pre-cutover-gate: build-dashboard check-bruno check-api-contract ## Run local protected-route cutover gates
 
-test-api-contract: ## Run API contract tests
-	node --test scripts/check-api-contract.test.mjs scripts/check-bruno.test.mjs scripts/check-openapi-auth.test.mjs
-
-check-api-contract: test-api-contract ## Validate API contract and OpenAPI authentication coverage
+check-api-contract: ## Validate API contract and OpenAPI authentication coverage
 	node scripts/check-api-contract.mjs
 	node scripts/check-openapi-auth.mjs
 

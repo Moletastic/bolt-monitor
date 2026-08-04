@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
-
-const root = new URL("..", import.meta.url);
+import { readRepositoryFile, reportErrors } from './helpers.mjs';
 
 const packageRoots = [
   {
@@ -10,17 +8,13 @@ const packageRoots = [
   { path: "infra", trustedPackages: ["esbuild"] },
 ];
 
-function source(path) {
-  return readFileSync(new URL(path, root), "utf8");
-}
-
 function allowlist(npmrc) {
   return [...npmrc.matchAll(/^onlyBuiltDependencies\[\]=(.+)$/gm)].map(
     (match) => match[1],
   );
 }
 
-export function checkPnpmInstallTrust(read = source) {
+export function checkPnpmInstallTrust(read = readRepositoryFile) {
   const errors = [];
   for (const packageRoot of packageRoots) {
     const lockfile = `${packageRoot.path}/pnpm-lock.yaml`;
@@ -52,10 +46,5 @@ export function checkPnpmInstallTrust(read = source) {
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const errors = checkPnpmInstallTrust();
-  for (const error of errors) console.error(`ERROR ${error}`);
-  if (errors.length > 0) process.exitCode = 1;
-  else
-    console.log(
-      "pnpm frozen-lockfile and install-script trust policy verified",
-    );
+  reportErrors(errors, 'pnpm frozen-lockfile and install-script trust policy verified');
 }
